@@ -11,7 +11,10 @@ Populate this folder with:
 ./tools/p2/fetch-flexprop-tools.sh
 ```
 
-That script copies these tools (when available) into `./bin`:
+The script first tries the latest FlexProp release zip, then falls back to
+building from source if required macOS tools are not present.
+
+It installs these tools (when available) into `./bin`:
 - `flexcc.mac` / `flexcc.exe`
 - `flexspin.mac` / `flexspin.exe`
 - `loadp2.mac` / `loadp2.exe`
@@ -21,4 +24,5 @@ That script copies these tools (when available) into `./bin`:
 Notes:
 - The `.mac` tools are for macOS.
 - The `.exe` tools are for Windows.
+- The script fails if required macOS tools (`flexcc.mac`, `loadp2.mac`) are missing.
 - Downloaded binaries are local bootstrap artifacts and are not required to be committed.
