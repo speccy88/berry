@@ -1,0 +1,10 @@
+#!/bin/bash
+##!/bin/bash -login
+echo ""
+echo "Downloading ..."
+echo ""
+payload XMM $@
+echo ""
+echo "Debugging ..."
+echo ""
+blackbox $@

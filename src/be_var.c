@@ -17,6 +17,12 @@
 #define global(vm)      ((vm)->gbldesc.global)
 #define builtin(vm)     ((vm)->gbldesc.builtin)
 
+#if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
+#define BE_NEEDS_BUILTIN_STATE 1
+#else
+#define BE_NEEDS_BUILTIN_STATE 0
+#endif
+
 extern BERRY_LOCAL bclass_array be_class_table;
 
 void be_globalvar_init(bvm *vm)
@@ -24,7 +30,7 @@ void be_globalvar_init(bvm *vm)
     global(vm).vtab = be_map_new(vm);
     be_gc_fix(vm, gc_object(global(vm).vtab));
     be_vector_init(vm, &global(vm).vlist, sizeof(bvalue));
-#if !BE_USE_PRECOMPILED_OBJECT
+#if BE_NEEDS_BUILTIN_STATE
     builtin(vm).vtab = be_map_new(vm);
     be_vector_init(vm, &builtin(vm).vlist, sizeof(bvalue));
     be_gc_fix(vm, gc_object(builtin(vm).vtab));
@@ -35,7 +41,7 @@ void be_globalvar_deinit(bvm *vm)
 {
     global(vm).vtab = NULL;
     be_vector_delete(vm, &global(vm).vlist);
-#if !BE_USE_PRECOMPILED_OBJECT
+#if BE_NEEDS_BUILTIN_STATE
     builtin(vm).vtab = NULL;
     be_vector_delete(vm, &builtin(vm).vlist);
 #endif

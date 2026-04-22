@@ -79,7 +79,7 @@ extern void p2_serial_puts(const char *s);
         VM_HEARTBEAT(); \
         switch (IGET_OP(ins = *vm->ip++))
 
-#if BE_USE_SINGLE_FLOAT
+#if BE_USE_SINGLE_FLOAT && !defined(__CATALINA__)
   #define mathfunc(func)    func##f
 #else
   #define mathfunc(func)    func

@@ -25,7 +25,7 @@
 #define BE_DEBUG_SOURCE_FILE            0
 #define BE_DEBUG_RUNTIME_INFO           0
 #define BE_DEBUG_VAR_INFO               0
-#define BE_P2_STARTUP_TRACE             1
+#define BE_P2_STARTUP_TRACE             0
 #define BE_USE_PERF_COUNTERS            0
 #define BE_VM_OBSERVABILITY_SAMPLING    18
 

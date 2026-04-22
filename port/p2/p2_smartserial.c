@@ -1,4 +1,8 @@
+#if defined(__CATALINA__)
+#include <serial2.h>
+#else
 #include <propeller2.h>
+#endif
 
 /*
  * P2 Smart Pin Serial Driver
@@ -31,6 +35,11 @@ static int tx_pin = DEFAULT_TX_PIN;
  */
 void p2_smartserial_init(int rxpin, int txpin, int baud)
 {
+#if defined(__CATALINA__)
+    (void)rxpin;
+    (void)txpin;
+    (void)baud;
+#else
     unsigned long bitperiod;
     unsigned long bit_mode;
     
@@ -57,6 +66,7 @@ void p2_smartserial_init(int rxpin, int txpin, int baud)
     
     /* Wait for pins to stabilize */
     _waitms(10);
+#endif
 }
 
 /*
@@ -65,6 +75,9 @@ void p2_smartserial_init(int rxpin, int txpin, int baud)
  */
 void p2_smartserial_tx(int ch)
 {
+#if defined(__CATALINA__)
+    s_tx(0, (char)ch);
+#else
     unsigned long z;
     unsigned long wait_count = 0;
     
@@ -75,6 +88,7 @@ void p2_smartserial_tx(int ch)
         z = _pinr(tx_pin);
         wait_count++;
     } while (z == 0 && wait_count < MAX_WAIT_LOOPS);
+#endif
 }
 
 /*
@@ -83,6 +97,9 @@ void p2_smartserial_tx(int ch)
  */
 int p2_smartserial_rx(void)
 {
+#if defined(__CATALINA__)
+    return s_rx(0);
+#else
     unsigned long z;
     unsigned long wait_count = 0;
     
@@ -95,6 +112,7 @@ int p2_smartserial_rx(void)
     /* Consume the character (upper 8 bits contain the actual byte) */
     z = _rdpin(rx_pin);
     return (z >> 24) & 0xFF;
+#endif
 }
 
 /*
@@ -103,6 +121,9 @@ int p2_smartserial_rx(void)
  */
 int p2_smartserial_rxcheck(void)
 {
+#if defined(__CATALINA__)
+    return s_rxcheck(0);
+#else
     unsigned long z;
     
     z = _pinr(rx_pin);
@@ -111,4 +132,5 @@ int p2_smartserial_rxcheck(void)
         return (z >> 24) & 0xFF;
     }
     return -1;
+#endif
 }

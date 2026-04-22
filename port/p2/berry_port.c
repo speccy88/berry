@@ -4,7 +4,6 @@
 #include "p2_smartserial.h"
 
 #include <propeller2.h>
-#include <sys/ioctl.h>
 #include <string.h>
 
 enum {

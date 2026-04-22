@@ -41,21 +41,16 @@ static void berry_p2_main(void)
     p2_serial_init();
 
     p2_serial_puts("\nBerry on Propeller 2\n");
-    p2_serial_puts("[boot] before vm_new\n");
     vm = be_vm_new();
     if (!vm) {
         p2_serial_puts("error: failed to create VM\n");
         for (;;) {
         }
     }
-    p2_serial_puts("[boot] after vm_new\n");
 
-    p2_serial_puts("[boot] before boot chunk\n");
     run_chunk(vm, "<boot>", "print(\"Berry on P2\")");
-    p2_serial_puts("[boot] after boot chunk\n");
 
     for (;;) {
-        p2_serial_puts("[boot] entering repl\n");
         int res = be_repl(vm, p2_readline, p2_freeline);
         if (res == BE_MALLOC_FAIL) {
             p2_serial_puts("error: REPL ran out of memory\n");

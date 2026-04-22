@@ -30,6 +30,15 @@ NATIVE_TOOLS=(
     proploader
 )
 
+CURL_API_OPTS=(-fsSL)
+CURL_DOWNLOAD_OPTS=(-fL)
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        CURL_API_OPTS+=(--ssl-no-revoke)
+        CURL_DOWNLOAD_OPTS+=(--ssl-no-revoke)
+        ;;
+esac
+
 cleanup() {
     rm -rf "${TMP_DIR}"
 }
@@ -61,11 +70,11 @@ copy_include_from() {
 }
 
 echo "[2/4] Trying FlexProp latest release assets..."
-ZIP_URL="$(curl -fsSL "${RELEASE_API}" | grep -Eo 'https://[^"]*\.zip' | grep -E 'flexprop|FlexProp' | head -n1 || true)"
+ZIP_URL="$(curl "${CURL_API_OPTS[@]}" "${RELEASE_API}" | grep -Eo 'https://[^"]*\.zip' | grep -E 'flexprop|FlexProp' | head -n1 || true)"
 
 if [ -n "${ZIP_URL}" ]; then
     mkdir -p "${TMP_DIR}"
-    curl -fL "${ZIP_URL}" -o "${TMP_DIR}/flexprop.zip"
+    curl "${CURL_DOWNLOAD_OPTS[@]}" "${ZIP_URL}" -o "${TMP_DIR}/flexprop.zip"
     unzip -q "${TMP_DIR}/flexprop.zip" -d "${TMP_DIR}/release"
     if [ -d "${TMP_DIR}/release/flexprop/bin" ]; then
         copy_tools_from "${TMP_DIR}/release/flexprop/bin" || true
@@ -77,8 +86,9 @@ else
     echo "No flexprop.zip release asset found; falling back to source build."
 fi
 
-if [ ! -f "${BIN_DIR}/flexcc.mac" ] || [ ! -f "${BIN_DIR}/loadp2.mac" ]; then
-    echo "[3/4] Release did not provide required macOS tools, building from source..."
+if [ ! -f "${BIN_DIR}/flexcc.mac" ] || [ ! -f "${BIN_DIR}/loadp2.mac" ] || \
+   [ ! -f "${BIN_DIR}/flexcc.exe" ] || [ ! -f "${BIN_DIR}/loadp2.exe" ]; then
+    echo "[3/4] Release did not provide the full host tool set, building native tools from source..."
     git clone --recursive --depth 1 --branch "${FLEXPROP_REF}" "${FLEXPROP_REPO}" "${TMP_DIR}/flexprop-src"
     (
         cd "${TMP_DIR}/flexprop-src"
@@ -95,7 +105,7 @@ if [ ! -f "${BIN_DIR}/flexcc.mac" ] || [ ! -f "${BIN_DIR}/loadp2.mac" ]; then
         fi
     done
 else
-    echo "[3/4] Required macOS tools already populated from release."
+    echo "[3/4] Required macOS and Windows tools already populated from release."
 fi
 
 chmod +x \
@@ -105,9 +115,10 @@ chmod +x \
     "${BIN_DIR}/proploader.mac" \
     "${BIN_DIR}/mac_terminal.sh" 2>/dev/null || true
 
-if [ ! -f "${BIN_DIR}/flexcc.mac" ] || [ ! -f "${BIN_DIR}/loadp2.mac" ]; then
-    echo "ERROR: required tools were not found (need flexcc.mac and loadp2.mac)." >&2
-    echo "Check build logs above and ensure compiler/build deps are installed." >&2
+if [ ! -f "${BIN_DIR}/flexcc.mac" ] || [ ! -f "${BIN_DIR}/loadp2.mac" ] || \
+   [ ! -f "${BIN_DIR}/flexcc.exe" ] || [ ! -f "${BIN_DIR}/loadp2.exe" ]; then
+    echo "ERROR: required tools were not found (need flexcc/loadp2 in both .mac and .exe forms)." >&2
+    echo "Check the release asset layout above and ensure the download completed successfully." >&2
     exit 1
 fi
 if [ ! -f "${INC_DIR}/stddef.h" ]; then

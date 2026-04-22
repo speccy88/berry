@@ -134,6 +134,56 @@ Source of those binaries:
 
 After bootstrap, the P2 build uses the local tool path (`tools/flexprop/bin/flexcc.mac` on macOS/Linux and `tools/flexprop/bin/flexcc.exe` on Windows), together with matching headers in `tools/flexprop/include`.
 
+The tool binary directory and header directory can be overridden independently:
+
+```sh
+make p2 P2_TOOLDIR=bin P2_INCLUDEDIR=tools/flexprop/include
+```
+
+That keeps `P2_TOOLDIR=bin` usable even when the matching headers live elsewhere.
+
+### P2 compiler selection
+
+The P2 build supports two compiler paths:
+
+- `P2_COMPILER=flexc`
+- `P2_COMPILER=catalina`
+
+Default:
+
+```sh
+make p2
+```
+
+Explicit FlexC:
+
+```sh
+make p2 P2_COMPILER=flexc
+make p2-run P2_COMPILER=flexc P2_PORT=COM6
+```
+
+Catalina on Windows:
+
+```sh
+make p2 P2_COMPILER=catalina
+make p2-run P2_COMPILER=catalina P2_PORT=COM6
+```
+
+Catalina uses the repo-local toolchain staged under:
+
+- `tools/catalina/bin`
+- `tools/catalina/include`
+- `tools/catalina/lib`
+- `tools/catalina/target`
+
+Catalina defaults:
+
+- `P2_CATALINA_PLATFORM=P2_EVAL`
+- `P2_CATALINA_CLIB=-lci`
+- `P2_CATALINA_MLIB=-lm`
+
+These can be overridden if a different Catalina P2 platform or library model is needed.
+
 ### Windows PowerShell setup
 
 For the next P2 bring-up session on Windows:
@@ -145,12 +195,12 @@ For the next P2 bring-up session on Windows:
 Important:
 
 - `./tools/p2/fetch-flexprop-tools.sh` is a Bash helper for macOS/Linux bootstrap and is not the recommended setup path from PowerShell
-- PowerShell is fine as the interactive shell, but the Makefile still uses POSIX shell commands internally, so Windows needs a `sh.exe` on `PATH`
+- PowerShell is fine as the interactive shell, and the `p2` / `p2-run` Makefile path now uses Windows-compatible commands when `OS=Windows_NT`
 
 Install these tools on Windows:
 
 - Git for Windows
-  - provides `sh.exe` and the Unix tools that GNU Make uses from PowerShell
+  - useful for normal repo workflow
 - Python 3
   - `py -3` should work from PowerShell
 - GNU Make
