@@ -3,9 +3,10 @@
 #include "berry_port.h"
 
 #include <propeller2.h>
-#include <stdio.h>
 #include <sys/ioctl.h>
 #include <string.h>
+
+extern int _rx(void);
 
 enum {
     BERRY_P2_BAUD = 115200
@@ -35,9 +36,9 @@ static const char *map_prompt(const char *prompt)
 static void serial_write_char(int ch)
 {
     if (ch == '\n') {
-        putchar('\r');
+        _txraw('\r');
     }
-    putchar(ch);
+    _txraw(ch);
 }
 
 void p2_serial_puts(const char *s)
@@ -57,9 +58,9 @@ static char *serial_readline(char *buffer, size_t size)
     }
 
     for (;;) {
-        int ch = getchar();
+        int ch = _rx();
 
-        if (ch == EOF) {
+        if (ch < 0) {
             continue;
         }
 
@@ -145,8 +146,8 @@ size_t be_fread(void *hfile, void *buffer, size_t length)
     (void)hfile;
 
     while (pos < length) {
-        int ch = getchar();
-        if (ch == EOF) {
+        int ch = _rx();
+        if (ch < 0) {
             continue;
         }
         dst[pos++] = (char)ch;
