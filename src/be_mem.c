@@ -12,6 +12,44 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(BE_P2_STARTUP_TRACE) && BE_P2_STARTUP_TRACE
+extern void p2_serial_puts(const char *s);
+#define MEM_TRACE(_msg) p2_serial_puts(_msg)
+#else
+#define MEM_TRACE(_msg) ((void)0)
+#endif
+
+#if defined(BE_P2_SIMPLE_REALLOC) && BE_P2_SIMPLE_REALLOC
+static union {
+    unsigned char raw[BE_P2_BUMP_HEAP_BYTES];
+    uint64_t align;
+} p2_bump_heap;
+static size_t p2_bump_used;
+
+static size_t p2_bump_align(size_t size)
+{
+    return (size + 7u) & ~(size_t)7u;
+}
+
+static void *p2_bump_alloc(size_t size)
+{
+    void *ptr;
+
+    if (size == 0) {
+        return NULL;
+    }
+
+    size = p2_bump_align(size);
+    if (p2_bump_used + size > BE_P2_BUMP_HEAP_BYTES) {
+        return NULL;
+    }
+
+    ptr = p2_bump_heap.raw + p2_bump_used;
+    p2_bump_used += size;
+    return ptr;
+}
+#endif
+
 #define GC_ALLOC    (1 << 2) /* GC in alloc */
 
 #ifdef BE_EXPLICIT_MALLOC
@@ -98,6 +136,42 @@ BERRY_API void* be_os_realloc(void *ptr, size_t size)
 
 BERRY_API void* be_realloc(bvm *vm, void *ptr, size_t old_size, size_t new_size)
 {
+#if defined(BE_P2_SIMPLE_REALLOC) && BE_P2_SIMPLE_REALLOC
+    void *block;
+
+    if (old_size == new_size) {
+        return ptr;
+    }
+
+    if (!ptr || old_size == 0) {
+        MEM_TRACE("[mem] simple-alloc\n");
+        block = p2_bump_alloc(new_size);
+    } else if (new_size == 0) {
+        if (vm) {
+            vm->gc.usage -= old_size;
+        }
+        return NULL;
+    } else {
+        MEM_TRACE("[mem] simple-realloc\n");
+        if (new_size <= old_size) {
+            block = ptr;
+        } else {
+            block = p2_bump_alloc(new_size);
+            if (block) {
+                memmove(block, ptr, old_size);
+            }
+        }
+    }
+
+    if (!block && new_size != 0) {
+        MEM_TRACE("[mem] oom\n");
+        be_throw(vm, BE_MALLOC_FAIL);
+    }
+    if (vm) {
+        vm->gc.usage = vm->gc.usage + new_size - old_size;
+    }
+    return block;
+#else
     void *block = NULL;
     // serial_debug("be_realloc ptr=%p old_size=%i new_size=%i\n", ptr, old_size, new_size);
 
@@ -113,7 +187,9 @@ BERRY_API void* be_realloc(bvm *vm, void *ptr, size_t old_size, size_t new_size)
         vm->counter_mem_alloc++;
 #endif
         if (!ptr || (old_size == 0)) {
+            MEM_TRACE("[mem] alloc\n");
             block = malloc_from_pool(vm, new_size);
+            MEM_TRACE("[mem] alloc-done\n");
         }
 
         /* Case 2: deallocate */
@@ -173,10 +249,13 @@ BERRY_API void* be_realloc(bvm *vm, void *ptr, size_t old_size, size_t new_size)
         vm->gc.status &= ~GC_ALLOC;
         gc_occured = btrue;     /* don't try again GC */
     }
+    MEM_TRACE("[mem] usage\n");
     vm->gc.usage = vm->gc.usage + new_size - old_size; /* update allocated count */
+    MEM_TRACE("[mem] ret\n");
 
     // serial_debug("be_realloc ret=%p\n", block);
     return block;
+#endif
 }
 
 BERRY_API void* be_move_to_aligned(bvm *vm, void *ptr, size_t size) {
@@ -197,6 +276,48 @@ BERRY_API void* be_move_to_aligned(bvm *vm, void *ptr, size_t size) {
 }
 
 /* Special allocator for structures under 32 bytes */
+#if defined(BE_P2_NO_SMALL_POOLS) && BE_P2_NO_SMALL_POOLS
+static void* malloc_from_pool(bvm *vm, size_t size) {
+    (void)vm;
+    if (size == 0) {
+        return NULL;
+    }
+    MEM_TRACE("[mem] direct-alloc\n");
+    return malloc(size);
+}
+
+static void free_from_pool(bvm *vm, void* ptr, size_t old_size) {
+    (void)vm;
+    (void)old_size;
+    if (ptr) {
+        free(ptr);
+    }
+}
+
+BERRY_API void be_gc_memory_pools(bvm *vm) {
+    (void)vm;
+}
+
+BERRY_API void be_gc_init_memory_pools(bvm *vm) {
+    vm->gc.pool16 = NULL;
+    vm->gc.pool32 = NULL;
+}
+
+BERRY_API void be_gc_free_memory_pools(bvm *vm) {
+    vm->gc.pool16 = NULL;
+    vm->gc.pool32 = NULL;
+}
+
+BERRY_API void be_gc_memory_pools_info(bvm *vm, size_t* slots_used, size_t* slots_allocated) {
+    (void)vm;
+    if (slots_used) {
+        *slots_used = 0;
+    }
+    if (slots_allocated) {
+        *slots_allocated = 0;
+    }
+}
+#else
 typedef uint8_t mem16[16];      /* memory line of 16 bytes */
 typedef uint8_t mem32[32];      /* memory line of 32 bytes */
 #define POOL16_SLOTS   31
@@ -237,11 +358,17 @@ static void* malloc_from_pool(bvm *vm, size_t size) {
             pool16 = pool16->next;
         }
         /* no slot available, we allocate a new pool */
+        MEM_TRACE("[mem] new-pool16\n");
         pool16 = (gc16_t*) malloc(sizeof(gc16_t));
+        MEM_TRACE("[mem] new-pool16-done\n");
         if (!pool16) { return NULL; } /* out of memory */
+        MEM_TRACE("[mem] pool16-next\n");
         pool16->next = vm->gc.pool16;
+        MEM_TRACE("[mem] pool16-bitmap\n");
         pool16->bitmap = POOL16_BITMAP_FULL - 1;      /* allocate first line */
+        MEM_TRACE("[mem] pool16-link\n");
         vm->gc.pool16 = pool16;          /* insert at head of linked list */
+        MEM_TRACE("[mem] pool16-ret\n");
         // serial_debug("malloc_from_pool allocated new pool %p, size=%i p=%p\n", pool16, sizeof(gc16_t), &pool16->lines[0]);
         return &pool16->lines[0];
     }
@@ -265,15 +392,22 @@ static void* malloc_from_pool(bvm *vm, size_t size) {
             pool32 = pool32->next;
         }
         /* no slot available, we allocate a new pool */
+        MEM_TRACE("[mem] new-pool32\n");
         pool32 = (gc32_t*) malloc(sizeof(gc32_t));
+        MEM_TRACE("[mem] new-pool32-done\n");
         if (!pool32) { return NULL; } /* out of memory */
+        MEM_TRACE("[mem] pool32-next\n");
         pool32->next = vm->gc.pool32;
+        MEM_TRACE("[mem] pool32-bitmap\n");
         pool32->bitmap = POOL32_BITMAP_FULL - 1;      /* allocate first line */
+        MEM_TRACE("[mem] pool32-link\n");
         vm->gc.pool32 = pool32;          /* insert at head of linked list */
+        MEM_TRACE("[mem] pool32-ret\n");
         // serial_debug("malloc_from_pool allocated new pool %p, size=%i p=%p\n", pool32, sizeof(gc32_t), &pool32->lines[0]);
         return &pool32->lines[0];
     }
 
+    MEM_TRACE("[mem] big-alloc\n");
     return malloc(size);    /* default to system malloc */
 }
 
@@ -388,3 +522,4 @@ BERRY_API void be_gc_memory_pools_info(bvm *vm, size_t* slots_used, size_t* slot
     if (slots_used) { *slots_used = used; }
     if (slots_allocated) { *slots_allocated = allocated; }
 }
+#endif

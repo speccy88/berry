@@ -1,21 +1,21 @@
 #include "berry.h"
 #include "be_sys.h"
 #include "berry_port.h"
+#include "p2_smartserial.h"
 
 #include <propeller2.h>
 #include <sys/ioctl.h>
 #include <string.h>
 
-extern int _rx(void);
-
 enum {
-    BERRY_P2_BAUD = 115200
+    BERRY_P2_BAUD = 115200,
+    BERRY_P2_RX_PIN = 63,
+    BERRY_P2_TX_PIN = 62
 };
 
 void p2_serial_init(void)
 {
-    _setbaud(BERRY_P2_BAUD);
-    _setrxtxflags(TTY_FLAG_ECHO);
+    p2_smartserial_init(BERRY_P2_RX_PIN, BERRY_P2_TX_PIN, BERRY_P2_BAUD);
     _waitms(100);
 }
 
@@ -36,9 +36,9 @@ static const char *map_prompt(const char *prompt)
 static void serial_write_char(int ch)
 {
     if (ch == '\n') {
-        _txraw('\r');
+        p2_smartserial_tx('\r');
     }
-    _txraw(ch);
+    p2_smartserial_tx(ch);
 }
 
 void p2_serial_puts(const char *s)
@@ -58,7 +58,7 @@ static char *serial_readline(char *buffer, size_t size)
     }
 
     for (;;) {
-        int ch = _rx();
+        int ch = p2_smartserial_rx();
 
         if (ch < 0) {
             continue;
@@ -146,7 +146,7 @@ size_t be_fread(void *hfile, void *buffer, size_t length)
     (void)hfile;
 
     while (pos < length) {
-        int ch = _rx();
+        int ch = p2_smartserial_rx();
         if (ch < 0) {
             continue;
         }

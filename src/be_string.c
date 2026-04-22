@@ -11,6 +11,13 @@
 #include "be_constobj.h"
 #include <string.h>
 
+#if defined(BE_P2_STARTUP_TRACE) && BE_P2_STARTUP_TRACE
+extern void p2_serial_puts(const char *s);
+#define STR_TRACE(_msg) p2_serial_puts(_msg)
+#else
+#define STR_TRACE(_msg) ((void)0)
+#endif
+
 #define next(_s)    cast(void*, cast(bstring*, (_s)->next))
 #define sstr(_s)    cast(char*, cast(bsstring*, _s) + 1)
 #define lstr(_s)    cast(char*, cast(blstring*, _s) + 1)
@@ -88,13 +95,17 @@ static void resize(bvm *vm, int size)
     int i;
     struct bstringtable *tab = &vm->strtab;
     if (size > tab->size) {
+        STR_TRACE("[str] grow\n");
         tab->table = be_realloc(vm, tab->table,
             tab->size * sizeof(bstring*), size * sizeof(bstring*));
+        STR_TRACE("[str] grow-done\n");
         for (i = tab->size; i < size; ++i) {
+            STR_TRACE("[str] zero\n");
             tab->table[i] = NULL;
         }
     }
     for (i = 0; i < tab->size; ++i) { /* rehash */
+        STR_TRACE("[str] rehash\n");
         bstring *p = tab->table[i];
         tab->table[i] = NULL;
         while (p) { /* for each node in the list */
@@ -112,6 +123,7 @@ static void resize(bvm *vm, int size)
         tab->table = be_realloc(vm, tab->table,
             tab->size * sizeof(bstring*), size * sizeof(bstring*));
     }
+    STR_TRACE("[str] size-set\n");
     tab->size = size;
 }
 

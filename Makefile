@@ -20,7 +20,7 @@ P2_TOOLDIR  ?= tools/flexprop/bin
 P2_FLEXCC   ?= $(P2_TOOLDIR)/flexcc.mac
 P2_LOADP2   ?= $(P2_TOOLDIR)/loadp2.mac
 P2_PORT     ?=
-P2_LOAD_FLAGS ?= -t
+P2_SILICON  ?= latest
 P2_PORTDIR  = port/p2
 P2_BUILDDIR = build
 P2_OBJDIR   = $(P2_BUILDDIR)/p2obj
@@ -28,7 +28,25 @@ P2_TARGET   = $(P2_BUILDDIR)/berry_p2.binary
 P2_CONFIG   = $(P2_PORTDIR)/berry_conf_p2.h
 P2_COC      = python3 $(COC)
 P2_INCFLAGS = -I"$(P2_PORTDIR)" -I"src"
-P2_CFLAGS   = -2 -O1 --fcache=0
+
+ifeq ($(P2_SILICON),a)
+P2_CODEGEN  = -2a
+P2_LOAD_FLAGS_DEFAULT = -SINGLE -t
+else ifeq ($(P2_SILICON),latest)
+P2_CODEGEN  = -2
+P2_LOAD_FLAGS_DEFAULT = -t
+else ifeq ($(P2_SILICON),b)
+P2_CODEGEN  = -2
+P2_LOAD_FLAGS_DEFAULT = -t
+else ifeq ($(P2_SILICON),c)
+P2_CODEGEN  = -2
+P2_LOAD_FLAGS_DEFAULT = -t
+else
+$(error Unsupported P2_SILICON '$(P2_SILICON)'; use a, b, c, or latest)
+endif
+
+P2_LOAD_FLAGS ?= $(P2_LOAD_FLAGS_DEFAULT)
+P2_CFLAGS   ?= $(P2_CODEGEN) -O1 --fcache=0
 P2_SRCS     = \
 	src/be_api.c \
 	src/be_baselib.c \
@@ -40,14 +58,11 @@ P2_SRCS     = \
 	src/be_gc.c \
 	src/be_lexer.c \
 	src/be_list.c \
-	src/be_listlib.c \
 	src/be_map.c \
-	src/be_maplib.c \
 	src/be_mem.c \
 	src/be_module.c \
 	src/be_object.c \
 	src/be_parser.c \
-	src/be_rangelib.c \
 	src/be_repl.c \
 	src/be_strlib.c \
 	src/be_string.c \
@@ -57,6 +72,8 @@ P2_SRCS     = \
 	$(P2_PORTDIR)/be_libs_p2.c \
 	$(P2_PORTDIR)/be_modtab_p2.c \
 	$(P2_PORTDIR)/berry_port.c \
+	$(P2_PORTDIR)/p2_heap.c \
+	$(P2_PORTDIR)/p2_smartserial.c \
 	$(P2_PORTDIR)/main_p2.c
 P2_OBJS     = $(patsubst %.c,$(P2_OBJDIR)/%.o,$(P2_SRCS))
 
@@ -146,6 +163,11 @@ $(P2_BUILDDIR):
 $(P2_OBJDIR):
 	$(Q) $(MKDIR) $(P2_OBJDIR)
 
+$(P2_OBJDIR)/src/be_mem.o: src/be_mem.c | $(P2_OBJDIR)
+	$(MSG) [P2 CC] $<
+	$(Q) mkdir -p $(dir $@)
+	$(Q) $(P2_FLEXCC) $(P2_CODEGEN) -O0 --fcache=0 $(P2_INCFLAGS) -c $< -o $@
+
 $(P2_OBJDIR)/%.o: %.c | $(P2_OBJDIR)
 	$(MSG) [P2 CC] $<
 	$(Q) mkdir -p $(dir $@)
@@ -153,6 +175,7 @@ $(P2_OBJDIR)/%.o: %.c | $(P2_OBJDIR)
 
 p2: p2_prebuild $(P2_BUILDDIR) $(P2_OBJS)
 	$(MSG) [Build] $(P2_TARGET)
+	$(MSG) "[P2 Silicon] $(P2_SILICON) ($(P2_CODEGEN))"
 	$(Q) $(P2_FLEXCC) $(P2_CFLAGS) -o $(P2_TARGET) $(P2_OBJS)
 	$(MSG) done
 	$(MSG) Link command:

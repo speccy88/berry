@@ -3,6 +3,7 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include "p2_heap.h"
 
 #ifndef BE_DEBUG
 #define BE_DEBUG                        0
@@ -15,11 +16,16 @@
 #define BE_INTGER_TYPE                  1
 #define BE_USE_SINGLE_FLOAT             1
 #define BE_BYTES_MAX_SIZE               (4 * 1024)
-#define BE_USE_PRECOMPILED_OBJECT       0
+#define BE_USE_PRECOMPILED_OBJECT       1
+#define BE_P2_CUSTOM_PRECOMPILED_BUILTINS 1
+#define BE_P2_NO_SMALL_POOLS            1
+#define BE_P2_SIMPLE_REALLOC            1
+#define BE_P2_BUMP_HEAP_BYTES           (16 * 1024)
 
 #define BE_DEBUG_SOURCE_FILE            0
 #define BE_DEBUG_RUNTIME_INFO           0
 #define BE_DEBUG_VAR_INFO               0
+#define BE_P2_STARTUP_TRACE             1
 #define BE_USE_PERF_COUNTERS            0
 #define BE_VM_OBSERVABILITY_SAMPLING    18
 
@@ -56,9 +62,9 @@
 
 #define BE_EXPLICIT_ABORT               abort
 #define BE_EXPLICIT_EXIT                exit
-#define BE_EXPLICIT_MALLOC              malloc
-#define BE_EXPLICIT_FREE                free
-#define BE_EXPLICIT_REALLOC             realloc
+#define BE_EXPLICIT_MALLOC              p2_heap_malloc
+#define BE_EXPLICIT_FREE                p2_heap_free
+#define BE_EXPLICIT_REALLOC             p2_heap_realloc
 
 #define be_assert(expr)                 assert(expr)
 

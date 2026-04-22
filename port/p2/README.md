@@ -25,10 +25,34 @@ Build:
 make p2
 ```
 
+Build for Rev A silicon:
+
+```sh
+make p2 P2_SILICON=a
+```
+
+Build for Rev B/C or current silicon defaults:
+
+```sh
+make p2 P2_SILICON=latest
+```
+
 Run directly (build + load + terminal):
 
 ```sh
 make p2-run P2_PORT=/dev/cu.usbserial-P2EEQZ7
+```
+
+Run on Rev A silicon:
+
+```sh
+make p2-run P2_SILICON=a P2_PORT=/dev/cu.usbserial-P2EEQZ7
+```
+
+Run on newer silicon:
+
+```sh
+make p2-run P2_SILICON=latest P2_PORT=/dev/cu.usbserial-P2EEQZ7
 ```
 
 Shortcut alias:
@@ -42,6 +66,13 @@ Manual load to RAM:
 ```sh
 ./tools/flexprop/bin/loadp2.mac -p /dev/cu.usbserial-P2EEQZ7 build/berry_p2.binary -t
 ```
+
+Notes:
+
+- `P2_SILICON=a` selects FlexC's Rev A code generator (`-2a`).
+- `P2_SILICON=latest`, `b`, and `c` all select the newer code generator (`-2`).
+- Rev A defaults to `P2_LOAD_FLAGS='-SINGLE -t'`; newer silicon defaults to `P2_LOAD_FLAGS='-t'`.
+- You can still override `P2_LOAD_FLAGS` manually for board-specific loader experiments.
 
 Tool bootstrap (this repo is self-contained for tool setup):
 

@@ -141,6 +141,17 @@ make p2
 make p2-run P2_PORT=/dev/cu.usbserial-P2EEQZ7
 ```
 
+To target Propeller 2 Rev A silicon, add `P2_SILICON=a`:
+
+```sh
+make p2 P2_SILICON=a
+make p2-run P2_SILICON=a P2_PORT=/dev/cu.usbserial-P2EEQZ7
+```
+
+For Rev B/C or current silicon, use the default `P2_SILICON=latest` (or set it explicitly).
+
+The P2 loader defaults also follow the silicon target: Rev A uses single-stage loading by default, while newer silicon uses the normal terminal load path.
+
 `make run` is an alias for `make p2-run`.
 
 ## Editor plugins

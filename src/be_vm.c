@@ -24,6 +24,13 @@
 #include <string.h>
 #include <math.h>
 
+#if defined(BE_P2_STARTUP_TRACE) && BE_P2_STARTUP_TRACE
+extern void p2_serial_puts(const char *s);
+#define VM_TRACE(_msg) p2_serial_puts(_msg)
+#else
+#define VM_TRACE(_msg) ((void)0)
+#endif
+
 #define NOT_METHOD          BE_NONE
 
 #define vm_error(vm, except, ...) \
@@ -501,22 +508,30 @@ static void connect_str(bvm *vm, bstring *a, bvalue *b)
 
 BERRY_API bvm* be_vm_new(void)
 {
+    VM_TRACE("[vm] start\n");
     bvm *vm = be_os_malloc(sizeof(bvm));
     be_assert(vm != NULL);
+    VM_TRACE("[vm] alloc\n");
     memset(vm, 0, sizeof(bvm)); /* clear all members */
     be_gc_init(vm);
+    VM_TRACE("[vm] gc\n");
     be_string_init(vm);
+    VM_TRACE("[vm] str\n");
     be_stack_init(vm, &vm->callstack, sizeof(bcallframe));
     be_stack_init(vm, &vm->refstack, sizeof(binstance*));
     be_stack_init(vm, &vm->exceptstack, sizeof(struct bexecptframe));
     be_stack_init(vm, &vm->tracestack, sizeof(bcallsnapshot));
+    VM_TRACE("[vm] stacks\n");
     vm->stack = be_malloc(vm, sizeof(bvalue) * BE_STACK_START);
     vm->stacktop = vm->stack + BE_STACK_START;
     vm->reg = vm->stack;
     vm->top = vm->reg;
+    VM_TRACE("[vm] stackmem\n");
     be_globalvar_init(vm);
+    VM_TRACE("[vm] globals\n");
     be_gc_setpause(vm, 1);
     be_loadlibs(vm);
+    VM_TRACE("[vm] libs\n");
     vm->compopt = 0;
     vm->bytesmaxsize = BE_BYTES_MAX_SIZE;
     vm->obshook = NULL;
