@@ -3,6 +3,7 @@
 #include "berry_port.h"
 
 #include <propeller2.h>
+#include <stdio.h>
 #include <sys/ioctl.h>
 #include <string.h>
 
@@ -34,9 +35,9 @@ static const char *map_prompt(const char *prompt)
 static void serial_write_char(int ch)
 {
     if (ch == '\n') {
-        _txraw('\r');
+        putchar('\r');
     }
-    _txraw(ch);
+    putchar(ch);
 }
 
 void p2_serial_puts(const char *s)
@@ -56,7 +57,11 @@ static char *serial_readline(char *buffer, size_t size)
     }
 
     for (;;) {
-        int ch = _rxraw(0);
+        int ch = getchar();
+
+        if (ch == EOF) {
+            continue;
+        }
 
         if (ch == '\r' || ch == '\n') {
             serial_write_char('\n');
@@ -140,7 +145,10 @@ size_t be_fread(void *hfile, void *buffer, size_t length)
     (void)hfile;
 
     while (pos < length) {
-        int ch = _rxraw(0);
+        int ch = getchar();
+        if (ch == EOF) {
+            continue;
+        }
         dst[pos++] = (char)ch;
         if (ch == '\r') {
             dst[pos - 1] = '\n';
