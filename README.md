@@ -1,294 +1,121 @@
 <p align="center">
-  <h1 align="center">
-    <img src="https://gitee.com/mirrors/Berry/raw/master/berry-logo.png" alt="Berry" width=272 height=128>
-  </h1>
-  <p align="center">The Berry Script Language.</p>
+  <h1 align="center">Berry with Propeller 2 Port</h1>
+  <p align="center">Berry remains the main project here, with the Propeller 2 port isolated for maintainable upstream sync.</p>
 </p>
 
-## Introduction
+## Overview
 
-Berry is a ultra-lightweight dynamically typed embedded scripting language. It is designed for lower-performance embedded devices. The Berry interpreter-core's code size is less than 40KiB and can run on less than 4KiB heap (on ARM Cortex M4 CPU, Thumb ISA and ARMCC compiler).
+This repository stays clone-first for users who want Berry plus the Propeller 2 port.
 
-The interpreter of Berry include a one-pass compiler and register-based VM, all the code is written in ANSI C99. In Berry not every type is a class object. Some simple value types, such as int, real, boolean and string are not class object, but list, map and range are class object. This is a consideration about performance. 
-Register-based VM is the same meaning as above.
+- Upstream Berry source layout stays largely intact under `src/`, `default/`, `modules/`, `examples/`, and `tests/`.
+- Propeller 2 runtime code, overrides, probes, and status notes now live under `port/p2/`.
+- P2 build logic lives under `mk/`.
+- Tool bootstrap and loader helpers live under `tools/p2/`.
+- Downloaded toolchains belong in `.third_party_cache/` or in user-provided paths, not in git.
 
-Berry has the following advantages:
+The long-term maintenance rule is simple: keep the fork easy to use, while keeping Berry upstream merges manageable.
 
-* Lightweight: A well-optimized interpreter with very little resources. Ideal for use in microprocessors.
-* Fast: optimized one-pass bytecode compiler and register-based virtual machine.
-* Powerful: supports imperative programming, object-oriented programming, functional programming.
-* Flexible: Berry is a dynamic type script, and it's intended for embedding in applications. It can provide good dynamic scalability for the host system.
-* Simple: simple and natural syntax, support garbage collection, and easy to use FFI (foreign function interface).
-* RAM saving: With compile-time object construction, most of the constant objects are stored in read-only code data segments, so the RAM usage of the interpreter is very low when it starts.
+## Quick Start
 
-## Documents
-
-Reference Manual: [Read the docs](https://berry.readthedocs.io/)
-
-Short Manual: [berry_short_manual.pdf](https://github.com/berry-lang/berry_doc/blob/master/pdf/berry_short_manual.pdf).
-
-Berry's EBNF grammar definition: [tools/grammar/berry.ebnf](./tools/grammar/berry.ebnf)
-
-## Features
-
-* Base Type
-  * Nil: `nil`
-  * Boolean: `true` and `false`
-  * Numerical: Integer (`int`) and Real (`real`)
-  * String: Single quotation-mark string and double quotation-mark string
-  * Class: Instance template, read only
-  * Instance: Object constructed by class
-  * Module: Read-write key-value pair table
-  * List: Ordered container, like `[1, 2, 3]`
-  * Map: Hash Map container, like `{ 'a': 1, 2: 3, 'map': {} }`
-  * Range: include a lower and a upper integer value, like `0..5`
-* Operator and Expression
-  * Assign operator: `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`
-  * Relational operator: `<`, `<=`, `==`, `!=`, `>`, `>=`
-  * Logic operator: `&&`, `||`, `!`
-  * Arithmetic operator: `+`, `-`, `*`, `/`, `%`
-  * Bitwise operator: `&`, `|`, `~`, `^`, `<<`, `>>`
-  * Field operator: `.`
-  * Subscript operator: `[]`
-  * Connect string operator: `+`
-  * Conditional operator: `? :`
-  * Brackets: `()`
-* Control Structure
-  * Conditional statement: `if-else`
-  * Iteration statement: `while` and `for`
-  * Jump statement: `break` and `continue`
-* Function
-  * Local variable and block scope
-  * Return statement
-  * Nested functions definition
-  * Closure based on Upvalue
-  * Anonymous function
-  * Lambda expression
-* Class
-  * Inheritance (only public single inheritance)
-  * Method and Operator Overload
-  * Constructor method
-  * Destructive method
-* Module Management
-  * Built-in module that takes almost no RAM
-  * Extension module support: script module, bytecode file module and shared library (like *.so, *.dll) module
-* GC (Garbage collection)
-  * Mark-Sweep GC
-* Exceptional Handling
-  * Throw any exception value using the `raise` statement
-  * Multiple catch mode
-* Bytecode file support
-  * Export function to bytecode file
-  * Load the bytecode file and execute
-
-## Build and Run
-
-1. Install the readline library (Windows does not need):
-
-   ``` bash
-   sudo apt install libreadline-dev # Ubuntu
-   brew install readline            # MacOS
-   ```
-
-2. Build (The default compiler is GCC):
-
-   ```
-   make
-   ```
-
-3. Run:
-
-   ``` bash
-   ./berry # Bash or PowerShell
-   berry   # Windows CMD
-   ```
-
-4. Install (Only Unix-like):
-
-   ``` bash
-    make install
-    ```
-
-## Propeller 2 port in this fork (WIP)
-
-This fork is actively porting Berry to Propeller 2 via FlexProp/FlexC.
-
-**What we are trying to achieve exactly**
-1. Build a P2 Berry image from this repo.
-2. Load and run it on hardware.
-3. Get a reliable interactive Berry REPL on serial.
-
-The P2-specific sources live in `port/p2/`.
-
-### P2 toolchain bootstrap from this repo
-
-To avoid depending on a separately managed FlexProp checkout, this repo includes
-a bootstrap script that fetches the required FlexProp host binaries into `./bin`:
+Standard Berry host build:
 
 ```sh
-./tools/p2/fetch-flexprop-tools.sh
+make
+./berry
 ```
 
-Source of those binaries:
-- https://github.com/totalspectrum/flexprop
-
-After bootstrap, the P2 build uses the local tool path (`tools/flexprop/bin/flexcc.mac` on macOS/Linux and `tools/flexprop/bin/flexcc.exe` on Windows), together with matching headers in `tools/flexprop/include`.
-
-The tool binary directory and header directory can be overridden independently:
+P2 build with FlexC:
 
 ```sh
-make p2 P2_TOOLDIR=bin P2_INCLUDEDIR=tools/flexprop/include
+make p2 TOOLCHAIN=flexc
+make p2-run TOOLCHAIN=flexc PORT=/dev/ttyUSB0
 ```
 
-That keeps `P2_TOOLDIR=bin` usable even when the matching headers live elsewhere.
-
-### P2 compiler selection
-
-The P2 build supports two compiler paths:
-
-- `P2_COMPILER=flexc`
-- `P2_COMPILER=catalina`
-
-Default:
+P2 build with Catalina:
 
 ```sh
-make p2
+make p2 TOOLCHAIN=catalina
+make p2-run TOOLCHAIN=catalina PORT=COM5
 ```
 
-Explicit FlexC:
-
-```sh
-make p2 P2_COMPILER=flexc
-make p2-run P2_COMPILER=flexc P2_PORT=COM6
-```
-
-Catalina on Windows:
-
-```sh
-make p2 P2_COMPILER=catalina
-make p2-run P2_COMPILER=catalina P2_PORT=COM6
-```
-
-Catalina uses the repo-local toolchain staged under:
-
-- `tools/catalina/bin`
-- `tools/catalina/include`
-- `tools/catalina/lib`
-- `tools/catalina/target`
-
-Catalina defaults:
-
-- `P2_CATALINA_PLATFORM=P2_EVAL`
-- `P2_CATALINA_CLIB=-lci`
-- `P2_CATALINA_MLIB=-lm`
-
-These can be overridden if a different Catalina P2 platform or library model is needed.
-
-### Windows PowerShell setup
-
-For the next P2 bring-up session on Windows:
-
-- use B/C or current silicon with `P2_SILICON=latest`
-- use `P2_PORT=COM6`
-- run commands from PowerShell
-
-Important:
-
-- `./tools/p2/fetch-flexprop-tools.sh` is a Bash helper for macOS/Linux bootstrap and is not the recommended setup path from PowerShell
-- PowerShell is fine as the interactive shell, and the `p2` / `p2-run` Makefile path now uses Windows-compatible commands when `OS=Windows_NT`
-
-Install these tools on Windows:
-
-- Git for Windows
-  - useful for normal repo workflow
-- Python 3
-  - `py -3` should work from PowerShell
-- GNU Make
-  - `make` should be available from PowerShell
-
-FlexProp tool files expected by this repo on Windows:
-
-- `tools/flexprop/bin/flexcc.exe`
-- `tools/flexprop/bin/flexspin.exe`
-- `tools/flexprop/bin/loadp2.exe`
-- `tools/flexprop/bin/proploader.exe`
-- matching headers under `tools/flexprop/include`
-
-If those files are missing, download the Windows FlexProp release assets and copy the `.exe` tools plus the matching `include/` tree into `tools/flexprop/`.
-
-### Build and load (P2)
-
-```sh
-make p2
-make p2-run P2_PORT=/dev/cu.usbserial-P2EEQZ7
-```
-
-To target Propeller 2 Rev A silicon, add `P2_SILICON=a`:
-
-```sh
-make p2 P2_SILICON=a
-make p2-run P2_SILICON=a P2_PORT=/dev/cu.usbserial-P2EEQZ7
-```
-
-For Rev B/C or current silicon, use the default `P2_SILICON=latest` (or set it explicitly).
-
-The P2 loader defaults also follow the silicon target: Rev A uses single-stage loading by default, while newer silicon uses the normal terminal load path.
-
-`make run` is an alias for `make p2-run`.
-
-Windows PowerShell example for the next session:
+Windows PowerShell example:
 
 ```powershell
-make p2-run P2_SILICON=latest P2_PORT=COM6
+make p2 TOOLCHAIN=flexc
+make p2-run TOOLCHAIN=flexc PORT=COM6
 ```
 
-## Editor plugins
+## P2 Toolchain Model
 
-[Visual Studio Code](https://code.visualstudio.com/) plugin are in this directory: [./tools/plugins/vscode](./tools/plugins/vscode).
+Two P2 compiler flows are supported:
 
-## Examples
+- `TOOLCHAIN=flexc`
+- `TOOLCHAIN=catalina`
 
-After compiling successfully, use the `berry` command with no parameters to enter the REPL environment:
-```
-Berry 0.0.1 (build in Dec 24 2018, 18:12:49)
-[GCC 8.2.0] on Linux (default)
->
-```
+Path overrides:
 
-Now enter this code:
-
-``` lua
-print("Hello world!")
+```sh
+make p2 TOOLCHAIN=flexc FLEXPROP_DIR=/opt/flexprop
+make p2 TOOLCHAIN=catalina CATALINA_DIR=/opt/catalina
+make p2-run TOOLCHAIN=flexc LOADP2=/opt/flexprop/bin/loadp2 PORT=/dev/ttyUSB0
 ```
 
-You will see this output:
+Local managed caches are supported and ignored by git:
 
-```
-Hello world!
-```
+- `.third_party_cache/flexprop/`
+- `.third_party_cache/catalina/`
 
-You can copy this code to the REPL:
+## P2 Silicon Selection
 
-``` ruby
-def fib(x)
-    if x <= 1
-        return x
-    end
-    return fib(x - 1) + fib(x - 2)
-end
-fib(10)
-```
+The P2 build keeps explicit silicon selection:
 
-This example code will output the result `55` and you can save the above code to a plain text file (eg test.be) and run this command:
+- `P2_SILICON=latest` uses `-2`
+- `P2_SILICON=b` uses `-2`
+- `P2_SILICON=c` uses `-2`
+- `P2_SILICON=a` uses `-2a`
 
-``` bash
-./berry test.be
+Examples:
+
+```sh
+make p2 TOOLCHAIN=flexc P2_SILICON=latest
+make p2-run TOOLCHAIN=flexc P2_SILICON=a PORT=COM6
 ```
 
-This will also get the correct output.
+## Repository Layout
 
-## License
+The main P2 areas are:
 
-Berry is free software distributed under the [MIT license](./LICENSE).
+- [`mk/`](./mk)
+- [`port/p2/`](./port/p2)
+- [`tools/p2/`](./tools/p2)
+- [`docs/P2_BUILD.md`](./docs/P2_BUILD.md)
+- [`docs/P2_LAYOUT.md`](./docs/P2_LAYOUT.md)
+- [`docs/UPSTREAM_SYNC.md`](./docs/UPSTREAM_SYNC.md)
 
-The Berry interpreter partly referred to [Lua](http://www.lua.org/)'s design. View Lua's license here: http://www.lua.org/license.html.
+## Berry
+
+Berry is an ultra-lightweight dynamically typed embedded scripting language designed for constrained systems. The interpreter core is ANSI C99 and uses a one-pass compiler plus a register-based VM.
+
+Reference material:
+
+- [Berry documentation](https://berry.readthedocs.io/)
+- [Short manual PDF](https://github.com/berry-lang/berry_doc/blob/master/pdf/berry_short_manual.pdf)
+- [`tools/grammar/berry.ebnf`](./tools/grammar/berry.ebnf)
+
+## Host Build
+
+Host build requirements are unchanged:
+
+1. Install a C compiler.
+2. Install `readline` on Unix-like hosts if desired.
+3. Run:
+
+```sh
+make
+```
+
+## Notes
+
+- The repo no longer vendors full P2 toolchain distributions.
+- `build/` is output-only.
+- Optional P2 workaround files that shadow upstream Berry sources now live under `port/p2/patches/optional/` and are documented as maintenance exceptions, not normal source layout.

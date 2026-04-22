@@ -1,28 +1,32 @@
-# Prerequisites
+# Dependencies and generated headers
 *.d
+generate/*
+!generate/.gitkeep
 
-# Object files
+# Build outputs
+build/*
+!build/.gitkeep
+!build/p2/
+build/p2/*
+!build/p2/.gitkeep
+*.binary
+*.bin
+*.p2asm
+*.lst
+
+# Object and linker outputs
 *.o
-*.ko
 *.obj
 *.elf
-
-# Linker output
 *.ilk
 *.map
 *.exp
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Libraries
 *.lib
 *.a
 *.la
 *.lo
 
-# Shared objects (inc. Windows DLLs)
+# Shared libraries
 *.dll
 *.so
 *.so.*
@@ -38,49 +42,39 @@
 /berry
 *.bec
 
-# Debug files
+# Debug and coverage files
 *.dSYM/
 *.su
 *.idb
 *.pdb
 .gdb_history
-
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
-
-# Test files
 *.gcda
 *.gcno
 *.info
 test_report/
 
-# Ctags
-tags
+# Tool caches and downloaded toolchains
+.third_party_cache/
+tools/flexprop/
+tools/catalina/
+bin/
 
-# other
+# Editors and local temp files
+tags
 *.out.*
 *.user
 .vscode
-.DS_Store
-generate/
-temp/
 .idea
-__pycache__
+.DS_Store
+temp/
+__pycache__/
+.cache
+cmake-build-*
 .cproject
 .project
 .settings/
+.github/copilot-instructions.md
+
+# Documentation build outputs
 docs/build/html/
 docs/_doxygen/xml/
-build/
-cmake-build-*
-.cache
-
-# Local FlexProp tool bootstrap artifacts
-/tools/flexprop/bin/
-/tools/flexprop/include/

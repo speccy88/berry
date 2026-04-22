@@ -1,2 +1,0 @@
-#include <smartpin.h>
-

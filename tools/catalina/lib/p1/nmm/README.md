@@ -1,1 +1,0 @@
-This file exists only so that Git knows to create the directory when the repository is cloned or downloaded. Git normally ignores empty directories, but we need this directory to exist when Catalina is installed.
