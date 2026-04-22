@@ -132,13 +132,13 @@ a bootstrap script that fetches the required FlexProp host binaries into `./bin`
 Source of those binaries:
 - https://github.com/totalspectrum/flexprop
 
-After bootstrap, the P2 build uses the local tool path (`bin/flexcc.mac` by default).
+After bootstrap, the P2 build uses the local tool path (`tools/flexprop/bin/flexcc.mac` by default), together with matching headers in `tools/flexprop/include`.
 
 ### Build and load (P2)
 
 ```sh
 make p2
-./bin/loadp2.mac -p /dev/cu.usbserial-P2EEQZ7 build/berry_p2.binary -t
+./tools/flexprop/bin/loadp2.mac -p /dev/cu.usbserial-P2EEQZ7 build/berry_p2.binary -t
 ```
 
 ## Editor plugins

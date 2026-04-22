@@ -28,7 +28,7 @@ make p2
 Load to RAM:
 
 ```sh
-./bin/loadp2.mac -p /dev/cu.usbserial-P2EEQZ7 build/berry_p2.binary -t
+./tools/flexprop/bin/loadp2.mac -p /dev/cu.usbserial-P2EEQZ7 build/berry_p2.binary -t
 ```
 
 Tool bootstrap (this repo is self-contained for tool setup):
