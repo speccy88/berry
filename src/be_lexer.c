@@ -18,7 +18,6 @@
 #define SHORT_STR_LEN       32
 #define EOS                 '\0' /* end of source */
 
-#define type_count()        (int)array_count(token_strings)
 #define lexbuf(lex)         ((lex)->buf.s)
 #define isvalid(lex)        ((lex)->reader.cursor < (lex)->endbuf)
 #define lgetc(lex)          ((lex)->reader.cursor)
@@ -44,6 +43,8 @@ static const char* const token_strings[] = {
     ":=",
 };
 
+enum { TOKEN_STRING_COUNT = KeyStatic + 1 };
+
 void be_lexerror(blexer *lexer, const char *msg)
 {
     bvm *vm = lexer->vm;
@@ -56,7 +57,7 @@ void be_lexerror(blexer *lexer, const char *msg)
 static void keyword_registe(bvm *vm)
 {
     int i;
-    for (i = KeyIf; i < type_count(); ++i) {
+    for (i = KeyIf; i < TOKEN_STRING_COUNT; ++i) {
         bstring *s = be_newstr(vm, token_strings[i]);
         be_gc_fix(vm, gc_object(s));
         be_str_setextra(s, i);
@@ -66,7 +67,7 @@ static void keyword_registe(bvm *vm)
 static void keyword_unregiste(bvm *vm)
 {
     int i;
-    for (i = KeyIf; i < type_count(); ++i) {
+    for (i = KeyIf; i < TOKEN_STRING_COUNT; ++i) {
         bstring *s = be_newstr(vm, token_strings[i]);
         be_gc_unfix(vm, gc_object(s));
     }
@@ -80,7 +81,8 @@ static bstring* cache_string(blexer *lexer, bstring *s)
     be_stackpush(vm); /* cache string to stack */
     res = be_map_findstr(lexer->vm, lexer->strtab, s);
     if (res) {
-        s = var_tostr(&be_map_val2node(res)->key);
+        bmapnode *node = be_map_val2node(res);
+        s = var_tostr(&node->key);
     } else {
         res = be_map_insertstr(vm, lexer->strtab, s, NULL);
         var_setnil(res);
@@ -648,7 +650,7 @@ static btokentype scan_identifier(blexer *lexer)
     }
     s = buf_tostr(lexer);
     type = str_extra(s);
-    if (type >= KeyIf && type < type_count()) {
+    if (type >= KeyIf && type < TOKEN_STRING_COUNT) {
         lexer->token.type = (btokentype)type;
         return lexer->token.type;
     }

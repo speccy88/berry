@@ -16,6 +16,46 @@ CONFIG      = default/berry_conf.h
 COC         = tools/coc/coc
 CONST_TAB   = $(GENERATE)/be_const_strtab.h
 
+P2_FLEXCC   = ../bin/flexcc.mac
+P2_PORTDIR  = port/p2
+P2_BUILDDIR = build
+P2_OBJDIR   = $(P2_BUILDDIR)/p2obj
+P2_TARGET   = $(P2_BUILDDIR)/berry_p2.binary
+P2_CONFIG   = $(P2_PORTDIR)/berry_conf_p2.h
+P2_COC      = python3 $(COC)
+P2_INCFLAGS = -I"$(P2_PORTDIR)" -I"src"
+P2_CFLAGS   = -2 -O1 --fcache=0
+P2_SRCS     = \
+	src/be_api.c \
+	src/be_baselib.c \
+	src/be_class.c \
+	src/be_code.c \
+	src/be_debug.c \
+	src/be_exec.c \
+	src/be_func.c \
+	src/be_gc.c \
+	src/be_lexer.c \
+	src/be_list.c \
+	src/be_listlib.c \
+	src/be_map.c \
+	src/be_maplib.c \
+	src/be_mem.c \
+	src/be_module.c \
+	src/be_object.c \
+	src/be_parser.c \
+	src/be_rangelib.c \
+	src/be_repl.c \
+	src/be_strlib.c \
+	src/be_string.c \
+	src/be_var.c \
+	src/be_vector.c \
+	src/be_vm.c \
+	$(P2_PORTDIR)/be_libs_p2.c \
+	$(P2_PORTDIR)/be_modtab_p2.c \
+	$(P2_PORTDIR)/berry_port.c \
+	$(P2_PORTDIR)/main_p2.c
+P2_OBJS     = $(patsubst %.c,$(P2_OBJDIR)/%.o,$(P2_SRCS))
+
 ifeq ($(OS), Windows_NT) # Windows
     CFLAGS    += -Wno-format # for "%I64d" warning
     LFLAGS    += -Wl,--out-implib,berry.lib # export symbols lib for dll linked
@@ -44,6 +84,7 @@ DEPS     = $(patsubst %.c, %.d, $(SRCS))
 INCFLAGS = $(foreach dir, $(INCPATH), -I"$(dir)")
 
 .PHONY : clean
+.PHONY : p2_prebuild p2
 
 all: $(TARGET)
 
@@ -90,7 +131,31 @@ prebuild: $(GENERATE)
 	$(Q) $(COC) -o $(GENERATE) $(SRCPATH) -c $(CONFIG)
 	$(MSG) done
 
+p2_prebuild: $(GENERATE)
+	$(MSG) [Prebuild] generate P2 resources
+	$(Q) $(P2_COC) -o $(GENERATE) src $(P2_PORTDIR) -c $(P2_CONFIG)
+	$(MSG) done
+
+$(P2_BUILDDIR):
+	$(Q) $(MKDIR) $(P2_BUILDDIR)
+
+$(P2_OBJDIR):
+	$(Q) $(MKDIR) $(P2_OBJDIR)
+
+$(P2_OBJDIR)/%.o: %.c | $(P2_OBJDIR)
+	$(MSG) [P2 CC] $<
+	$(Q) mkdir -p $(dir $@)
+	$(Q) $(P2_FLEXCC) $(P2_CFLAGS) $(P2_INCFLAGS) -c $< -o $@
+
+p2: p2_prebuild $(P2_BUILDDIR) $(P2_OBJS)
+	$(MSG) [Build] $(P2_TARGET)
+	$(Q) $(P2_FLEXCC) $(P2_CFLAGS) -o $(P2_TARGET) $(P2_OBJS)
+	$(MSG) done
+	$(MSG) Link command:
+	$(MSG) "  $(P2_FLEXCC) $(P2_CFLAGS) -o $(P2_TARGET) $(P2_OBJS)"
+
 clean:
 	$(MSG) [Clean...]
-	$(Q) $(RM) $(OBJS) $(DEPS) $(GENERATE)/* berry.lib
+	$(Q) $(RM) $(OBJS) $(DEPS) $(GENERATE)/* berry.lib $(P2_TARGET)
+	$(Q) $(RM) -r $(P2_OBJDIR)
 	$(MSG) done

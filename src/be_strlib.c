@@ -640,8 +640,6 @@ BERRY_API const char* be_toescape(bvm *vm, int index, int mode)
     return be_tostring(vm, index);
 }
 
-#if BE_USE_STRING_MODULE
-
 #define MAX_FORMAT_MODE     32
 #define FLAGES              "+- #0"
 
@@ -952,7 +950,8 @@ static int str_i2hex(bvm *vm)
     int top = be_top(vm);
     if (top && be_isint(vm, 1)) {
         bint value = be_toint(vm, 1);
-        char fmt[10] = { "%" BE_INT_FMTLEN "X" }, buf[18];
+        char fmt[10], buf[18];
+        strcpy(fmt, "%" BE_INT_FMTLEN "X");
         if (top >= 2 && be_isint(vm, 2)) {
             bint num = be_toint(vm, 2);
             if (num > 0 && num <= 16) {
@@ -1141,7 +1140,7 @@ static int str_endswith(bvm *vm)
     be_return_nil(vm);
 }
 
-#if !BE_USE_PRECOMPILED_OBJECT
+#if BE_USE_STRING_MODULE && !BE_USE_PRECOMPILED_OBJECT
 be_native_module_attr_table(string) {
     be_native_module_function("format", be_str_format),
     be_native_module_function("count", str_count),
@@ -1160,7 +1159,7 @@ be_native_module_attr_table(string) {
 };
 
 be_define_native_module(string, NULL);
-#else
+#elif BE_USE_STRING_MODULE
 /* @const_object_info_begin
 module string (scope: global, depend: BE_USE_STRING_MODULE) {
     format, func(be_str_format)
@@ -1181,5 +1180,3 @@ module string (scope: global, depend: BE_USE_STRING_MODULE) {
 @const_object_info_end */
 #include "../generate/be_fixed_string.h"
 #endif
-
-#endif /* BE_USE_STRING_MODULE */

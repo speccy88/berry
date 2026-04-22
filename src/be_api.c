@@ -389,7 +389,8 @@ BERRY_API void* be_pushbuffer(bvm *vm, size_t size)
 BERRY_API void be_pushvalue(bvm *vm, int index)
 {
     bvalue *reg = vm->top;
-    var_setval(reg, be_indexof(vm, index));
+    bvalue *src = be_indexof(vm, index);
+    *reg = *src;
     be_incrtop(vm);
 }
 
@@ -600,7 +601,8 @@ BERRY_API bbool be_getglobal(bvm *vm, const char *name)
     int idx = be_global_find(vm, be_newstr(vm, name));
     bvalue *top = be_incrtop(vm);
     if (idx >= 0) {
-        *top = *be_global_var(vm, idx);
+        bvalue *src = be_global_var(vm, idx);
+        *top = *src;
         return btrue;
     }
     var_setnil(top);
@@ -615,7 +617,10 @@ BERRY_API void be_setglobal(bvm *vm, const char *name)
     var_setstr(v, s);
     idx = be_global_new(vm, s);
     v = be_global_var(vm, idx);
-    *v = *be_indexof(vm, -2);
+    {
+        bvalue *src = be_indexof(vm, -2);
+        *v = *src;
+    }
     be_stackpop(vm, 1);
 }
 
@@ -624,7 +629,8 @@ BERRY_API bbool be_getbuiltin(bvm *vm, const char *name)
     int idx = be_builtin_find(vm, be_newstr(vm, name));
     bvalue *top = be_incrtop(vm);
     if (idx > -1) {
-        *top = *be_global_var(vm, idx);
+        bvalue *src = be_global_var(vm, idx);
+        *top = *src;
         return btrue;
     }
     var_setnil(top);

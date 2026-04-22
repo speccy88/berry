@@ -686,7 +686,10 @@ typedef int (*bctypefunc)(bvm*, const void*); /**< bctypefunc */
  * @brief be_writestring
  *
  */
-#define be_writestring(s)       be_writebuffer((s), strlen(s))
+#ifndef BE_WRITE_CSTRLEN
+#define BE_WRITE_CSTRLEN(s)     strlen(s)
+#endif
+#define be_writestring(s)       be_writebuffer((s), BE_WRITE_CSTRLEN(s))
 
 /**
  * @def be_writenewline

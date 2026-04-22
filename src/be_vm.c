@@ -308,7 +308,7 @@ bbool be_value2bool(bvm *vm, bvalue *v)
     case BE_INT:
         return val2bool(v->v.i);
     case BE_REAL:
-        return val2bool(v->v.r);
+        return v->v.r != (breal)0.0;
     case BE_STRING:
         return str_len(var_tostr(v)) != 0;
     case BE_COMPTR:
@@ -455,7 +455,8 @@ static void make_range(bvm *vm, bvalue lower, bvalue upper)
     /* get method 'item' (possible GC) */
     int idx = be_builtin_find(vm, str_literal(vm, "range"));
     bvalue *top = vm->top;
-    top[0] = *be_global_var(vm, idx);
+    bvalue *range_ctor = be_global_var(vm, idx);
+    top[0] = *range_ctor;
     top[1] = lower; /* move lower to argv[0] */
     top[2] = upper; /* move upper to argv[1] */
     vm->top += 3; /* prevent collection results */
@@ -598,7 +599,8 @@ newframe: /* a new call frame */
         opcase(GETGBL): {
             bvalue *v = RA();
             int idx = IGET_Bx(ins);
-            *v = *be_global_var(vm, idx);
+            bvalue *src = be_global_var(vm, idx);
+            *v = *src;
             dispatch();
         }
         opcase(GETNGBL): {  /* get Global by name */
@@ -611,7 +613,8 @@ newframe: /* a new call frame */
                 bstring *name = var_tostr(b);
                 int idx = be_global_find(vm, name);
                 if (idx >= 0) {
-                    *v = *be_global_var(vm, idx);
+                    bvalue *src = be_global_var(vm, idx);
+                    *v = *src;
                 } else {
                     vm_error(vm, "attribute_error", "'%s' undeclared", str(name));
                 }
