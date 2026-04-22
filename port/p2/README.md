@@ -25,7 +25,19 @@ Build:
 make p2
 ```
 
-Load to RAM:
+Run directly (build + load + terminal):
+
+```sh
+make p2-run P2_PORT=/dev/cu.usbserial-P2EEQZ7
+```
+
+Shortcut alias:
+
+```sh
+make run P2_PORT=/dev/cu.usbserial-P2EEQZ7
+```
+
+Manual load to RAM:
 
 ```sh
 ./tools/flexprop/bin/loadp2.mac -p /dev/cu.usbserial-P2EEQZ7 build/berry_p2.binary -t

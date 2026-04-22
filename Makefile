@@ -18,6 +18,9 @@ CONST_TAB   = $(GENERATE)/be_const_strtab.h
 
 P2_TOOLDIR  ?= tools/flexprop/bin
 P2_FLEXCC   ?= $(P2_TOOLDIR)/flexcc.mac
+P2_LOADP2   ?= $(P2_TOOLDIR)/loadp2.mac
+P2_PORT     ?=
+P2_LOAD_FLAGS ?= -t
 P2_PORTDIR  = port/p2
 P2_BUILDDIR = build
 P2_OBJDIR   = $(P2_BUILDDIR)/p2obj
@@ -85,7 +88,7 @@ DEPS     = $(patsubst %.c, %.d, $(SRCS))
 INCFLAGS = $(foreach dir, $(INCPATH), -I"$(dir)")
 
 .PHONY : clean
-.PHONY : p2_prebuild p2
+.PHONY : p2_prebuild p2 p2-tools p2-run run
 
 all: $(TARGET)
 
@@ -154,6 +157,21 @@ p2: p2_prebuild $(P2_BUILDDIR) $(P2_OBJS)
 	$(MSG) done
 	$(MSG) Link command:
 	$(MSG) "  $(P2_FLEXCC) $(P2_CFLAGS) -o $(P2_TARGET) $(P2_OBJS)"
+
+p2-tools:
+	$(MSG) [Tools] bootstrap FlexProp toolchain
+	$(Q) ./tools/p2/fetch-flexprop-tools.sh
+
+p2-run: p2
+	@if [ -z "$(P2_PORT)" ]; then \
+		echo "error: P2_PORT is not set"; \
+		echo "usage: make p2-run P2_PORT=/dev/cu.usbserial-XXXX"; \
+		exit 1; \
+	fi
+	$(MSG) [Load] $(P2_TARGET) -> $(P2_PORT)
+	$(Q) $(P2_LOADP2) -p $(P2_PORT) $(P2_TARGET) $(P2_LOAD_FLAGS)
+
+run: p2-run
 
 clean:
 	$(MSG) [Clean...]

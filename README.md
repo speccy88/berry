@@ -138,8 +138,10 @@ After bootstrap, the P2 build uses the local tool path (`tools/flexprop/bin/flex
 
 ```sh
 make p2
-./tools/flexprop/bin/loadp2.mac -p /dev/cu.usbserial-P2EEQZ7 build/berry_p2.binary -t
+make p2-run P2_PORT=/dev/cu.usbserial-P2EEQZ7
 ```
+
+`make run` is an alias for `make p2-run`.
 
 ## Editor plugins
 
