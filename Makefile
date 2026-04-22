@@ -16,7 +16,8 @@ CONFIG      = default/berry_conf.h
 COC         = tools/coc/coc
 CONST_TAB   = $(GENERATE)/be_const_strtab.h
 
-P2_FLEXCC   = ../bin/flexcc.mac
+P2_TOOLDIR  ?= bin
+P2_FLEXCC   ?= $(P2_TOOLDIR)/flexcc.mac
 P2_PORTDIR  = port/p2
 P2_BUILDDIR = build
 P2_OBJDIR   = $(P2_BUILDDIR)/p2obj

@@ -106,8 +106,40 @@ Berry's EBNF grammar definition: [tools/grammar/berry.ebnf](./tools/grammar/berr
 4. Install (Only Unix-like):
 
    ``` bash
-   make install
-   ```
+    make install
+    ```
+
+## Propeller 2 port in this fork (WIP)
+
+This fork is actively porting Berry to Propeller 2 via FlexProp/FlexC.
+
+**What we are trying to achieve exactly**
+1. Build a P2 Berry image from this repo.
+2. Load and run it on hardware.
+3. Get a reliable interactive Berry REPL on serial.
+
+The P2-specific sources live in `port/p2/`.
+
+### P2 toolchain bootstrap from this repo
+
+To avoid depending on a separately managed FlexProp checkout, this repo includes
+a bootstrap script that fetches the required FlexProp host binaries into `./bin`:
+
+```sh
+./tools/p2/fetch-flexprop-tools.sh
+```
+
+Source of those binaries:
+- https://github.com/totalspectrum/flexprop
+
+After bootstrap, the P2 build uses the local tool path (`bin/flexcc.mac` by default).
+
+### Build and load (P2)
+
+```sh
+make p2
+./bin/loadp2.mac -p /dev/cu.usbserial-P2EEQZ7 build/berry_p2.binary -t
+```
 
 ## Editor plugins
 

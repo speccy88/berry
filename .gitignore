@@ -80,3 +80,10 @@ docs/_doxygen/xml/
 build/
 cmake-build-*
 .cache
+
+# Local FlexProp tool bootstrap artifacts
+/bin/flexcc.mac
+/bin/flexspin.mac
+/bin/loadp2.mac
+/bin/proploader.mac
+/bin/mac_terminal.sh
