@@ -17,8 +17,6 @@ COC         = tools/coc/coc
 CONST_TAB   = $(GENERATE)/be_const_strtab.h
 
 P2_TOOLDIR  ?= tools/flexprop/bin
-P2_FLEXCC   ?= $(P2_TOOLDIR)/flexcc.mac
-P2_LOADP2   ?= $(P2_TOOLDIR)/loadp2.mac
 P2_PORT     ?=
 P2_SILICON  ?= latest
 P2_PORTDIR  = port/p2
@@ -26,7 +24,6 @@ P2_BUILDDIR = build
 P2_OBJDIR   = $(P2_BUILDDIR)/p2obj
 P2_TARGET   = $(P2_BUILDDIR)/berry_p2.binary
 P2_CONFIG   = $(P2_PORTDIR)/berry_conf_p2.h
-P2_COC      = python3 $(COC)
 P2_INCFLAGS = -I"$(P2_PORTDIR)" -I"src"
 
 ifeq ($(P2_SILICON),a)
@@ -81,9 +78,13 @@ ifeq ($(OS), Windows_NT) # Windows
     CFLAGS    += -Wno-format # for "%I64d" warning
     LFLAGS    += -Wl,--out-implib,berry.lib # export symbols lib for dll linked
     TARGET    := $(TARGET).exe
-    PYTHON    ?= python # only for windows and need python3
-    COC       := $(PYTHON) $(COC)
+    PYTHON    ?= py -3
+    P2_FLEXCC ?= $(P2_TOOLDIR)/flexcc.exe
+    P2_LOADP2 ?= $(P2_TOOLDIR)/loadp2.exe
 else
+    PYTHON    ?= python3
+    P2_FLEXCC ?= $(P2_TOOLDIR)/flexcc.mac
+    P2_LOADP2 ?= $(P2_TOOLDIR)/loadp2.mac
     CFLAGS    += -DUSE_READLINE_LIB
     LIBS      += -lreadline -ldl
     OS        := $(shell uname)
@@ -91,6 +92,8 @@ else
         LFLAGS += -Wl,--export-dynamic
     endif
 endif
+
+P2_COC      = $(PYTHON) $(COC)
 
 ifneq ($(V), 1)
     Q=@
@@ -181,14 +184,27 @@ p2: p2_prebuild $(P2_BUILDDIR) $(P2_OBJS)
 	$(MSG) Link command:
 	$(MSG) "  $(P2_FLEXCC) $(P2_CFLAGS) -o $(P2_TARGET) $(P2_OBJS)"
 
+ifeq ($(OS), Windows_NT)
+p2-tools:
+	$(MSG) [Tools] Windows PowerShell bootstrap is manual; see README.md
+	@if [ ! -f "$(P2_TOOLDIR)/flexcc.exe" ] || [ ! -f "$(P2_TOOLDIR)/loadp2.exe" ]; then \
+		echo "error: missing Windows FlexProp tools in $(P2_TOOLDIR)"; \
+		echo "see README.md for the Windows setup steps"; \
+		exit 1; \
+	fi
+else
 p2-tools:
 	$(MSG) [Tools] bootstrap FlexProp toolchain
 	$(Q) ./tools/p2/fetch-flexprop-tools.sh
+endif
 
 p2-run: p2
 	@if [ -z "$(P2_PORT)" ]; then \
 		echo "error: P2_PORT is not set"; \
-		echo "usage: make p2-run P2_PORT=/dev/cu.usbserial-XXXX"; \
+		echo "usage: make p2-run P2_PORT=<serial-port>"; \
+		echo "examples:"; \
+		echo "  make p2-run P2_PORT=/dev/cu.usbserial-XXXX"; \
+		echo "  make p2-run P2_PORT=COM6"; \
 		exit 1; \
 	fi
 	$(MSG) [Load] $(P2_TARGET) -> $(P2_PORT)

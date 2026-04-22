@@ -132,7 +132,39 @@ a bootstrap script that fetches the required FlexProp host binaries into `./bin`
 Source of those binaries:
 - https://github.com/totalspectrum/flexprop
 
-After bootstrap, the P2 build uses the local tool path (`tools/flexprop/bin/flexcc.mac` by default), together with matching headers in `tools/flexprop/include`.
+After bootstrap, the P2 build uses the local tool path (`tools/flexprop/bin/flexcc.mac` on macOS/Linux and `tools/flexprop/bin/flexcc.exe` on Windows), together with matching headers in `tools/flexprop/include`.
+
+### Windows PowerShell setup
+
+For the next P2 bring-up session on Windows:
+
+- use B/C or current silicon with `P2_SILICON=latest`
+- use `P2_PORT=COM6`
+- run commands from PowerShell
+
+Important:
+
+- `./tools/p2/fetch-flexprop-tools.sh` is a Bash helper for macOS/Linux bootstrap and is not the recommended setup path from PowerShell
+- PowerShell is fine as the interactive shell, but the Makefile still uses POSIX shell commands internally, so Windows needs a `sh.exe` on `PATH`
+
+Install these tools on Windows:
+
+- Git for Windows
+  - provides `sh.exe` and the Unix tools that GNU Make uses from PowerShell
+- Python 3
+  - `py -3` should work from PowerShell
+- GNU Make
+  - `make` should be available from PowerShell
+
+FlexProp tool files expected by this repo on Windows:
+
+- `tools/flexprop/bin/flexcc.exe`
+- `tools/flexprop/bin/flexspin.exe`
+- `tools/flexprop/bin/loadp2.exe`
+- `tools/flexprop/bin/proploader.exe`
+- matching headers under `tools/flexprop/include`
+
+If those files are missing, download the Windows FlexProp release assets and copy the `.exe` tools plus the matching `include/` tree into `tools/flexprop/`.
 
 ### Build and load (P2)
 
@@ -153,6 +185,12 @@ For Rev B/C or current silicon, use the default `P2_SILICON=latest` (or set it e
 The P2 loader defaults also follow the silicon target: Rev A uses single-stage loading by default, while newer silicon uses the normal terminal load path.
 
 `make run` is an alias for `make p2-run`.
+
+Windows PowerShell example for the next session:
+
+```powershell
+make p2-run P2_SILICON=latest P2_PORT=COM6
+```
 
 ## Editor plugins
 
