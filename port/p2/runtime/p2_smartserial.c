@@ -100,7 +100,7 @@ void p2_smartserial_tx(int ch)
 int p2_smartserial_rx(void)
 {
 #if defined(__CATALINA__)
-    return getchar();
+    return k_wait();
 #else
     unsigned long z;
     unsigned long wait_count = 0;
@@ -125,7 +125,7 @@ int p2_smartserial_rxcheck(void)
 {
 #if defined(__CATALINA__)
     if (k_ready()) {
-        return getchar();
+        return k_get();
     }
     return -1;
 #else

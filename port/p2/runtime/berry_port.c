@@ -382,11 +382,7 @@ static char *serial_readline(char *buffer, size_t size)
 
         if (ch == '\r' || ch == '\n') {
             p2_swallow_newline = (ch == '\r') ? '\n' : '\r';
-#if defined(__CATALINA__)
-            p2_prompt_needs_cr = 1;
-#else
             serial_write_char('\n');
-#endif
             break;
         }
 
