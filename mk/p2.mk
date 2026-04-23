@@ -13,14 +13,11 @@ P2_OBJDIR := $(P2_BUILD_DIR)/obj
 P2_BUILD_INFO_HEADER := $(P2_BUILD_DIR)/p2_build_info.h
 P2_BUILD_INFO_LOG := $(P2_BUILD_DIR)/p2_build.log
 P2_BUILD_INFO_SCRIPT := scripts/gen-p2-build-info.py
+P2_BUILD_CONFIG_STAMP := $(P2_BUILD_DIR)/p2_build_config.stamp
 P2_CONFIG := $(P2_INCLUDE_DIR)/berry_conf_p2.h
 P2_INCFLAGS := -I"$(P2_BUILD_DIR)" -I"$(P2_INCLUDE_DIR)" -I"src" -I"default"
 P2_COC_RUN := $(PYTHON) $(COC)
-P2_FLASH_FLAGS ?= -FLASH
-P2_FLASHLOADER_URL ?= https://raw.githubusercontent.com/totalspectrum/loadp2/master/board/P2ES_flashloader.spin2
-P2_FLASHLOADER_SRC := $(P2_BUILD_DIR)/P2ES_flashloader.spin2
-P2_FLASHLOADER_BIN := $(P2_BUILD_DIR)/P2ES_flashloader.binary
-P2_FLASH_FILESPEC = @0=$(P2_FLASHLOADER_BIN),@8000+$(P2_IMAGE)
+P2_FLASH_FLAGS ?= -SPI
 P2_CATALINA_DOCKER_SCRIPT := scripts/build-p2-catalina-docker.sh
 P2_CONFIG_TOOLCHAIN ?= $(TOOLCHAIN)
 P2_CONFIG_PORT ?= $(PORT)
@@ -209,22 +206,28 @@ endif
 $(P2_BUILD_DIR):
 	$(Q) $(call MKDIR_P,$@)
 
-$(P2_FLASHLOADER_SRC): | $(P2_BUILD_DIR)
-ifeq ($(HOST_OS),windows)
-	$(Q) $(PWSH) -Command "Invoke-WebRequest -UseBasicParsing '$(P2_FLASHLOADER_URL)' -OutFile '$(P2_FLASHLOADER_SRC)'"
-else
-	$(Q) curl -L --fail -o "$(P2_FLASHLOADER_SRC)" "$(P2_FLASHLOADER_URL)"
-endif
-
-$(P2_FLASHLOADER_BIN): $(P2_FLASHLOADER_SRC)
-	$(MSG) [Build] $(P2_FLASHLOADER_BIN)
-	$(Q) "$(FLEXSPIN)" -2 -b -o "$(P2_FLASHLOADER_BIN)" "$(P2_FLASHLOADER_SRC)"
-
 $(P2_BUILD_INFO_HEADER): $(P2_BUILD_INFO_SCRIPT) | $(P2_BUILD_DIR)
 	$(Q) "$(PYTHON)" "$(P2_BUILD_INFO_SCRIPT)" --log "$(P2_BUILD_INFO_LOG)" --binary "$(P2_IMAGE)" --header "$@"
 
 $(P2_OBJDIR):
 	$(Q) $(call MKDIR_P,$@)
+
+FORCE:
+
+$(P2_BUILD_CONFIG_STAMP): FORCE | $(P2_BUILD_DIR)
+	$(Q) { \
+		echo "TOOLCHAIN=$(TOOLCHAIN)"; \
+		echo "P2_SILICON=$(P2_SILICON)"; \
+		echo "P2_CODEGEN=$(P2_CODEGEN)"; \
+		echo "CATALINA_PLATFORM=$(CATALINA_PLATFORM)"; \
+		echo "CATALINA_MODEL=$(CATALINA_MODEL)"; \
+		echo "CATALINA_CLIB=$(CATALINA_CLIB)"; \
+		echo "CATALINA_SERIAL_LIB=$(CATALINA_SERIAL_LIB)"; \
+		echo "CATALINA_MLIB=$(CATALINA_MLIB)"; \
+		echo "CATALINA_CONFIG_FLAGS=$(CATALINA_CONFIG_FLAGS)"; \
+		echo "P2_CFLAGS=$(P2_CFLAGS)"; \
+	} > "$@.tmp"
+	$(Q) if ! cmp -s "$@.tmp" "$@"; then mv "$@.tmp" "$@"; else rm -f "$@.tmp"; fi
 
 $(P2_OBJDIR)/%.o: %.c | $(P2_OBJDIR)
 	$(MSG) [P2 CC] $<
@@ -256,13 +259,14 @@ p2-catalina-host: $(P2_BUILD_DIR) $(P2_BUILD_INFO_HEADER)
 	$(MSG) done
 
 ifeq ($(CATALINA_USE_DOCKER),1)
-$(P2_IMAGE): $(P2_SRCS) $(P2_PREBUILD_DEPS) $(P2_CATALINA_DOCKER_SCRIPT) $(P2_BUILD_INFO_SCRIPT) | $(P2_BUILD_DIR) p2-tools p2-prebuild
+$(P2_IMAGE): $(P2_SRCS) $(P2_PREBUILD_DEPS) $(P2_CATALINA_DOCKER_SCRIPT) $(P2_BUILD_INFO_SCRIPT) $(P2_BUILD_CONFIG_STAMP) | $(P2_BUILD_DIR) p2-tools p2-prebuild
 	$(Q) CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" \
 		CATALINA_PLATFORM="$(CATALINA_PLATFORM)" CATALINA_MODEL="$(CATALINA_MODEL)" \
 		CATALINA_CLIB="$(CATALINA_CLIB)" CATALINA_SERIAL_LIB="$(CATALINA_SERIAL_LIB)" CATALINA_MLIB="$(CATALINA_MLIB)" \
+		CATALINA_CONFIG_FLAGS="$(CATALINA_CONFIG_FLAGS)" \
 		bash "$(P2_CATALINA_DOCKER_SCRIPT)" p2-catalina-host
 else
-$(P2_IMAGE): $(P2_SRCS) $(P2_PREBUILD_DEPS) $(P2_BUILD_INFO_SCRIPT) | $(P2_BUILD_DIR) p2-tools p2-prebuild
+$(P2_IMAGE): $(P2_SRCS) $(P2_PREBUILD_DEPS) $(P2_BUILD_INFO_SCRIPT) $(P2_BUILD_CONFIG_STAMP) | $(P2_BUILD_DIR) p2-tools p2-prebuild
 	$(Q) $(MAKE) p2-catalina-host TOOLCHAIN=$(TOOLCHAIN) CATALINA_DIR=$(CATALINA_DIR) FLEXPROP_DIR=$(FLEXPROP_DIR) CATALINA_PLATFORM="$(CATALINA_PLATFORM)" CATALINA_MODEL="$(CATALINA_MODEL)"
 endif
 p2: $(P2_IMAGE)
@@ -271,6 +275,13 @@ p2: p2-tools p2-prebuild $(P2_BUILD_DIR) $(P2_OBJS)
 	$(MSG) [Build] $(P2_IMAGE)
 	$(MSG) "[P2 Silicon] $(P2_SILICON) ($(P2_CODEGEN))"
 	$(Q) "$(FLEXCC)" $(P2_CFLAGS) -o "$(P2_IMAGE)" $(P2_OBJS)
+	$(MSG) done
+endif
+
+ifeq ($(TOOLCHAIN),catalina)
+$(P2_CATALINA_FLASH_IMAGE): $(P2_IMAGE) tools/p2/loader/build-catalina-flash-image.sh | $(P2_BUILD_DIR)
+	$(MSG) [Flash Image] $(P2_CATALINA_FLASH_IMAGE)
+	$(Q) bash tools/p2/loader/build-catalina-flash-image.sh "$(CATALINA_DIR)" "$(P2_IMAGE)" "$(P2_CATALINA_FLASH_IMAGE)" "$(P2_BUILD_DIR)/flash"
 	$(MSG) done
 endif
 
@@ -325,31 +336,60 @@ else
 	fi
 endif
 
-p2-flash: p2 $(P2_FLASHLOADER_BIN)
+ifeq ($(TOOLCHAIN),catalina)
+p2-flash: $(P2_CATALINA_FLASH_IMAGE)
 ifeq ($(HOST_OS),windows)
-	$(Q) $(PWSH) tools/p2/loader/run-loadp2.ps1 -Loadp2 "$(LOADP2)" -Port "$(PORT)" -Baud "$(P2_BAUD)" -Flags "" -Image "$(P2_FLASH_FILESPEC)"
+	$(Q) $(PWSH) tools/p2/loader/run-loadp2.ps1 -Loadp2 "$(LOADP2)" -Port "$(PORT)" -Baud "$(P2_BAUD)" -Flags "-t" -Image "$(P2_CATALINA_FLASH_IMAGE)"
 else
 	@if [ -z "$(PORT)" ]; then \
 		echo "error: PORT is not set"; \
 		echo "usage: make p2-flash TOOLCHAIN=$(TOOLCHAIN) PORT=/dev/ttyUSB0"; \
 		exit 1; \
 	fi
-	$(Q) bash tools/p2/loader/run-loadp2.sh "$(LOADP2)" "$(PORT)" "$(P2_BAUD)" "" "$(P2_FLASH_FILESPEC)" "$(PYTHON)"
+	$(Q) "$(PYTHON)" tools/p2/loader/catalina_flash_program.py --loadp2 "$(LOADP2)" --port "$(PORT)" --baud "$(P2_BAUD)" --image "$(P2_CATALINA_FLASH_IMAGE)"
+endif
+else
+p2-flash: p2
+ifeq ($(HOST_OS),windows)
+	$(Q) $(PWSH) tools/p2/loader/run-loadp2.ps1 -Loadp2 "$(LOADP2)" -Port "$(PORT)" -Baud "$(P2_BAUD)" -Flags "$(P2_FLASH_FLAGS)" -Image "$(P2_IMAGE)"
+else
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-flash TOOLCHAIN=$(TOOLCHAIN) PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) bash tools/p2/loader/run-loadp2.sh "$(LOADP2)" "$(PORT)" "$(P2_BAUD)" "$(P2_FLASH_FLAGS)" "$(P2_IMAGE)" "$(PYTHON)"
+endif
 endif
 	$(MSG) "[Flash] For P2 Edge dev boot-from-flash use boot DIP: FLASH=ON, △=OFF, ▽=OFF"
 	$(MSG) "[Flash] For P2 Edge fast flash-only boot use boot DIP: FLASH=ON, △=OFF, ▽=ON"
+	$(MSG) "[Flash] If the image does not appear after serial reset, power-cycle the board before attaching."
 	$(MSG) "[Flash] Attach with: tio -b $(P2_BAUD) $(PORT)"
 
-p2-flash-run: p2 $(P2_FLASHLOADER_BIN)
+ifeq ($(TOOLCHAIN),catalina)
+p2-flash-run: $(P2_CATALINA_FLASH_IMAGE)
 ifeq ($(HOST_OS),windows)
-	$(Q) $(PWSH) tools/p2/loader/run-loadp2.ps1 -Loadp2 "$(LOADP2)" -Port "$(PORT)" -Baud "$(P2_BAUD)" -Flags "-t" -Image "$(P2_FLASH_FILESPEC)"
+	$(Q) $(PWSH) tools/p2/loader/run-loadp2.ps1 -Loadp2 "$(LOADP2)" -Port "$(PORT)" -Baud "$(P2_BAUD)" -Flags "-t" -Image "$(P2_CATALINA_FLASH_IMAGE)"
 else
 	@if [ -z "$(PORT)" ]; then \
 		echo "error: PORT is not set"; \
 		echo "usage: make p2-flash-run TOOLCHAIN=$(TOOLCHAIN) PORT=/dev/ttyUSB0"; \
 		exit 1; \
 	fi
-	$(Q) bash tools/p2/loader/run-loadp2.sh "$(LOADP2)" "$(PORT)" "$(P2_BAUD)" "-t" "$(P2_FLASH_FILESPEC)" "$(PYTHON)"
+	$(Q) bash tools/p2/loader/run-loadp2.sh "$(LOADP2)" "$(PORT)" "$(P2_BAUD)" "-t" "$(P2_CATALINA_FLASH_IMAGE)" "$(PYTHON)"
+endif
+else
+p2-flash-run: p2
+ifeq ($(HOST_OS),windows)
+	$(Q) $(PWSH) tools/p2/loader/run-loadp2.ps1 -Loadp2 "$(LOADP2)" -Port "$(PORT)" -Baud "$(P2_BAUD)" -Flags "$(P2_FLASH_FLAGS) -t" -Image "$(P2_IMAGE)"
+else
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-flash-run TOOLCHAIN=$(TOOLCHAIN) PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) bash tools/p2/loader/run-loadp2.sh "$(LOADP2)" "$(PORT)" "$(P2_BAUD)" "$(P2_FLASH_FLAGS) -t" "$(P2_IMAGE)" "$(PYTHON)"
+endif
 endif
 
 p2-serial-probe-host:

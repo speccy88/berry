@@ -38,6 +38,16 @@ make p2 TOOLCHAIN=catalina
 make p2-run TOOLCHAIN=catalina PORT=COM5
 ```
 
+P2 Edge flash install with Catalina:
+
+```sh
+make configure TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT
+make p2-flash
+tio -b 230400 /dev/cu.usbserial-P97cvdxp
+```
+
+For the verified P2 Edge Rev D path, use boot switches `FLASH=ON, △=OFF, ▽=OFF`. Catalina flash uses a generated `flshload.t` programmer image; do not flash `build/p2/catalina/berry_p2.binary` directly with `loadp2 -SPI`.
+
 Windows PowerShell example:
 
 ```powershell

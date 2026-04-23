@@ -45,5 +45,9 @@ Bootstrap expectations:
 
 - `tools/p2/loader/run-loadp2.sh`
 - `tools/p2/loader/run-loadp2.ps1`
+- `tools/p2/loader/build-catalina-flash-image.sh`
+- `tools/p2/loader/catalina_flash_program.py`
 
 These wrapper scripts keep `make p2-run` simpler and keep loader handling out of the root build logic.
+
+For Catalina `make p2-flash`, the loader flow is intentionally different from FlexC: the build first wraps `berry_p2.binary` with Catalina's `target/p2/flshload.t` flash programmer, then loads that temporary programmer with `loadp2 -t`. This is required for reliable P2 Edge boot-from-flash behavior.

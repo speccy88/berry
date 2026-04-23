@@ -89,13 +89,15 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 - flash programming on the current macOS path is now verified with:
   - `make p2-flash`
   - `make p2-flash-run`
-  - the current working path uses the upstream `P2ES_flashloader` CHIP-mode boot-flash programmer rather than `loadp2 -FLASH -SINGLE`
-  - the flash programmer output is live-verified on hardware
+  - Catalina flash uses Catalina's `flshload.t` wrapper, generated as `build/p2/catalina/berry_p2_flash_loader.binary`
+  - `make p2-flash` loads the wrapper to RAM and waits until the flashed Berry image reboots to `berry>`
+  - direct `loadp2 -SPI build/p2/catalina/berry_p2.binary` is not the Catalina path and should not be used for Berry
 - P2 Edge flash boot details to preserve:
   - for development with serial attach after reset, use `FLASH=ON, △=OFF, ▽=OFF`
   - for flash-only fast boot, use `FLASH=ON, △=OFF, ▽=ON`
   - Catalina `P2_EDGE` serial uses `230400` right now, so regular terminals must connect at that baud
   - `make p2-attach` now opens a serial terminal without doing a RAM download
+- flash boot was verified after reset with `print(6*7)` -> `42` and map lookup/math `m={"a":2,"b":5}; print(m["a"]+m["b"])` -> `7`
 
 Current machine focus to preserve:
 
@@ -109,7 +111,6 @@ Known limitation:
 
 - not every standard library module has been re-verified interactively yet on the cached-runtime-module path; `string` and `math` are verified, and the rest still need a focused pass
 - `prop2_cog_start_c()` now builds but still needs a focused Berry FFI validation pass on hardware
-- a later cold boot banner from the new `p2-flash` path was not re-captured in this unattended session, so flash programming is verified but regular post-reset attach still needs one more confirmation pass with the board switch state in hand
 - `../tests/fs_probe.c` is intentionally destructive and mutates the SD card; keep it for Catalina DOSFS debugging only
 
 ## Relevant Files
