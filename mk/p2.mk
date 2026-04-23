@@ -16,7 +16,11 @@ P2_BUILD_INFO_SCRIPT := scripts/gen-p2-build-info.py
 P2_CONFIG := $(P2_INCLUDE_DIR)/berry_conf_p2.h
 P2_INCFLAGS := -I"$(P2_BUILD_DIR)" -I"$(P2_INCLUDE_DIR)" -I"src" -I"default"
 P2_COC_RUN := $(PYTHON) $(COC)
-P2_FLASH_FLAGS ?= -FLASH -SINGLE
+P2_FLASH_FLAGS ?= -FLASH
+P2_FLASHLOADER_URL ?= https://raw.githubusercontent.com/totalspectrum/loadp2/master/board/P2ES_flashloader.spin2
+P2_FLASHLOADER_SRC := $(P2_BUILD_DIR)/P2ES_flashloader.spin2
+P2_FLASHLOADER_BIN := $(P2_BUILD_DIR)/P2ES_flashloader.binary
+P2_FLASH_FILESPEC = @0=$(P2_FLASHLOADER_BIN),@8000+$(P2_IMAGE)
 P2_CATALINA_DOCKER_SCRIPT := scripts/build-p2-catalina-docker.sh
 P2_CONFIG_TOOLCHAIN ?= $(TOOLCHAIN)
 P2_CONFIG_PORT ?= $(PORT)
@@ -149,7 +153,7 @@ P2_SERIAL_PROBE_SRCS := $(P2_TEST_DIR)/serial_probe.c $(P2_RUNTIME_DIR)/berry_po
 P2_SERIAL_PROBE := $(P2_BUILD_DIR)/serial_probe.binary
 P2_PREBUILD_DEPS := $(COC) $(P2_CONFIG) scripts/prebuild-p2.sh scripts/prebuild-p2.ps1
 
-.PHONY: p2 p2-catalina-host p2-run p2-ram p2-flash p2-attach p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run run configure configure-reset show-config
+.PHONY: p2 p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run run configure configure-reset show-config
 
 configure:
 	$(MSG) [Configure] $(P2_LOCAL_CONFIG)
@@ -204,6 +208,17 @@ endif
 
 $(P2_BUILD_DIR):
 	$(Q) $(call MKDIR_P,$@)
+
+$(P2_FLASHLOADER_SRC): | $(P2_BUILD_DIR)
+ifeq ($(HOST_OS),windows)
+	$(Q) $(PWSH) -Command "Invoke-WebRequest -UseBasicParsing '$(P2_FLASHLOADER_URL)' -OutFile '$(P2_FLASHLOADER_SRC)'"
+else
+	$(Q) curl -L --fail -o "$(P2_FLASHLOADER_SRC)" "$(P2_FLASHLOADER_URL)"
+endif
+
+$(P2_FLASHLOADER_BIN): $(P2_FLASHLOADER_SRC)
+	$(MSG) [Build] $(P2_FLASHLOADER_BIN)
+	$(Q) "$(FLEXSPIN)" -2 -b -o "$(P2_FLASHLOADER_BIN)" "$(P2_FLASHLOADER_SRC)"
 
 $(P2_BUILD_INFO_HEADER): $(P2_BUILD_INFO_SCRIPT) | $(P2_BUILD_DIR)
 	$(Q) "$(PYTHON)" "$(P2_BUILD_INFO_SCRIPT)" --log "$(P2_BUILD_INFO_LOG)" --binary "$(P2_IMAGE)" --header "$@"
@@ -297,7 +312,7 @@ else
 		for pid in $$PIDS; do \
 			cmd="$$(ps -p "$$pid" -o command= 2>/dev/null || true)"; \
 			case "$$cmd" in \
-				*loadp2*" $(PORT) "*|*loadp2*"$(PORT)"*|*serial_terminal.py*" $(PORT) "*|*serial_terminal.py*"$(PORT)"*) \
+				*loadp2*" $(PORT) "*|*loadp2*"$(PORT)"*|*proploader*" $(PORT) "*|*proploader*"$(PORT)"*|*serial_terminal.py*" $(PORT) "*|*serial_terminal.py*"$(PORT)"*|*tio*" $(PORT) "*|*tio*"$(PORT)"*) \
 					echo "[Loader] stopping stale terminal on $(PORT) (pid $$pid)"; \
 					kill -CONT "$$pid" 2>/dev/null || true; \
 					kill "$$pid" 2>/dev/null || true; \
@@ -310,19 +325,32 @@ else
 	fi
 endif
 
-p2-flash: p2
+p2-flash: p2 $(P2_FLASHLOADER_BIN)
 ifeq ($(HOST_OS),windows)
-	$(Q) $(PWSH) tools/p2/loader/run-loadp2.ps1 -Loadp2 "$(LOADP2)" -Port "$(PORT)" -Baud "$(P2_BAUD)" -Flags "$(P2_FLASH_FLAGS)" -Image "$(P2_IMAGE)"
+	$(Q) $(PWSH) tools/p2/loader/run-loadp2.ps1 -Loadp2 "$(LOADP2)" -Port "$(PORT)" -Baud "$(P2_BAUD)" -Flags "" -Image "$(P2_FLASH_FILESPEC)"
 else
 	@if [ -z "$(PORT)" ]; then \
 		echo "error: PORT is not set"; \
 		echo "usage: make p2-flash TOOLCHAIN=$(TOOLCHAIN) PORT=/dev/ttyUSB0"; \
 		exit 1; \
 	fi
-	$(Q) bash tools/p2/loader/run-loadp2.sh "$(LOADP2)" "$(PORT)" "$(P2_BAUD)" "$(P2_FLASH_FLAGS)" "$(P2_IMAGE)" "$(PYTHON)"
+	$(Q) bash tools/p2/loader/run-loadp2.sh "$(LOADP2)" "$(PORT)" "$(P2_BAUD)" "" "$(P2_FLASH_FILESPEC)" "$(PYTHON)"
 endif
-	$(MSG) "[Flash] For P2 Edge boot-from-flash use boot DIP: FLASH=ON, △=OFF, ▽=ON"
+	$(MSG) "[Flash] For P2 Edge dev boot-from-flash use boot DIP: FLASH=ON, △=OFF, ▽=OFF"
+	$(MSG) "[Flash] For P2 Edge fast flash-only boot use boot DIP: FLASH=ON, △=OFF, ▽=ON"
 	$(MSG) "[Flash] Attach with: tio -b $(P2_BAUD) $(PORT)"
+
+p2-flash-run: p2 $(P2_FLASHLOADER_BIN)
+ifeq ($(HOST_OS),windows)
+	$(Q) $(PWSH) tools/p2/loader/run-loadp2.ps1 -Loadp2 "$(LOADP2)" -Port "$(PORT)" -Baud "$(P2_BAUD)" -Flags "-t" -Image "$(P2_FLASH_FILESPEC)"
+else
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-flash-run TOOLCHAIN=$(TOOLCHAIN) PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) bash tools/p2/loader/run-loadp2.sh "$(LOADP2)" "$(PORT)" "$(P2_BAUD)" "-t" "$(P2_FLASH_FILESPEC)" "$(PYTHON)"
+endif
 
 p2-serial-probe-host:
 	$(Q) CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" \

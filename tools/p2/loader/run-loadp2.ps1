@@ -8,14 +8,21 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if (-not (Test-Path $Image)) {
+if (-not $Image.StartsWith("@") -and -not (Test-Path $Image)) {
     throw "Missing image: $Image"
 }
 
 $stale = Get-CimInstance Win32_Process |
-    Where-Object { $_.Name -match 'loadp2' -and $_.CommandLine -match [regex]::Escape($Port) }
+    Where-Object {
+        $_.CommandLine -match [regex]::Escape($Port) -and (
+            $_.Name -match 'loadp2' -or
+            $_.Name -match 'proploader' -or
+            $_.Name -match 'tio' -or
+            $_.CommandLine -match 'serial_terminal.py'
+        )
+    }
 foreach ($proc in $stale) {
-    Write-Host "[Loader] stopping stale loadp2 on $Port (pid $($proc.ProcessId))"
+    Write-Host "[Loader] stopping stale terminal on $Port (pid $($proc.ProcessId))"
     Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
 }
 

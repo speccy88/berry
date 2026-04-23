@@ -510,6 +510,25 @@ extern int m_counter_wait_ticks(bvm *vm);
 extern int m_counter_sleep_us(bvm *vm);
 extern int m_counter_sleep_ms(bvm *vm);
 extern int m_counter_sleep(bvm *vm);
+extern int m_cog_start_c(bvm *vm);
+extern int m_cog_start_pasm(bvm *vm);
+extern int m_cog_start_hex(bvm *vm);
+extern int m_cog_stop(bvm *vm);
+extern int m_cog_check(bvm *vm);
+extern int m_cog_id(bvm *vm);
+extern int m_cog_states(bvm *vm);
+extern int m_cog_stack_bytes(bvm *vm);
+extern int m_lock_new(bvm *vm);
+extern int m_lock_return(bvm *vm);
+extern int m_lock_try(bvm *vm);
+extern int m_lock_release(bvm *vm);
+extern int m_lock_check(bvm *vm);
+extern int m_attention_signal(bvm *vm);
+extern int m_attention_poll(bvm *vm);
+extern int m_attention_wait(bvm *vm);
+extern int m_cordic_rotxy(bvm *vm);
+extern int m_cordic_xypol(bvm *vm);
+extern int m_cordic_polxy(bvm *vm);
 extern int m_pin_input(bvm *vm);
 extern int m_pin_output(bvm *vm);
 extern int m_pin_write(bvm *vm);
@@ -600,6 +619,44 @@ void be_load_baselib(bvm *vm)
     be_regfunc(vm, "prop2_sleep_ms", m_counter_sleep_ms);
     baselib_trace("prop2_sleep");
     be_regfunc(vm, "prop2_sleep", m_counter_sleep);
+    baselib_trace("prop2_cog_start_c");
+    be_regfunc(vm, "prop2_cog_start_c", m_cog_start_c);
+    baselib_trace("prop2_cog_start_pasm");
+    be_regfunc(vm, "prop2_cog_start_pasm", m_cog_start_pasm);
+    baselib_trace("prop2_cog_start_hex");
+    be_regfunc(vm, "prop2_cog_start_hex", m_cog_start_hex);
+    baselib_trace("prop2_cog_stop");
+    be_regfunc(vm, "prop2_cog_stop", m_cog_stop);
+    baselib_trace("prop2_cog_check");
+    be_regfunc(vm, "prop2_cog_check", m_cog_check);
+    baselib_trace("prop2_cog_id");
+    be_regfunc(vm, "prop2_cog_id", m_cog_id);
+    baselib_trace("prop2_cog_states");
+    be_regfunc(vm, "prop2_cog_states", m_cog_states);
+    baselib_trace("prop2_cog_stack_bytes");
+    be_regfunc(vm, "prop2_cog_stack_bytes", m_cog_stack_bytes);
+    baselib_trace("prop2_lock_new");
+    be_regfunc(vm, "prop2_lock_new", m_lock_new);
+    baselib_trace("prop2_lock_return");
+    be_regfunc(vm, "prop2_lock_return", m_lock_return);
+    baselib_trace("prop2_lock_try");
+    be_regfunc(vm, "prop2_lock_try", m_lock_try);
+    baselib_trace("prop2_lock_release");
+    be_regfunc(vm, "prop2_lock_release", m_lock_release);
+    baselib_trace("prop2_lock_check");
+    be_regfunc(vm, "prop2_lock_check", m_lock_check);
+    baselib_trace("prop2_attention_signal");
+    be_regfunc(vm, "prop2_attention_signal", m_attention_signal);
+    baselib_trace("prop2_attention_poll");
+    be_regfunc(vm, "prop2_attention_poll", m_attention_poll);
+    baselib_trace("prop2_attention_wait");
+    be_regfunc(vm, "prop2_attention_wait", m_attention_wait);
+    baselib_trace("prop2_rotxy");
+    be_regfunc(vm, "prop2_rotxy", m_cordic_rotxy);
+    baselib_trace("prop2_xypol");
+    be_regfunc(vm, "prop2_xypol", m_cordic_xypol);
+    baselib_trace("prop2_polxy");
+    be_regfunc(vm, "prop2_polxy", m_cordic_polxy);
     baselib_trace("prop2_pin_input");
     be_regfunc(vm, "prop2_pin_input", m_pin_input);
     baselib_trace("prop2_pin_output");
@@ -712,6 +769,25 @@ vartab m_builtin (scope: local) {
     prop2_sleep_us, func(m_counter_sleep_us)
     prop2_sleep_ms, func(m_counter_sleep_ms)
     prop2_sleep, func(m_counter_sleep)
+    prop2_cog_start_c, func(m_cog_start_c)
+    prop2_cog_start_pasm, func(m_cog_start_pasm)
+    prop2_cog_start_hex, func(m_cog_start_hex)
+    prop2_cog_stop, func(m_cog_stop)
+    prop2_cog_check, func(m_cog_check)
+    prop2_cog_id, func(m_cog_id)
+    prop2_cog_states, func(m_cog_states)
+    prop2_cog_stack_bytes, func(m_cog_stack_bytes)
+    prop2_lock_new, func(m_lock_new)
+    prop2_lock_return, func(m_lock_return)
+    prop2_lock_try, func(m_lock_try)
+    prop2_lock_release, func(m_lock_release)
+    prop2_lock_check, func(m_lock_check)
+    prop2_attention_signal, func(m_attention_signal)
+    prop2_attention_poll, func(m_attention_poll)
+    prop2_attention_wait, func(m_attention_wait)
+    prop2_rotxy, func(m_cordic_rotxy)
+    prop2_xypol, func(m_cordic_xypol)
+    prop2_polxy, func(m_cordic_polxy)
     prop2_pin_input, func(m_pin_input)
     prop2_pin_output, func(m_pin_output)
     prop2_pin_write, func(m_pin_write)

@@ -12,9 +12,11 @@ CATALINA_CONFIG_FLAGS ?= -C $(CATALINA_PLATFORM) -C $(CATALINA_MODEL)
 
 ifeq ($(HOST_OS),windows)
 CATALINA ?= $(CATALINA_BINDIR)/catalina.exe
+FLEXSPIN ?= $(FLEXPROP_DIR)/bin/flexspin.exe
 LOADP2 ?= $(FLEXPROP_DIR)/bin/loadp2.exe
 else
 CATALINA ?= $(CATALINA_BINDIR)/catalina
+FLEXSPIN ?= $(FLEXPROP_DIR)/bin/flexspin
 LOADP2 ?= $(FLEXPROP_DIR)/bin/loadp2
 endif
 

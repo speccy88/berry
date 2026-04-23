@@ -63,16 +63,23 @@ make p2-stop
 Current macOS Catalina notes:
 
 - `make p2-ram` is the normal interactive RAM-load command
-- `make p2-flash` programs SPI flash and returns; it is intentionally non-interactive
+- `make p2-flash` now programs bootable flash using the upstream `P2ES_flashloader` CHIP-mode path and then returns
+- `make p2-flash-run` runs that same boot-flash programming flow but keeps the terminal attached so you can watch the flash programmer
 - `make p2-attach` opens a serial terminal using the configured P2 baud rate without loading RAM
-- on the current macOS + P2 Edge path, `p2-flash` uses `loadp2 -FLASH -SINGLE` because the default chip-mode flash path timed out at the end of programming
 - on Catalina `P2_EDGE`, the current terminal baud is `230400`, so a plain `tio /dev/...` at `115200` will not show readable output
-- for P2 Edge boot-from-flash, use boot DIP setting `FLASH=ON, △=OFF, ▽=ON` for flash-only fast boot
+- for P2 Edge development with serial attach after reset, use boot DIP setting `FLASH=ON, △=OFF, ▽=OFF`
+- for P2 Edge flash-only fast boot, use boot DIP setting `FLASH=ON, △=OFF, ▽=ON`
 - with a regular terminal, use:
 
 ```sh
 tio -b 230400 /dev/cu.usbserial-P97cvdxp
 ```
+
+Current flash note:
+
+- the explicit boot-flash programming path is hardware-verified on this macOS P2 Edge setup
+- immediate post-program flashloader output is verified
+- if a later cold boot still does not appear in a regular terminal, re-check the boot DIP setting first, then attach at `230400`
 
 Interactive quit behavior on the current macOS Catalina path:
 

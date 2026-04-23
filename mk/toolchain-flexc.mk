@@ -4,9 +4,11 @@ FLEXPROP_INCLUDEDIR ?= $(FLEXPROP_DIR)/include
 
 ifeq ($(HOST_OS),windows)
 FLEXCC ?= $(FLEXPROP_BINDIR)/flexcc.exe
+FLEXSPIN ?= $(FLEXPROP_BINDIR)/flexspin.exe
 LOADP2 ?= $(FLEXPROP_BINDIR)/loadp2.exe
 else
 FLEXCC ?= $(FLEXPROP_BINDIR)/flexcc
+FLEXSPIN ?= $(FLEXPROP_BINDIR)/flexspin
 LOADP2 ?= $(FLEXPROP_BINDIR)/loadp2
 endif
 

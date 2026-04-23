@@ -74,6 +74,10 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 - the current exposed P2 helpers are live-verified through `prop2_*` globals, including:
   - clock and counter helpers such as `prop2_clock_freq()`, `prop2_ticks()`, `prop2_ticks64()`
   - wait/sleep helpers such as `prop2_wait_ticks()` and `prop2_sleep_ms()`
+  - cog helpers such as `prop2_cog_states()`, `prop2_cog_check()`, `prop2_cog_stop()`
+  - raw cog program startup via `prop2_cog_start_hex()`
+  - lock helpers such as `prop2_lock_new()`, `prop2_lock_try()`, `prop2_lock_check()`
+  - CORDIC helpers such as `prop2_rotxy()`, `prop2_xypol()`, `prop2_polxy()`
   - pin helpers such as `prop2_pin_output()`, `prop2_pin_write()`, `prop2_pin_read()`
   - smart-pin helpers such as `prop2_smartpin_write_mode()`, `prop2_smartpin_query()`, `prop2_smartpin_start()`
 - REPL input cleanup is improved enough that backspace now sends the normal erase sequence and prompts/newlines are no longer drifting the way they did earlier
@@ -84,10 +88,12 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - if the current bump-heap REPL runs out of memory, it now prints the OOM error and exits automatically instead of leaving a dead prompt behind
 - flash programming on the current macOS path is now verified with:
   - `make p2-flash`
-  - the working path uses `loadp2 -FLASH -SINGLE`
-  - the older chip-mode flash path was timing out at the end of programming on this Mac / P2 Edge setup
+  - `make p2-flash-run`
+  - the current working path uses the upstream `P2ES_flashloader` CHIP-mode boot-flash programmer rather than `loadp2 -FLASH -SINGLE`
+  - the flash programmer output is live-verified on hardware
 - P2 Edge flash boot details to preserve:
-  - use boot DIP setting `FLASH=ON, △=OFF, ▽=ON` for flash-only fast boot
+  - for development with serial attach after reset, use `FLASH=ON, △=OFF, ▽=OFF`
+  - for flash-only fast boot, use `FLASH=ON, △=OFF, ▽=ON`
   - Catalina `P2_EDGE` serial uses `230400` right now, so regular terminals must connect at that baud
   - `make p2-attach` now opens a serial terminal without doing a RAM download
 
@@ -102,7 +108,8 @@ Current machine focus to preserve:
 Known limitation:
 
 - not every standard library module has been re-verified interactively yet on the cached-runtime-module path; `string` and `math` are verified, and the rest still need a focused pass
-- `prop2_ticks64()` currently returns a `"high:low"` string rather than a structured Berry object
+- `prop2_cog_start_c()` now builds but still needs a focused Berry FFI validation pass on hardware
+- a later cold boot banner from the new `p2-flash` path was not re-captured in this unattended session, so flash programming is verified but regular post-reset attach still needs one more confirmation pass with the board switch state in hand
 - `../tests/fs_probe.c` is intentionally destructive and mutates the SD card; keep it for Catalina DOSFS debugging only
 
 ## Relevant Files

@@ -13,7 +13,7 @@ FLAGS="$4"
 IMAGE="$5"
 PYTHON="$6"
 
-if [ ! -f "$IMAGE" ]; then
+if [[ "$IMAGE" != @* ]] && [ ! -f "$IMAGE" ]; then
     echo "error: missing image: $IMAGE" >&2
     exit 1
 fi
@@ -25,7 +25,7 @@ if command -v lsof >/dev/null 2>&1; then
         for pid in $PIDS; do
             cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
             case "$cmd" in
-                *loadp2*" $PORT "*|*loadp2*"$PORT"*)
+                *loadp2*" $PORT "*|*loadp2*"$PORT"*|*proploader*" $PORT "*|*proploader*"$PORT"*|*serial_terminal.py*" $PORT "*|*serial_terminal.py*"$PORT"*|*tio*" $PORT "*|*tio*"$PORT"*)
                     echo "[Loader] stopping stale terminal on $PORT (pid $pid)"
                     kill -CONT "$pid" 2>/dev/null || true
                     kill "$pid" 2>/dev/null || true

@@ -305,6 +305,7 @@ enum {
 };
 
 static int p2_exit_requested;
+static int p2_swallow_newline;
 
 void p2_serial_init(void)
 {
@@ -364,6 +365,14 @@ static char *serial_readline(char *buffer, size_t size)
             continue;
         }
 
+        if (p2_swallow_newline) {
+            if (ch == p2_swallow_newline) {
+                p2_swallow_newline = 0;
+                continue;
+            }
+            p2_swallow_newline = 0;
+        }
+
         if (ch == 3 || ch == 4) {
             if (pos == 0) {
                 p2_exit_requested = 1;
@@ -374,9 +383,8 @@ static char *serial_readline(char *buffer, size_t size)
         }
 
         if (ch == '\r' || ch == '\n') {
-            if (echo_input) {
-                serial_write_char('\n');
-            }
+            p2_swallow_newline = (ch == '\r') ? '\n' : '\r';
+            serial_write_char('\n');
             break;
         }
 
@@ -420,6 +428,7 @@ char *p2_readline(const char *prompt)
 {
     static char line[256];
 
+    p2_serial_puts("\r");
     p2_serial_puts(map_prompt(prompt));
     return serial_readline(line, sizeof(line));
 }
