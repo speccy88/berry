@@ -35,6 +35,9 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - repeated blank `Enter` presses no longer run the REPL out of memory
   - `x=list(); x.push(42); print(x.size())` -> `1`
   - `m=map(); m.insert("a", 7); print(m.find("a"))` -> `7`
+  - `m={'a':1,'b':2}; for v:m print(v) end` -> `1`, `2`
+  - `for k:m.keys() print(k,m.find(k)) end` -> `a 1`, `b 2`
+  - `for i:0..3 print(i) end` -> `0`, `1`, `2`, `3`
   - `import string`
   - `print(string.toupper("abc"))` -> `ABC`
   - `print(string.find("banana", "na"))` -> `2`
@@ -44,6 +47,30 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - `print(math.sqrt(81))` -> `9`
   - `print(math.min(5,2,9))` -> `2`
   - `print(math.max(5,2,9))` -> `9`
+  - `import json`
+  - `print(json.load('{"a":1,"b":[2,3]}')['b'][1])` -> `3`
+  - `print(json.dump({'x':1,'y':[2,3]}))` -> valid JSON text
+  - `import bytes`
+  - `print(bytes('1122'))` -> `bytes('1122')`
+  - `print(bytes('1122')[1])` -> `34`
+  - `b=bytes().fromstring('AB'); print(b.tohex())` -> `4142`
+  - `print(open('/HELLO.TXT','r').readbytes().tohex())` -> `48454C4C4F21776F726C64`
+  - `import os`
+  - `print(os.listdir('/'))` lists the SD card root
+  - `print(open('/HELLO.TXT','r').read())` -> `HELLO!world`
+  - `print(os.mkdir('/TMPD'))` -> `true`
+  - `print(os.path.isdir('/TMPD'))` -> `true`
+  - `f=open('/TMPD/TEST.TXT','w'); f.write('hello from berry'); f.close()` creates a file on SD
+  - `print(open('/TMPD/TEST.TXT','r').read())` -> `hello from berry`
+  - `print(os.path.isfile('/TMPD/TEST.TXT'))` -> `true`
+  - `print(os.getcwd())` / `print(os.chdir('/TMPD'))` / `print(os.getcwd())` are live-verified
+  - `print(os.path.join('/TMPD','TEST.TXT'))` -> `/TMPD/TEST.TXT`
+  - `print(os.path.split('/TMPD/TEST.TXT'))` -> `['/TMPD', 'TEST.TXT']`
+  - `print(os.path.splitext('/TMPD/TEST.TXT'))` -> `['/TMPD/TEST', '.TXT']`
+  - `print(os.path.exists('/TMPD/TEST.TXT'))` -> `true`
+  - `print(os.remove('/TMPD/TEST.TXT'))` -> `true`
+  - `print(os.path.exists('/TMPD/TEST.TXT'))` -> `false`
+  - `print(os.rename('/HELLO2.TXT','/HELLO.TXT'))` -> `true` was live-verified during SD card recovery
 - the current exposed P2 helpers are live-verified through `prop2_*` globals, including:
   - clock and counter helpers such as `prop2_clock_freq()`, `prop2_ticks()`, `prop2_ticks64()`
   - wait/sleep helpers such as `prop2_wait_ticks()` and `prop2_sleep_ms()`
@@ -76,6 +103,7 @@ Known limitation:
 
 - not every standard library module has been re-verified interactively yet on the cached-runtime-module path; `string` and `math` are verified, and the rest still need a focused pass
 - `prop2_ticks64()` currently returns a `"high:low"` string rather than a structured Berry object
+- `../tests/fs_probe.c` is intentionally destructive and mutates the SD card; keep it for Catalina DOSFS debugging only
 
 ## Relevant Files
 
@@ -108,8 +136,8 @@ Known limitation:
    - Windows / `COM6`
    - older silicon selection where possible
 6. Next engineering focus:
-   - extend the cached-runtime-module pattern from `string` and `math` to the remaining standard modules that still depend on Catalina-unfriendly static native-module descriptors
    - keep checking for heap regressions under longer REPL sessions now that blank-line OOM is fixed
+   - decide whether to add a non-destructive automated P2 smoke test for the verified `string` / `math` / `json` / `bytes` / `os` path
    - decide whether `prop2_*` should remain prefixed globals or move into a proper Berry-side namespace/module wrapper
    - continue Windows validation on `COM6` after the macOS Catalina path is stable enough
 

@@ -78,6 +78,15 @@ typedef struct {
 #if BE_USE_SCRIPT_COMPILER
 
 static void stmtlist(bparser *parser);
+
+static int find_builtin_or_global(bvm *vm, bstring *name)
+{
+    int idx = be_builtin_find(vm, name);
+    if (idx < 0) {
+        idx = be_global_find(vm, name);
+    }
+    return idx;
+}
 static void block(bparser *parser, int type);
 static void expr(bparser *parser, bexpdesc *e);
 static void walrus_expr(bparser *parser, bexpdesc *e);
@@ -717,7 +726,7 @@ static void new_primtype(bparser *parser, const char *type, bexpdesc *e)
     bfuncinfo *finfo = parser->finfo;
 
     scan_next_token(parser);
-    idx = be_builtin_find(vm, parser_newstr(parser, type));
+    idx = find_builtin_or_global(vm, parser_newstr(parser, type));
     init_exp(e, ETGLOBAL, idx);
     idx = be_code_nextreg(finfo, e);
     be_code_call(finfo, idx, 0);
@@ -1247,7 +1256,7 @@ static void for_init(bparser *parser, bexpdesc *v)
     bfuncinfo *finfo = parser->finfo;
     /* .it = __iterator__(expr) */
     s = parser_newstr(parser, "__iterator__");
-    init_exp(&e, ETGLOBAL, be_builtin_find(parser->vm, s));
+    init_exp(&e, ETGLOBAL, find_builtin_or_global(parser->vm, s));
     be_code_nextreg(finfo, &e); /* code function '__iterator__' */
     expr(parser, v);
     check_var(parser, v);

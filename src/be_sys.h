@@ -37,6 +37,7 @@ char* be_getcwd(char *buf, size_t size);
 int be_chdir(const char *path);
 int be_mkdir(const char *path);
 int be_unlink(const char *filename);
+int be_rename(const char *from, const char *to);
 int be_dirfirst(bdirinfo *info, const char *path);
 int be_dirnext(bdirinfo *info);
 int be_dirclose(bdirinfo *info);

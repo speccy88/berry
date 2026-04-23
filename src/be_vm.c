@@ -461,6 +461,9 @@ static void make_range(bvm *vm, bvalue lower, bvalue upper)
 {
     /* get method 'item' (possible GC) */
     int idx = be_builtin_find(vm, str_literal(vm, "range"));
+    if (idx < 0) {
+        idx = be_global_find(vm, str_literal(vm, "range"));
+    }
     bvalue *top = vm->top;
     bvalue *range_ctor = be_global_var(vm, idx);
     top[0] = *range_ctor;

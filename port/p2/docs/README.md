@@ -12,22 +12,31 @@ This directory holds the P2-specific notes that sit closest to the runtime and b
 
 ## Current Goal
 
-Stabilize the Berry REPL on Propeller 2 so normal interactive use feels like
-Berry on other targets:
+Stabilize and round out the Berry REPL on Propeller 2 so normal interactive
+use feels like Berry on other targets:
 
 - `print()`
 - variable assignment
 - simple arithmetic
+- `for` loops over ranges, lists, and maps
 - `import string`
 - `import math`
+- `import json`
+- `import bytes`
+- `import os`
+- SD card backed file and directory access through `open()` and `os`
 - reliable serial interaction without prompt drift or blank-line heap loss
 
 Current Catalina status on P2 Edge / latest silicon:
 
 - `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` reaches a working REPL
 - `print()`, assignment, and basic arithmetic are live-verified
-- `import string` and `import math` are live-verified
+- `for i:0..3`, `for e:list`, `for v:map`, and `for k:map.keys()` are live-verified
+- `import string`, `import math`, `import json`, `import bytes`, and `import os` are live-verified
 - blank Enter presses no longer leak the REPL into an out-of-memory state
+- `bytes('1122')`, `bytes().fromstring('AB')`, `tohex()`, `asstring()`, `readbytes()`, and range slicing are live-verified
+- `json.load()` and `json.dump()` are live-verified
+- SD card access through `open('/HELLO.TXT','r')`, `os.listdir('/')`, `os.mkdir()`, `os.rename()`, `os.remove()`, `os.chdir()`, `os.getcwd()`, and `os.path.*` is live-verified
 - P2 helpers are exposed as `prop2_*` globals for clock, counter, pin, and smart-pin operations
 
 Examples:
@@ -51,6 +60,12 @@ Primary development focus from now on:
 
 Other toolchains and silicon paths should still be kept buildable, but this is
 the first path to validate when continuing the port.
+
+Filesystem probe note:
+
+- `../tests/fs_probe.c` is a destructive Catalina DOSFS probe. It mutates the
+  mounted SD card and is meant for low-level debugging, not routine smoke
+  testing.
 
 ## Main References
 

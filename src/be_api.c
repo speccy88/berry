@@ -627,6 +627,11 @@ BERRY_API void be_setglobal(bvm *vm, const char *name)
 BERRY_API bbool be_getbuiltin(bvm *vm, const char *name)
 {
     int idx = be_builtin_find(vm, be_newstr(vm, name));
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+    if (idx < 0) {
+        idx = be_global_find(vm, be_newstr(vm, name));
+    }
+#endif
     bvalue *top = be_incrtop(vm);
     if (idx > -1) {
         bvalue *src = be_global_var(vm, idx);

@@ -9,7 +9,15 @@
 #endif
 
 #ifndef BE_P2_HEAP_BYTES
-#define BE_P2_HEAP_BYTES                (256 * 1024)
+#define BE_P2_HEAP_BYTES                (192 * 1024)
+#endif
+
+#ifndef BE_P2_ENABLE_EXTENDED_MODULES
+#define BE_P2_ENABLE_EXTENDED_MODULES   0
+#endif
+
+#ifndef BE_P2_ENABLE_TIME_MODULE
+#define BE_P2_ENABLE_TIME_MODULE        0
 #endif
 
 #include "p2_heap.h"
@@ -54,15 +62,15 @@
 #define BE_USE_STRING_MODULE            1
 #define BE_USE_JSON_MODULE              1
 #define BE_USE_MATH_MODULE              1
-#define BE_USE_TIME_MODULE              1
+#define BE_USE_TIME_MODULE              BE_P2_ENABLE_TIME_MODULE
 #define BE_USE_OS_MODULE                1
-#define BE_USE_GLOBAL_MODULE            1
-#define BE_USE_SYS_MODULE               1
-#define BE_USE_DEBUG_MODULE             1
-#define BE_USE_GC_MODULE                1
+#define BE_USE_GLOBAL_MODULE            BE_P2_ENABLE_EXTENDED_MODULES
+#define BE_USE_SYS_MODULE               BE_P2_ENABLE_EXTENDED_MODULES
+#define BE_USE_DEBUG_MODULE             BE_P2_ENABLE_EXTENDED_MODULES
+#define BE_USE_GC_MODULE                BE_P2_ENABLE_EXTENDED_MODULES
 #define BE_USE_SOLIDIFY_MODULE          0
-#define BE_USE_INTROSPECT_MODULE        1
-#define BE_USE_STRICT_MODULE            1
+#define BE_USE_INTROSPECT_MODULE        BE_P2_ENABLE_EXTENDED_MODULES
+#define BE_USE_STRICT_MODULE            BE_P2_ENABLE_EXTENDED_MODULES
 
 #define BE_EXPLICIT_ABORT               abort
 #define BE_EXPLICIT_EXIT                exit

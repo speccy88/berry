@@ -8,6 +8,8 @@
 #include "be_object.h"
 #include "be_mem.h"
 #include "be_lexer.h"
+#include "be_module.h"
+#include "be_string.h"
 #include <string.h>
 #include <math.h>
 
@@ -513,6 +515,25 @@ static int m_json_dump(bvm *vm)
     value_dump(vm, &indent, 1, fmt);
     be_return(vm);
 }
+
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+static void json_module_set_func(bvm *vm, const char *name, bntvfunc func)
+{
+    be_pushntvfunction(vm, func);
+    be_setmember(vm, -2, name);
+    be_pop(vm, 1);
+}
+
+void be_cache_jsonmodule(bvm *vm)
+{
+    bstring *name = be_newstr(vm, "json");
+    be_newmodule(vm);
+    json_module_set_func(vm, "load", m_json_load);
+    json_module_set_func(vm, "dump", m_json_dump);
+    be_cache_module(vm, name);
+    be_pop(vm, 1);
+}
+#endif
 
 #if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 be_native_module_attr_table(json) {

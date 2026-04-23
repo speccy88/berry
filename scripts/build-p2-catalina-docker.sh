@@ -16,6 +16,9 @@ CATALINA_DIR="${CATALINA_DIR:-.third_party_cache/catalina}"
 FLEXPROP_DIR="${FLEXPROP_DIR:-.third_party_cache/flexprop}"
 CATALINA_PLATFORM="${CATALINA_PLATFORM:-P2_EDGE}"
 CATALINA_MODEL="${CATALINA_MODEL:-COMPACT}"
+CATALINA_CLIB="${CATALINA_CLIB:--lcix}"
+CATALINA_SERIAL_LIB="${CATALINA_SERIAL_LIB:-}"
+CATALINA_MLIB="${CATALINA_MLIB:--lm}"
 
 if ! docker image inspect "${DOCKER_IMAGE}" >/dev/null 2>&1; then
     echo "[Docker] Building Catalina builder image: ${DOCKER_IMAGE}"
@@ -38,6 +41,9 @@ docker run --rm \
     -e FLEXPROP_DIR="${FLEXPROP_DIR}" \
     -e CATALINA_PLATFORM="${CATALINA_PLATFORM}" \
     -e CATALINA_MODEL="${CATALINA_MODEL}" \
+    -e CATALINA_CLIB="${CATALINA_CLIB}" \
+    -e CATALINA_SERIAL_LIB="${CATALINA_SERIAL_LIB}" \
+    -e CATALINA_MLIB="${CATALINA_MLIB}" \
     -v "${WORKDIR}:/work" \
     -w /work \
     "${DOCKER_IMAGE}" \
@@ -45,10 +51,18 @@ docker run --rm \
         set -euo pipefail
         export LCCDIR="${CATALINA_DIR}"
         source "${LCCDIR}/use_catalina" >/dev/null
+        bash tools/p2/bootstrap/patch-catalina-p2.sh \
+            "${CATALINA_DIR}" \
+            "${CATALINA_PLATFORM}" \
+            "${CATALINA_MODEL}" \
+            "${CATALINA_CLIB#-}" >/dev/null
         make "${TARGET}" \
             TOOLCHAIN=catalina \
             CATALINA_DIR="${CATALINA_DIR}" \
             FLEXPROP_DIR="${FLEXPROP_DIR}" \
             CATALINA_PLATFORM="${CATALINA_PLATFORM}" \
-            CATALINA_MODEL="${CATALINA_MODEL}"
+            CATALINA_MODEL="${CATALINA_MODEL}" \
+            CATALINA_CLIB="${CATALINA_CLIB}" \
+            CATALINA_SERIAL_LIB="${CATALINA_SERIAL_LIB}" \
+            CATALINA_MLIB="${CATALINA_MLIB}"
     '

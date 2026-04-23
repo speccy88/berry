@@ -9,6 +9,8 @@
 #include "be_strlib.h"
 #include "be_mem.h"
 #include "be_sys.h"
+#include "be_module.h"
+#include "be_string.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -56,6 +58,16 @@ static int m_remove(bvm *vm)
     int res = 1;
     if (be_top(vm) >= 1 && be_isstring(vm, 1)) {
         res = be_unlink(be_tostring(vm, 1));
+    }
+    be_pushbool(vm, res == 0);
+    be_return(vm);
+}
+
+static int m_rename(bvm *vm)
+{
+    int res = 1;
+    if (be_top(vm) >= 2 && be_isstring(vm, 1) && be_isstring(vm, 2)) {
+        res = be_rename(be_tostring(vm, 1), be_tostring(vm, 2));
     }
     be_pushbool(vm, res == 0);
     be_return(vm);
@@ -216,6 +228,43 @@ static int m_path_join(bvm *vm)
     be_return(vm);
 }
 
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+static void os_module_set_func(bvm *vm, const char *name, bntvfunc func)
+{
+    be_pushntvfunction(vm, func);
+    be_setmember(vm, -2, name);
+    be_pop(vm, 1);
+}
+
+void be_cache_osmodule(bvm *vm)
+{
+    bstring *name = be_newstr(vm, "os");
+
+    be_newmodule(vm);
+    os_module_set_func(vm, "getcwd", m_getcwd);
+    os_module_set_func(vm, "chdir", m_chdir);
+    os_module_set_func(vm, "mkdir", m_mkdir);
+    os_module_set_func(vm, "remove", m_remove);
+    os_module_set_func(vm, "rename", m_rename);
+    os_module_set_func(vm, "listdir", m_listdir);
+    os_module_set_func(vm, "system", m_system);
+    os_module_set_func(vm, "exit", m_exit);
+
+    be_newmodule(vm);
+    os_module_set_func(vm, "isdir", m_path_isdir);
+    os_module_set_func(vm, "isfile", m_path_isfile);
+    os_module_set_func(vm, "exists", m_path_exists);
+    os_module_set_func(vm, "split", m_path_split);
+    os_module_set_func(vm, "splitext", m_path_splitext);
+    os_module_set_func(vm, "join", m_path_join);
+    be_setmember(vm, -2, "path");
+    be_pop(vm, 1);
+
+    be_cache_module(vm, name);
+    be_pop(vm, 1);
+}
+#endif
+
 #if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 be_native_module_attr_table(path) {
     be_native_module_function("isdir", m_path_isdir),
@@ -233,6 +282,7 @@ be_native_module_attr_table(os) {
     be_native_module_function("chdir", m_chdir),
     be_native_module_function("mkdir", m_mkdir),
     be_native_module_function("remove", m_remove),
+    be_native_module_function("rename", m_rename),
     be_native_module_function("listdir", m_listdir),
     be_native_module_function("system", m_system),
     be_native_module_function("exit", m_exit),
@@ -259,6 +309,7 @@ module os (scope: global, depend: BE_USE_OS_MODULE) {
     chdir, func(m_chdir)
     mkdir, func(m_mkdir)
     remove, func(m_remove)
+    rename, func(m_rename)
     listdir, func(m_listdir)
     system, func(m_system)
     exit, func(m_exit)
