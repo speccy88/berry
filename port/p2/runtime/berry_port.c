@@ -306,6 +306,7 @@ enum {
 
 static int p2_exit_requested;
 static int p2_swallow_newline;
+static int p2_prompt_needs_cr;
 
 void p2_serial_init(void)
 {
@@ -332,6 +333,7 @@ static const char *map_prompt(const char *prompt)
 static void serial_write_char(int ch)
 {
     if (ch == '\n') {
+        p2_prompt_needs_cr = 1;
         p2_smartserial_tx('\r');
     }
     p2_smartserial_tx(ch);
@@ -348,11 +350,7 @@ static char *serial_readline(char *buffer, size_t size)
 {
     int pos = 0;
     int limit = (int)size;
-#if defined(__CATALINA__)
-    const int echo_input = 0;
-#else
     const int echo_input = 1;
-#endif
 
     if (!buffer || limit <= 0) {
         return NULL;
@@ -384,7 +382,11 @@ static char *serial_readline(char *buffer, size_t size)
 
         if (ch == '\r' || ch == '\n') {
             p2_swallow_newline = (ch == '\r') ? '\n' : '\r';
+#if defined(__CATALINA__)
+            p2_prompt_needs_cr = 1;
+#else
             serial_write_char('\n');
+#endif
             break;
         }
 
@@ -428,7 +430,10 @@ char *p2_readline(const char *prompt)
 {
     static char line[256];
 
-    p2_serial_puts("\r");
+    if (p2_prompt_needs_cr) {
+        p2_smartserial_tx('\r');
+        p2_prompt_needs_cr = 0;
+    }
     p2_serial_puts(map_prompt(prompt));
     return serial_readline(line, sizeof(line));
 }
