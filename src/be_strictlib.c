@@ -22,7 +22,7 @@ static int m_init(bvm *vm)
     be_return_nil(vm);
 }
 
-#if !BE_USE_PRECOMPILED_OBJECT
+#if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 be_native_module_attr_table(strict) {
     be_native_module_function("init", m_init),
 };

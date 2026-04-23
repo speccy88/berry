@@ -16,6 +16,8 @@ enum {
     BERRY_P2_TX_PIN = 62
 };
 
+static int p2_exit_requested;
+
 void p2_serial_init(void)
 {
     p2_smartserial_init(BERRY_P2_RX_PIN, BERRY_P2_TX_PIN, BERRY_P2_BAUD);
@@ -74,13 +76,17 @@ static char *serial_readline(char *buffer, size_t size)
             continue;
         }
 
-        if (ch == '\r' || ch == '\n') {
-            if (echo_input || pos > 0) {
+        if (ch == 3 || ch == 4) {
+            if (pos == 0) {
+                p2_exit_requested = 1;
                 serial_write_char('\n');
+                return NULL;
             }
-            if (pos + 1 < limit) {
-                buffer[pos++] = '\n';
-            }
+            continue;
+        }
+
+        if (ch == '\r' || ch == '\n') {
+            serial_write_char('\n');
             break;
         }
 
@@ -131,6 +137,18 @@ char *p2_readline(const char *prompt)
 void p2_freeline(char *line)
 {
     (void)line;
+}
+
+void p2_clear_exit_request(void)
+{
+    p2_exit_requested = 0;
+}
+
+int p2_take_exit_request(void)
+{
+    int requested = p2_exit_requested;
+    p2_exit_requested = 0;
+    return requested;
 }
 
 void *be_fopen(const char *filename, const char *modes)

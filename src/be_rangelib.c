@@ -151,7 +151,7 @@ static int m_iter(bvm *vm)
     be_return(vm);
 }
 
-#if !BE_USE_PRECOMPILED_OBJECT
+#if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 void be_load_rangelib(bvm *vm)
 {
     static const bnfuncinfo members[] = {

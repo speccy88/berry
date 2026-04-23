@@ -246,7 +246,7 @@ static int m_name(bvm *vm)
     be_return_nil(vm);
 }
 
-#if !BE_USE_PRECOMPILED_OBJECT
+#if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 be_native_module_attr_table(introspect) {
     be_native_module_function("members", m_attrlist),
 

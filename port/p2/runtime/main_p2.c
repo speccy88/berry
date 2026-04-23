@@ -42,6 +42,7 @@ static void berry_p2_main(void)
 
     p2_serial_init();
     p2_serial_puts(P2_REPL_PRELUDE);
+    p2_serial_puts("[Ctrl-D or Ctrl-C at an empty prompt quits]\n");
     vm = be_vm_new();
     if (!vm) {
         p2_serial_puts("error: failed to create VM\n");
@@ -51,8 +52,14 @@ static void berry_p2_main(void)
 
     for (;;) {
         int res = be_repl(vm, p2_readline, p2_freeline);
+        if (p2_take_exit_request() || res == BE_EXIT) {
+            p2_serial_puts("bye\n");
+            break;
+        }
         if (res == BE_MALLOC_FAIL) {
             p2_serial_puts("error: REPL ran out of memory\n");
+            p2_serial_puts("bye\n");
+            break;
         }
     }
 }

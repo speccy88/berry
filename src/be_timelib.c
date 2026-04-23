@@ -50,7 +50,7 @@ static int m_clock(bvm *vm)
     be_return(vm);
 }
 
-#if !BE_USE_PRECOMPILED_OBJECT
+#if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 be_native_module_attr_table(time) {
     be_native_module_function("time", m_time),
     be_native_module_function("dump", m_dump),

@@ -18,7 +18,7 @@
 #include <string.h>
 
 
-#if !BE_USE_PRECOMPILED_OBJECT
+#if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 be_native_module_attr_table(undefined) {
     be_native_module_nil(".p"),         /* not needed but can't be empty */
 };

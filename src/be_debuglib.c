@@ -240,7 +240,7 @@ static int m_reallocs(bvm *vm) {
 #endif
 }
 
-#if !BE_USE_PRECOMPILED_OBJECT
+#if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 be_native_module_attr_table(debug) {
     be_native_module_function("attrdump", m_attrdump),
     be_native_module_function("codedump", m_codedump),

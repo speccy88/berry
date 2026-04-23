@@ -6,6 +6,8 @@
 ** https://github.com/Skiars/berry/blob/master/LICENSE
 ********************************************************************/
 #include "be_object.h"
+#include "be_module.h"
+#include "be_string.h"
 #include <math.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -16,6 +18,14 @@
   #undef M_PI
 #endif
 #define M_PI        3.141592653589793238462643383279
+
+#ifndef INFINITY
+  #define INFINITY  ((breal)(1.0 / 0.0))
+#endif
+
+#ifndef NAN
+  #define NAN       ((breal)(0.0 / 0.0))
+#endif
 
 #if BE_INTGER_TYPE == 0 /* int */
   #define M_IMAX    INT_MAX
@@ -28,7 +38,7 @@
   #define M_IMIN    LLONG_MIN
 #endif
 
-#if BE_USE_SINGLE_FLOAT
+#if BE_USE_SINGLE_FLOAT && !defined(__CATALINA__)
   #define mathfunc(func)        func##f
 #else
   #define mathfunc(func)        func
@@ -93,7 +103,17 @@ static int m_round(bvm *vm)
 {
     if (be_top(vm) >= 1 && be_isnumber(vm, 1)) {
         breal x = be_toreal(vm, 1);
+#if defined(__CATALINA__)
+        breal y;
+        if (x >= (breal)0.0) {
+            y = mathfunc(floor)(x + (breal)0.5);
+        } else {
+            y = mathfunc(ceil)(x - (breal)0.5);
+        }
+        be_pushreal(vm, y);
+#else
         be_pushreal(vm, mathfunc(round)(x));
+#endif
     } else {
         be_pushreal(vm, (breal)0.0);
     }
@@ -358,7 +378,68 @@ int m_max(bvm *vm)
     return m_min_max(vm, 0);
 }
 
-#if !BE_USE_PRECOMPILED_OBJECT
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+static void module_set_func(bvm *vm, const char *name, bntvfunc func)
+{
+    be_pushntvfunction(vm, func);
+    be_setmember(vm, -2, name);
+    be_pop(vm, 1);
+}
+
+static void module_set_real(bvm *vm, const char *name, breal value)
+{
+    be_pushreal(vm, value);
+    be_setmember(vm, -2, name);
+    be_pop(vm, 1);
+}
+
+static void module_set_int(bvm *vm, const char *name, bint value)
+{
+    be_pushint(vm, value);
+    be_setmember(vm, -2, name);
+    be_pop(vm, 1);
+}
+
+void be_cache_mathmodule(bvm *vm)
+{
+    bstring *name = be_newstr(vm, "math");
+    be_newmodule(vm);
+    module_set_func(vm, "isnan", m_isnan);
+    module_set_func(vm, "isinf", m_isinf);
+    module_set_func(vm, "abs", m_abs);
+    module_set_func(vm, "ceil", m_ceil);
+    module_set_func(vm, "floor", m_floor);
+    module_set_func(vm, "round", m_round);
+    module_set_func(vm, "sin", m_sin);
+    module_set_func(vm, "cos", m_cos);
+    module_set_func(vm, "tan", m_tan);
+    module_set_func(vm, "asin", m_asin);
+    module_set_func(vm, "acos", m_acos);
+    module_set_func(vm, "atan", m_atan);
+    module_set_func(vm, "atan2", m_atan2);
+    module_set_func(vm, "sinh", m_sinh);
+    module_set_func(vm, "cosh", m_cosh);
+    module_set_func(vm, "tanh", m_tanh);
+    module_set_func(vm, "sqrt", m_sqrt);
+    module_set_func(vm, "exp", m_exp);
+    module_set_func(vm, "log", m_log);
+    module_set_func(vm, "log10", m_log10);
+    module_set_func(vm, "deg", m_deg);
+    module_set_func(vm, "rad", m_rad);
+    module_set_func(vm, "pow", m_pow);
+    module_set_func(vm, "srand", m_srand);
+    module_set_func(vm, "rand", m_rand);
+    module_set_func(vm, "min", m_min);
+    module_set_func(vm, "max", m_max);
+    module_set_real(vm, "pi", (breal)M_PI);
+    module_set_int(vm, "imax", (bint)M_IMAX);
+    module_set_int(vm, "imin", (bint)M_IMIN);
+    be_cache_module(vm, name);
+    be_pop(vm, 1);
+}
+#endif
+
+#if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 be_native_module_attr_table(math) {
     be_native_module_function("isnan", m_isnan),
     be_native_module_function("isinf", m_isinf),

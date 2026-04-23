@@ -55,6 +55,7 @@ test_report/
 
 # Tool caches and downloaded toolchains
 .third_party_cache/
+.p2.local.mk
 tools/flexprop/
 tools/catalina/
 bin/

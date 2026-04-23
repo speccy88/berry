@@ -9,16 +9,30 @@ if [ -z "${TARGET}" ]; then
 fi
 
 WORKDIR="${PWD}"
-DOCKER_IMAGE="${CATALINA_DOCKER_IMAGE:-ubuntu:24.04}"
+DEFAULT_BASE_IMAGE="ubuntu:24.04"
+DOCKER_IMAGE="${CATALINA_DOCKER_IMAGE:-berry-p2-catalina-builder:ubuntu24.04}"
 DOCKER_PLATFORM="${CATALINA_DOCKER_PLATFORM:-linux/amd64}"
 CATALINA_DIR="${CATALINA_DIR:-.third_party_cache/catalina}"
 FLEXPROP_DIR="${FLEXPROP_DIR:-.third_party_cache/flexprop}"
 CATALINA_PLATFORM="${CATALINA_PLATFORM:-P2_EDGE}"
 CATALINA_MODEL="${CATALINA_MODEL:-COMPACT}"
 
+if ! docker image inspect "${DOCKER_IMAGE}" >/dev/null 2>&1; then
+    echo "[Docker] Building Catalina builder image: ${DOCKER_IMAGE}"
+    docker build \
+        --platform "${DOCKER_PLATFORM}" \
+        -t "${DOCKER_IMAGE}" \
+        -<<EOF
+FROM ${DEFAULT_BASE_IMAGE}
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \\
+    && apt-get install -y --no-install-recommends make python3 \\
+    && rm -rf /var/lib/apt/lists/*
+EOF
+fi
+
 docker run --rm \
     --platform "${DOCKER_PLATFORM}" \
-    -e DEBIAN_FRONTEND=noninteractive \
     -e TARGET="${TARGET}" \
     -e CATALINA_DIR="${CATALINA_DIR}" \
     -e FLEXPROP_DIR="${FLEXPROP_DIR}" \
@@ -29,8 +43,6 @@ docker run --rm \
     "${DOCKER_IMAGE}" \
     bash -lc '
         set -euo pipefail
-        apt-get update >/dev/null
-        apt-get install -y make python3 >/dev/null
         export LCCDIR="${CATALINA_DIR}"
         source "${LCCDIR}/use_catalina" >/dev/null
         make "${TARGET}" \

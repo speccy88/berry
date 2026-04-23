@@ -5,5 +5,7 @@ void p2_serial_init(void);
 void p2_serial_puts(const char *s);
 char *p2_readline(const char *prompt);
 void p2_freeline(char *line);
+void p2_clear_exit_request(void);
+int p2_take_exit_request(void);
 
 #endif

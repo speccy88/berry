@@ -12,17 +12,22 @@ This directory holds the P2-specific notes that sit closest to the runtime and b
 
 ## Current Goal
 
-Bring up a basic Berry REPL on Propeller 2 with:
+Stabilize the Berry REPL on Propeller 2 so normal interactive use feels like
+Berry on other targets:
 
 - `print()`
 - variable assignment
 - simple arithmetic
-- reliable serial interaction
+- `import string`
+- `import math`
+- reliable serial interaction without prompt drift or blank-line heap loss
 
 Current Catalina status on P2 Edge / latest silicon:
 
 - `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` reaches a working REPL
 - `print()`, assignment, and basic arithmetic are live-verified
+- `import string` and `import math` are live-verified
+- blank Enter presses no longer leak the REPL into an out-of-memory state
 - P2 helpers are exposed as `prop2_*` globals for clock, counter, pin, and smart-pin operations
 
 Examples:
@@ -36,6 +41,16 @@ Examples:
 - `prop2_smartpin_write_mode(pin, mode)`
 - `prop2_smartpin_query(pin)`
 - `prop2_smartpin_start(pin, mode, x, y)`
+
+Primary development focus from now on:
+
+- macOS
+- Catalina / `lcc`
+- `P2_EDGE`
+- latest silicon path (`P2_SILICON=latest`, targeting your Rev C board)
+
+Other toolchains and silicon paths should still be kept buildable, but this is
+the first path to validate when continuing the port.
 
 ## Main References
 

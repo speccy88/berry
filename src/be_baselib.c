@@ -527,7 +527,6 @@ extern int m_smartpin_read(bvm *vm);
 extern int m_smartpin_query(bvm *vm);
 extern int m_smartpin_start(bvm *vm);
 extern int m_smartpin_clear(bvm *vm);
-
 #if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
 void be_load_baselib(bvm *vm)
 {

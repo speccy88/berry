@@ -493,7 +493,7 @@ static int m_nequal(bvm *vm)
     return list_equal(vm, bfalse);
 }
 
-#if !BE_USE_PRECOMPILED_OBJECT
+#if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 void be_load_listlib(bvm *vm)
 {
     static const bnfuncinfo members[] = {

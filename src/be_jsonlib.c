@@ -514,7 +514,7 @@ static int m_json_dump(bvm *vm)
     be_return(vm);
 }
 
-#if !BE_USE_PRECOMPILED_OBJECT
+#if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 be_native_module_attr_table(json) {
     be_native_module_function("load", m_json_load),
     be_native_module_function("dump", m_json_dump)

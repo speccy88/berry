@@ -365,7 +365,7 @@ typedef bclass_ptr bclass_array[];
  *
  */
 #define be_native_module_attr_table(name)               \
-    static const bntvmodobj name##_attrs[] =
+    static const bntvmodobj_t name##_attrs[] =
 
 /**
  * @def be_native_module
@@ -404,21 +404,20 @@ typedef bclass_ptr bclass_array[];
  */
 #ifndef __cplusplus
 #define be_define_native_module(_name, _init)           \
-    const bntvmodule be_native_module(_name) = {        \
+    const bntvmodule_t be_native_module(_name) = {      \
         .name = #_name,                                 \
         .attrs = _name##_attrs,                         \
         .size = sizeof(_name##_attrs)                   \
                / sizeof(_name##_attrs[0]),              \
         .module = NULL,                                 \
-        .init = _init                                   \
     }
 #else
 #define be_define_native_module(_name, _init)           \
-    const bntvmodule be_native_module(_name) = {        \
+    const bntvmodule_t be_native_module(_name) = {      \
         #_name, _name##_attrs,                          \
         sizeof(_name##_attrs)                           \
             / sizeof(_name##_attrs[0]),                 \
-        0, _init                                        \
+        0                                               \
     }
 #endif
 

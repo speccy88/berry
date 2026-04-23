@@ -1140,7 +1140,38 @@ static int str_endswith(bvm *vm)
     be_return_nil(vm);
 }
 
-#if BE_USE_STRING_MODULE && !BE_USE_PRECOMPILED_OBJECT
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+static void string_module_set_func(bvm *vm, const char *name, bntvfunc func)
+{
+    be_pushntvfunction(vm, func);
+    be_setmember(vm, -2, name);
+    be_pop(vm, 1);
+}
+
+void be_cache_stringmodule(bvm *vm)
+{
+    bstring *name = be_newstr(vm, "string");
+    be_newmodule(vm);
+    string_module_set_func(vm, "format", be_str_format);
+    string_module_set_func(vm, "count", str_count);
+    string_module_set_func(vm, "split", str_split);
+    string_module_set_func(vm, "find", str_find);
+    string_module_set_func(vm, "hex", str_i2hex);
+    string_module_set_func(vm, "byte", str_byte);
+    string_module_set_func(vm, "char", str_char);
+    string_module_set_func(vm, "tolower", str_tolower);
+    string_module_set_func(vm, "toupper", str_toupper);
+    string_module_set_func(vm, "tr", str_tr);
+    string_module_set_func(vm, "escape", str_escape);
+    string_module_set_func(vm, "replace", str_replace);
+    string_module_set_func(vm, "startswith", str_startswith);
+    string_module_set_func(vm, "endswith", str_endswith);
+    be_cache_module(vm, name);
+    be_pop(vm, 1);
+}
+#endif
+
+#if BE_USE_STRING_MODULE && (!BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS))
 be_native_module_attr_table(string) {
     be_native_module_function("format", be_str_format),
     be_native_module_function("count", str_count),

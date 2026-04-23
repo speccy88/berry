@@ -15,7 +15,9 @@ GENERATE    = generate
 CONFIG      = default/berry_conf.h
 COC         = tools/coc/coc
 CONST_TAB   = $(GENERATE)/be_const_strtab.h
+P2_LOCAL_CONFIG ?= .p2.local.mk
 
 include mk/host-detect.mk
+-include $(P2_LOCAL_CONFIG)
 include mk/common.mk
 include mk/p2.mk

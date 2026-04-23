@@ -172,7 +172,9 @@ int m_pin_toggle(bvm *vm)
 
 int m_pin_randomize(bvm *vm)
 {
-    _pinrnd(p2_require_pin(vm, 1));
+    /* FlexC advertises _pinrnd() in propeller2.h but does not resolve it
+     * reliably on the current P2 build path, so use a portable fallback. */
+    _pinw(p2_require_pin(vm, 1), (int)(_rnd() & 1u));
     be_return_nil(vm);
 }
 

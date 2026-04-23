@@ -214,7 +214,7 @@ static int i_savecode(bvm *vm)
     be_return_nil(vm);
 }
 
-#if !BE_USE_PRECOMPILED_OBJECT
+#if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 static int m_open(bvm *vm)
 #else
 int be_nfunc_open(bvm *vm)
@@ -257,7 +257,7 @@ int be_nfunc_open(bvm *vm)
     be_return_nil(vm);
 }
 
-#if !BE_USE_PRECOMPILED_OBJECT
+#if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 void be_load_filelib(bvm *vm)
 {
     be_regfunc(vm, "open", m_open);
