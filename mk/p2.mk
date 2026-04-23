@@ -76,8 +76,11 @@ P2_RUNTIME_SRCS := \
 	$(P2_RUNTIME_DIR)/p2_heap.c \
 	$(P2_RUNTIME_DIR)/p2_smartserial.c
 P2_OVERRIDE_SRCS := \
+	$(P2_OVERRIDES_DIR)/be_modtab_p2.c \
 	$(P2_OVERRIDES_DIR)/be_libs_p2.c \
+	$(P2_OVERRIDES_DIR)/be_i2clib_p2.c \
 	$(P2_OVERRIDES_DIR)/be_prop2lib.c \
+	$(P2_OVERRIDES_DIR)/be_spilib_p2.c \
 	$(P2_OVERRIDES_DIR)/libc_compat.c
 P2_LIB_SRCS := \
 	src/be_byteslib.c \
@@ -96,8 +99,7 @@ P2_LIB_SRCS := \
 	src/be_strictlib.c \
 	src/be_syslib.c \
 	src/be_timelib.c \
-	src/be_undefinedlib.c \
-	default/be_modtab.c
+	src/be_undefinedlib.c
 P2_FRONT_STANDARD_SRCS := \
 	src/be_api.c \
 	src/be_baselib.c \

@@ -51,6 +51,8 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - `print(json.load('{"a":1,"b":[2,3]}')['b'][1])` -> `3`
   - `print(json.dump({'x':1,'y':[2,3]}))` -> valid JSON text
   - `import bytes`
+  - `import i2c`
+  - `import spi`
   - `print(bytes('1122'))` -> `bytes('1122')`
   - `print(bytes('1122')[1])` -> `34`
   - `b=bytes().fromstring('AB'); print(b.tohex())` -> `4142`
@@ -71,6 +73,10 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - `print(os.remove('/TMPD/TEST.TXT'))` -> `true`
   - `print(os.path.exists('/TMPD/TEST.TXT'))` -> `false`
   - `print(os.rename('/HELLO2.TXT','/HELLO.TXT'))` -> `true` was live-verified during SD card recovery
+- native bus modules are now live on the current Catalina path:
+  - `i2c.init(25, 24, 100); print(i2c.scan())` -> `[119]`
+  - `print(i2c.writeread(0x77, "\xD0", 1))` -> `U` (`0x55`, BMP180 chip id)
+  - `spi.init(10, 11, 12, 13, 0, 1000)` is live-verified
 - the current exposed P2 helpers are live-verified through `prop2_*` globals, including:
   - clock and counter helpers such as `prop2_clock_freq()`, `prop2_ticks()`, `prop2_ticks64()`
   - wait/sleep helpers such as `prop2_wait_ticks()` and `prop2_sleep_ms()`

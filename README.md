@@ -55,6 +55,169 @@ make p2 TOOLCHAIN=flexc
 make p2-run TOOLCHAIN=flexc PORT=COM6
 ```
 
+## Release Binaries
+
+Catalina releases for the Propeller 2 now ship two binaries:
+
+- `berry_p2.binary`
+  The normal Berry application image. Use this for RAM loading with `make p2-run` or `make p2-ram`.
+- `berry_p2_flash_loader.binary`
+  A Catalina flash-programmer wrapper image generated from `berry_p2.binary`. Use this for `make p2-flash` and `make p2-flash-run`.
+
+RAM vs flash on Catalina:
+
+- RAM load:
+
+```sh
+make p2 TOOLCHAIN=catalina
+make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp
+```
+
+- Flash install:
+
+```sh
+make p2 TOOLCHAIN=catalina
+make p2-flash TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp
+tio -b 230400 /dev/cu.usbserial-P97cvdxp
+```
+
+Important Catalina flash note:
+
+- `berry_p2.binary` is the Berry app image
+- `berry_p2_flash_loader.binary` is the temporary flash-programmer wrapper
+- do not flash `berry_p2.binary` directly with `loadp2 -SPI` on the Catalina path
+
+## P2 Feature Tour
+
+This fork is meant to be usable, not just buildable. Each release should describe both the newly added features and the already working features so the release notes double as a mini tutorial.
+
+The current release notes live here:
+
+- [`docs/releases/v0.9.1.md`](./docs/releases/v0.9.1.md)
+
+### New Features
+
+#### Native `i2c` Module
+
+The P2 port now has a native Berry `i2c` module for simple device bring-up, register access, and bus scanning. It uses module-global bus state, so the first version stays easy to use from the REPL and small scripts.
+
+```berry
+import i2c
+
+i2c.init(25, 24, 100)
+print(i2c.scan())                  # [119] on a BMP180
+print(i2c.writeread(0x77, "\xD0", 1))  # "U" == 0x55 chip id
+```
+
+Supported API:
+
+- `i2c.init(scl_pin, sda_pin, khz)`
+- `i2c.write(addr, data)`
+- `i2c.read(addr, count)`
+- `i2c.writeread(addr, txdata, rxcount)`
+- `i2c.scan()`
+
+#### Native `spi` Module
+
+The P2 port now also has a native Berry `spi` module for mode-aware transfers with explicit chip select control. This is aimed at common flash, EEPROM, ADC, and sensor bring-up.
+
+```berry
+import spi
+
+spi.init(10, 11, 12, 13, 0, 1000)
+spi.select()
+id = spi.transfer("\x9F\x00\x00\x00")
+spi.deselect()
+print(id)
+```
+
+Supported API:
+
+- `spi.init(clk_pin, mosi_pin, miso_pin, cs_pin, mode, khz)`
+- `spi.select()`
+- `spi.deselect()`
+- `spi.write(data)`
+- `spi.read(count, filler=0xFF)`
+- `spi.transfer(data)`
+
+### Existing Features
+
+#### Interactive REPL Basics
+
+The P2 port already supports a practical interactive Berry REPL for quick testing, small scripts, and board bring-up work.
+
+```berry
+print(1 + 2)
+a = 6
+print(a * 7)
+for i:0..3
+    print(i)
+end
+```
+
+#### Standard Modules: `string`, `math`, `json`
+
+Several standard Berry modules are already live on the P2 port, which makes it much easier to do real work without dropping to C for every little task.
+
+```berry
+import string
+import math
+import json
+
+print(string.toupper("berry"))
+print(math.sqrt(81))
+print(json.dump({"a": 1, "b": [2, 3]}))
+```
+
+#### Raw Byte Handling with `bytes`
+
+The `bytes` support is already useful for packet work, register dumps, and binary file access.
+
+```berry
+b = bytes().fromstring("AB")
+print(b.tohex())     # 4142
+print(bytes("1122"))
+```
+
+#### SD Card Files and `os`
+
+The port already supports SD-backed file I/O and common `os` helpers, so you can read files, create directories, and inspect paths directly from Berry.
+
+```berry
+import os
+
+print(os.listdir("/"))
+f = open("/TMPD/TEST.TXT", "w")
+f.write("hello from berry")
+f.close()
+print(open("/TMPD/TEST.TXT", "r").read())
+```
+
+#### Propeller 2 Hardware Helpers
+
+Low-level P2 helpers are already exposed as `prop2_*` globals for clocks, counters, pins, smartpins, CORDIC, locks, and cog control. These are useful when you want board access without writing C first.
+
+```berry
+print(prop2_clock_freq())
+print(prop2_ticks())
+prop2_pin_output(56)
+prop2_pin_write(56, 1)
+print(prop2_pin_read(56))
+```
+
+#### Reliable Catalina RAM and Flash Flow
+
+The Catalina path is already set up so RAM loading and flash programming are separate, documented flows instead of ad-hoc `loadp2` commands.
+
+```sh
+make configure TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp \
+  P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT
+
+make p2-ram
+make p2-flash
+make p2-attach
+```
+
 ## P2 Toolchain Model
 
 Two P2 compiler flows are supported:

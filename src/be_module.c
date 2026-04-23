@@ -259,10 +259,18 @@ void be_cache_module(bvm *vm, bstring *name)
     *v = vm->top[-1];
 }
 
-/* Try to run 'init(m)' function of module. Module is already loaded. */
+/* Try to run the module import hook. Module is already loaded.
+ * Script modules keep the historical 'init(m)' hook.
+ * Native modules use '()' so they can safely export a public 'init(...)'.
+ */
 static void module_init(bvm *vm) {
     if (be_ismodule(vm, -1)) {
-        if (be_getmember(vm, -1, "init")) {
+        const char *hook = "init";
+        bmodule *module = var_toobj(vm->top - 1);
+        if (module->info.native) {
+            hook = "()";
+        }
+        if (be_getmember(vm, -1, hook)) {
             /* found, call it with current module as parameter */
             be_pushvalue(vm, -2);
             be_call(vm, 1);

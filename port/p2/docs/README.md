@@ -33,11 +33,19 @@ Current Catalina status on P2 Edge / latest silicon:
 - `print()`, assignment, and basic arithmetic are live-verified
 - `for i:0..3`, `for e:list`, `for v:map`, and `for k:map.keys()` are live-verified
 - `import string`, `import math`, `import json`, `import bytes`, and `import os` are live-verified
+- `import i2c` and `import spi` are now live-verified
 - blank Enter presses no longer leak the REPL into an out-of-memory state
 - `bytes('1122')`, `bytes().fromstring('AB')`, `tohex()`, `asstring()`, `readbytes()`, and range slicing are live-verified
 - `json.load()` and `json.dump()` are live-verified
 - SD card access through `open('/HELLO.TXT','r')`, `os.listdir('/')`, `os.mkdir()`, `os.rename()`, `os.remove()`, `os.chdir()`, `os.getcwd()`, and `os.path.*` is live-verified
 - P2 helpers are exposed as `prop2_*` globals for clock, counter, pin, and smart-pin operations
+- native bus helpers are now exposed as `i2c.*` and `spi.*`
+
+Current hardware verification examples:
+
+- `import i2c; i2c.init(25, 24, 100); print(i2c.scan())` -> `[119]`
+- `print(i2c.writeread(0x77, "\xD0", 1))` -> `U` (`0x55`, BMP180 chip id)
+- `import spi; spi.init(10, 11, 12, 13, 0, 1000)` is live-verified
 
 Examples:
 

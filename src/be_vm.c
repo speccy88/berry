@@ -1137,6 +1137,14 @@ newframe: /* a new call frame */
             bvalue *b = RKB();
             if (var_isstr(b)) {
                 bstring *name = var_tostr(b);
+                int idx = be_global_find(vm, name);
+                if (idx >= 0) {
+                    bvalue *src = be_global_var(vm, idx);
+                    if (var_istype(src, BE_MODULE)) {
+                        *RA() = *src;
+                        dispatch();
+                    }
+                }
                 int res = be_module_load(vm, name);
                 reg = vm->reg;
                 switch (res) {
