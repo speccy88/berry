@@ -2,6 +2,7 @@
 ** Propeller 2 native module for Berry on P2.
 ********************************************************************/
 #include "berry.h"
+#include "be_bus_common_p2.h"
 #include <propeller2.h>
 #include <cog.h>
 #include <stdio.h>
@@ -38,7 +39,22 @@ static int p2_require_pin(bvm *vm, int index)
     if (pin < 0 || pin > 63) {
         be_raise(vm, "value_error", "pin must be between 0 and 63");
     }
+    berry_p2_bus_validate_pin_usage(vm, (int)pin, "gpio");
     return (int)pin;
+}
+
+static void p2_prepare_gpio_pin(int pin)
+{
+    /* On P2 a pin may still carry smart-pin mode and X/Y state from a
+     * previous runtime, flash loader, or other firmware. _pinclear() only
+     * clears direction and mode, so reset mode first, then clear X/Y and
+     * drop back to a plain floating input before using GPIO on the pin. */
+    _wrpin(pin, 0);
+    _dirl(pin);
+    _wxpin(pin, 0);
+    _wypin(pin, 0);
+    _akpin(pin);
+    _dirl(pin);
 }
 
 static int p2_optional_cog(bvm *vm, int index)
@@ -479,13 +495,17 @@ int m_counter_sleep(bvm *vm)
 
 int m_pin_input(bvm *vm)
 {
-    _dirl(p2_require_pin(vm, 1));
+    int pin = p2_require_pin(vm, 1);
+    p2_prepare_gpio_pin(pin);
+    _dirl(pin);
     be_return_nil(vm);
 }
 
 int m_pin_output(bvm *vm)
 {
-    _dirh(p2_require_pin(vm, 1));
+    int pin = p2_require_pin(vm, 1);
+    p2_prepare_gpio_pin(pin);
+    _dirh(pin);
     be_return_nil(vm);
 }
 
@@ -493,39 +513,51 @@ int m_pin_write(bvm *vm)
 {
     int pin = p2_require_pin(vm, 1);
     int value = p2_require_boolish(vm, 2, "value must be a bool or int");
+    p2_prepare_gpio_pin(pin);
     _pinw(pin, value);
     be_return_nil(vm);
 }
 
 int m_pin_low(bvm *vm)
 {
-    _pinl(p2_require_pin(vm, 1));
+    int pin = p2_require_pin(vm, 1);
+    p2_prepare_gpio_pin(pin);
+    _pinl(pin);
     be_return_nil(vm);
 }
 
 int m_pin_high(bvm *vm)
 {
-    _pinh(p2_require_pin(vm, 1));
+    int pin = p2_require_pin(vm, 1);
+    p2_prepare_gpio_pin(pin);
+    _pinh(pin);
     be_return_nil(vm);
 }
 
 int m_pin_toggle(bvm *vm)
 {
-    _pinnot(p2_require_pin(vm, 1));
+    int pin = p2_require_pin(vm, 1);
+    p2_prepare_gpio_pin(pin);
+    _pinnot(pin);
     be_return_nil(vm);
 }
 
 int m_pin_randomize(bvm *vm)
 {
+    int pin = p2_require_pin(vm, 1);
+
     /* FlexC advertises _pinrnd() in propeller2.h but does not resolve it
      * reliably on the current P2 build path, so use a portable fallback. */
-    _pinw(p2_require_pin(vm, 1), (int)(_rnd() & 1u));
+    p2_prepare_gpio_pin(pin);
+    _pinw(pin, (int)(_rnd() & 1u));
     be_return_nil(vm);
 }
 
 int m_pin_float(bvm *vm)
 {
-    _pinf(p2_require_pin(vm, 1));
+    int pin = p2_require_pin(vm, 1);
+    p2_prepare_gpio_pin(pin);
+    _pinf(pin);
     be_return_nil(vm);
 }
 
@@ -583,6 +615,6 @@ int m_smartpin_start(bvm *vm)
 
 int m_smartpin_clear(bvm *vm)
 {
-    _pinclear(p2_require_pin(vm, 1));
+    p2_prepare_gpio_pin(p2_require_pin(vm, 1));
     be_return_nil(vm);
 }

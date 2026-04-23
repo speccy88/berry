@@ -200,10 +200,13 @@ Low-level P2 helpers are already exposed as `prop2_*` globals for clocks, counte
 ```berry
 print(prop2_clock_freq())
 print(prop2_ticks())
+prop2_smartpin_clear(56)
 prop2_pin_output(56)
-prop2_pin_write(56, 1)
+prop2_pin_write(56, 0) # active-low LED on the tested no-PSRAM board
 print(prop2_pin_read(56))
 ```
+
+On the tested no-PSRAM P2 Edge setup, keep Berry GPIO and bus examples off the SD pins `58..61` and serial pins `62..63`. Pins `56` and `57` are left available because they are exposed as LEDs on that board.
 
 #### Reliable Catalina RAM and Flash Flow
 

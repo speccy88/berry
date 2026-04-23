@@ -59,6 +59,13 @@ Examples:
 - `prop2_smartpin_query(pin)`
 - `prop2_smartpin_start(pin, mode, x, y)`
 
+Reserved-pin note on the current Catalina `P2_EDGE` path:
+
+- pins `58..61` are reserved by the SD card interface
+- pins `62..63` are reserved by the serial console
+- on the tested no-PSRAM board, pins `56` and `57` are exposed as LEDs and are left available for Berry GPIO use
+- Berry GPIO, `i2c`, and `spi` helpers should avoid the SD and serial pins
+
 Primary development focus from now on:
 
 - macOS

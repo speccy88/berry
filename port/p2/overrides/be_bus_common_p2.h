@@ -21,12 +21,33 @@ static inline bint berry_p2_bus_require_int(bvm *vm, int index, const char *what
     return be_toint(vm, index);
 }
 
+static inline void berry_p2_bus_validate_pin_usage(bvm *vm, int pin, const char *usage)
+{
+    /* Guard only the pins that are still known to be in active platform use
+     * on the current Catalina P2 path. Pins 56/57 are intentionally left
+     * available for boards that expose them as GPIO/LEDs instead of PSRAM. */
+#if defined(__CATALINA__)
+    if (pin >= 58 && pin <= 61) {
+        be_raise(vm, "value_error", "pin is reserved by the P2 Edge SD card interface");
+    }
+    if (pin == 62 || pin == 63) {
+        be_raise(vm, "value_error", "pin is reserved by the P2 Edge serial console");
+    }
+#else
+    (void)vm;
+    (void)pin;
+    (void)usage;
+#endif
+    (void)usage;
+}
+
 static inline int berry_p2_bus_require_pin(bvm *vm, int index, const char *what)
 {
     bint pin = berry_p2_bus_require_int(vm, index, what);
     if (pin < 0 || pin > 63) {
         be_raise(vm, "value_error", "pin must be between 0 and 63");
     }
+    berry_p2_bus_validate_pin_usage(vm, (int)pin, "bus");
     return (int)pin;
 }
 

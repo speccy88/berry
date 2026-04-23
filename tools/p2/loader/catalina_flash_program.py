@@ -2,10 +2,56 @@
 import argparse
 import os
 import pty
-import select
 import signal
+import select
+import shutil
+import subprocess
 import sys
 import time
+
+
+def stop_stale_port_users(port):
+    if not shutil.which("lsof"):
+        return
+    try:
+        proc = subprocess.run(
+            ["lsof", "-t", port],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return
+
+    pids = []
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            pids.append(int(line))
+        except ValueError:
+            continue
+
+    for pid in pids:
+        try:
+            cmd = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "command="],
+                check=False,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        except OSError:
+            continue
+        if any(token in cmd for token in ("loadp2", "proploader", "serial_terminal.py", "tio")):
+            try:
+                os.kill(pid, signal.SIGCONT)
+            except OSError:
+                pass
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass
 
 
 def main():
@@ -29,6 +75,7 @@ def main():
 
     print("[Flash] Loading Catalina flash programmer", flush=True)
     print("[Flash] Waiting for Berry to boot from flash...", flush=True)
+    stop_stale_port_users(args.port)
 
     pid, master_fd = pty.fork()
     if pid == 0:

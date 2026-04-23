@@ -86,6 +86,10 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - CORDIC helpers such as `prop2_rotxy()`, `prop2_xypol()`, `prop2_polxy()`
   - pin helpers such as `prop2_pin_output()`, `prop2_pin_write()`, `prop2_pin_read()`
   - smart-pin helpers such as `prop2_smartpin_write_mode()`, `prop2_smartpin_query()`, `prop2_smartpin_start()`
+- reserved pin map on the tested no-PSRAM P2 Edge path is now treated more narrowly:
+  - pins `58..61` are the SD card interface
+  - pins `62..63` are the serial console
+  - pins `56..57` are intentionally left available for Berry GPIO use because they are exposed as LEDs on the tested board
 - REPL input cleanup is improved enough that backspace now sends the normal erase sequence and prompts/newlines are no longer drifting the way they did earlier
 - interactive quit on the macOS Catalina path is now verified:
   - `Ctrl-C` or `Ctrl-D` at an empty `berry>` prompt makes Berry print `bye`
