@@ -374,7 +374,9 @@ static char *serial_readline(char *buffer, size_t size)
         }
 
         if (ch == '\r' || ch == '\n') {
-            serial_write_char('\n');
+            if (echo_input) {
+                serial_write_char('\n');
+            }
             break;
         }
 
