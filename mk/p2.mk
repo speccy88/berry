@@ -13,6 +13,8 @@ P2_OBJDIR := $(P2_BUILD_DIR)/obj
 P2_CONFIG := $(P2_INCLUDE_DIR)/berry_conf_p2.h
 P2_INCFLAGS := -I"$(P2_INCLUDE_DIR)" -I"src"
 P2_COC_RUN := $(PYTHON) $(COC)
+P2_FLASH_FLAGS ?= -FLASH -t
+P2_CATALINA_DOCKER_SCRIPT := scripts/build-p2-catalina-docker.sh
 
 ifeq ($(origin P2_COMPILER),command line)
 TOOLCHAIN := $(P2_COMPILER)
@@ -20,6 +22,14 @@ endif
 
 ifeq ($(origin P2_PORT),command line)
 PORT := $(P2_PORT)
+endif
+
+ifeq ($(TOOLCHAIN),catalina)
+ifeq ($(HOST_OS),darwin)
+CATALINA_USE_DOCKER ?= 1
+else
+CATALINA_USE_DOCKER ?= 0
+endif
 endif
 
 ifeq ($(P2_SILICON),a)
@@ -55,6 +65,7 @@ P2_RUNTIME_SRCS := \
 P2_OVERRIDE_SRCS := \
 	$(P2_OVERRIDES_DIR)/be_libs_p2.c \
 	$(P2_OVERRIDES_DIR)/be_modtab_p2.c \
+	$(P2_OVERRIDES_DIR)/be_prop2lib.c \
 	$(P2_OVERRIDES_DIR)/libc_compat.c
 P2_FRONT_STANDARD_SRCS := \
 	src/be_api.c \
@@ -107,14 +118,14 @@ P2_OBJS := $(patsubst %.c,$(P2_OBJDIR)/%.o,$(P2_SRCS))
 P2_SERIAL_PROBE_SRCS := $(P2_TEST_DIR)/serial_probe.c $(P2_RUNTIME_DIR)/berry_port.c $(P2_RUNTIME_DIR)/p2_smartserial.c
 P2_SERIAL_PROBE := $(P2_BUILD_DIR)/serial_probe.binary
 
-.PHONY: p2 p2-run p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-run run
+.PHONY: p2 p2-catalina-host p2-run p2-ram p2-flash p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run run
 
 p2-prebuild: $(GENERATE)
 	$(MSG) [Prebuild] generate P2 resources
 ifeq ($(HOST_OS),windows)
-	$(Q) $(PWSH) scripts/prebuild-p2.ps1 -Python "$(PYTHON)" -Coc "$(COC)" -Output "$(GENERATE)" -Config "$(P2_CONFIG)" -SourcePaths "src;$(P2_PORT_ROOT)"
+	$(Q) $(PWSH) scripts/prebuild-p2.ps1 -Python "$(PYTHON)" -Coc "$(COC)" -Output "$(GENERATE)" -Config "$(P2_CONFIG)" -SourcePaths "src;$(P2_PORT_ROOT);$(P2_OVERRIDES_DIR)"
 else
-	$(Q) PYTHON_CMD='$(PYTHON)' bash scripts/prebuild-p2.sh "$(COC)" "$(GENERATE)" "$(P2_CONFIG)" src "$(P2_PORT_ROOT)"
+	$(Q) PYTHON_CMD='$(PYTHON)' bash scripts/prebuild-p2.sh "$(COC)" "$(GENERATE)" "$(P2_CONFIG)" src "$(P2_PORT_ROOT)" "$(P2_OVERRIDES_DIR)"
 endif
 	$(MSG) done
 
@@ -139,21 +150,30 @@ ifeq ($(TOOLCHAIN),catalina)
 		CATALINA_INCLUDE="$(CATALINA_INCLUDEDIR)" CATALINA_TARGET="$(CATALINA_TARGETDIR)" \
 		CATALINA_LIBRARY="$(CATALINA_DIR)" PATH="$(CATALINA_BINDIR)$(HOST_PATHSEP)$$PATH" \
 		"$(CATALINA)" -C99 -p2 $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) \
-		-C $(CATALINA_PLATFORM) -I src -I $(P2_INCLUDE_DIR) -c $< -o $@
+		$(CATALINA_CONFIG_FLAGS) -I src -I $(P2_INCLUDE_DIR) -c $< -o $@
 else
 	$(Q) "$(FLEXCC)" $(P2_CFLAGS) $(P2_TOOLCHAIN_INCFLAGS) $(P2_INCFLAGS) -c $< -o $@
 endif
 
 ifeq ($(TOOLCHAIN),catalina)
-p2: p2-tools p2-prebuild $(P2_BUILD_DIR)
+p2-catalina-host: $(P2_BUILD_DIR)
 	$(MSG) [Build] $(P2_IMAGE)
 	$(Q) CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" \
 		CATALINA_INCLUDE="$(CATALINA_INCLUDEDIR)" CATALINA_TARGET="$(CATALINA_TARGETDIR)" \
 		CATALINA_LIBRARY="$(CATALINA_DIR)" PATH="$(CATALINA_BINDIR)$(HOST_PATHSEP)$$PATH" \
 		"$(CATALINA)" -C99 -p2 $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) \
-		-C $(CATALINA_PLATFORM) -I src -I $(P2_INCLUDE_DIR) -o "$(P2_CATALINA_BASE)" $(P2_SRCS)
+		$(CATALINA_CONFIG_FLAGS) -I src -I $(P2_INCLUDE_DIR) -o "$(P2_CATALINA_BASE)" $(P2_SRCS)
 	$(Q) $(PYTHON) -c "from pathlib import Path; Path(r'$(P2_IMAGE)').write_bytes(Path(r'$(P2_CATALINA_BASE).bin').read_bytes())"
 	$(MSG) done
+
+p2: p2-tools p2-prebuild $(P2_BUILD_DIR)
+ifeq ($(CATALINA_USE_DOCKER),1)
+	$(Q) CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" \
+		CATALINA_PLATFORM="$(CATALINA_PLATFORM)" CATALINA_MODEL="$(CATALINA_MODEL)" \
+		bash "$(P2_CATALINA_DOCKER_SCRIPT)" p2-catalina-host
+else
+	$(Q) $(MAKE) p2-catalina-host TOOLCHAIN=$(TOOLCHAIN) CATALINA_DIR=$(CATALINA_DIR) FLEXPROP_DIR=$(FLEXPROP_DIR) CATALINA_PLATFORM="$(CATALINA_PLATFORM)" CATALINA_MODEL="$(CATALINA_MODEL)"
+endif
 else
 p2: p2-tools p2-prebuild $(P2_BUILD_DIR) $(P2_OBJS)
 	$(MSG) [Build] $(P2_IMAGE)
@@ -176,19 +196,45 @@ endif
 
 run: p2-run
 
-p2-serial-probe: p2-tools $(P2_BUILD_DIR)
-	$(MSG) [Build] $(P2_SERIAL_PROBE)
-ifeq ($(TOOLCHAIN),catalina)
+p2-ram: p2-run
+
+p2-flash: p2
+ifeq ($(HOST_OS),windows)
+	$(Q) $(PWSH) tools/p2/loader/run-loadp2.ps1 -Loadp2 "$(LOADP2)" -Port "$(PORT)" -Baud "$(P2_BAUD)" -Flags "$(P2_FLASH_FLAGS)" -Image "$(P2_IMAGE)"
+else
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-flash TOOLCHAIN=$(TOOLCHAIN) PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) bash tools/p2/loader/run-loadp2.sh "$(LOADP2)" "$(PORT)" "$(P2_BAUD)" "$(P2_FLASH_FLAGS)" "$(P2_IMAGE)"
+endif
+
+p2-serial-probe-host:
 	$(Q) CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" \
 		CATALINA_INCLUDE="$(CATALINA_INCLUDEDIR)" CATALINA_TARGET="$(CATALINA_TARGETDIR)" \
 		CATALINA_LIBRARY="$(CATALINA_DIR)" PATH="$(CATALINA_BINDIR)$(HOST_PATHSEP)$$PATH" \
 		"$(CATALINA)" -C99 -p2 $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) \
-		-C $(CATALINA_PLATFORM) -I src -I $(P2_INCLUDE_DIR) -o "$(P2_BUILD_DIR)/serial_probe" $(P2_SERIAL_PROBE_SRCS)
+		$(CATALINA_CONFIG_FLAGS) -I src -I $(P2_INCLUDE_DIR) -o "$(P2_BUILD_DIR)/serial_probe" $(P2_SERIAL_PROBE_SRCS)
 	$(Q) $(PYTHON) -c "from pathlib import Path; Path(r'$(P2_SERIAL_PROBE)').write_bytes(Path(r'$(P2_BUILD_DIR)/serial_probe.bin').read_bytes())"
+
+ifeq ($(TOOLCHAIN),catalina)
+p2-serial-probe: p2-tools p2-prebuild $(P2_BUILD_DIR)
+	$(MSG) [Build] $(P2_SERIAL_PROBE)
+ifeq ($(CATALINA_USE_DOCKER),1)
+	$(Q) CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" \
+		CATALINA_PLATFORM="$(CATALINA_PLATFORM)" CATALINA_MODEL="$(CATALINA_MODEL)" \
+		bash "$(P2_CATALINA_DOCKER_SCRIPT)" p2-serial-probe-host
 else
-	$(Q) "$(FLEXCC)" $(P2_CFLAGS) $(P2_TOOLCHAIN_INCFLAGS) $(P2_INCFLAGS) -o "$(P2_SERIAL_PROBE)" $(P2_SERIAL_PROBE_SRCS)
+	$(Q) $(MAKE) p2-serial-probe-host TOOLCHAIN=$(TOOLCHAIN) CATALINA_DIR=$(CATALINA_DIR) FLEXPROP_DIR=$(FLEXPROP_DIR) CATALINA_PLATFORM="$(CATALINA_PLATFORM)" CATALINA_MODEL="$(CATALINA_MODEL)"
 endif
 	$(MSG) done
+else
+p2-serial-probe: p2-tools $(P2_BUILD_DIR)
+	$(MSG) [Build] $(P2_SERIAL_PROBE)
+	$(Q) "$(FLEXCC)" $(P2_CFLAGS) $(P2_TOOLCHAIN_INCFLAGS) $(P2_INCFLAGS) -o "$(P2_SERIAL_PROBE)" $(P2_SERIAL_PROBE_SRCS)
+	$(MSG) done
+endif
 
 p2-serial-probe-run: p2-serial-probe
 ifeq ($(HOST_OS),windows)

@@ -1,5 +1,6 @@
 #if defined(__CATALINA__)
-#include <serial2.h>
+#include <stdio.h>
+#include <hmi.h>
 #else
 #include <propeller2.h>
 #endif
@@ -76,7 +77,8 @@ void p2_smartserial_init(int rxpin, int txpin, int baud)
 void p2_smartserial_tx(int ch)
 {
 #if defined(__CATALINA__)
-    s_tx(0, (char)ch);
+    putchar(ch);
+    fflush(stdout);
 #else
     unsigned long z;
     unsigned long wait_count = 0;
@@ -98,7 +100,7 @@ void p2_smartserial_tx(int ch)
 int p2_smartserial_rx(void)
 {
 #if defined(__CATALINA__)
-    return s_rx(0);
+    return getchar();
 #else
     unsigned long z;
     unsigned long wait_count = 0;
@@ -122,7 +124,10 @@ int p2_smartserial_rx(void)
 int p2_smartserial_rxcheck(void)
 {
 #if defined(__CATALINA__)
-    return s_rxcheck(0);
+    if (k_ready()) {
+        return getchar();
+    }
+    return -1;
 #else
     unsigned long z;
     

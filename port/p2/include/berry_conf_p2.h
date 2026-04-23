@@ -3,11 +3,16 @@
 
 #include <assert.h>
 #include <stdlib.h>
-#include "p2_heap.h"
 
 #ifndef BE_DEBUG
 #define BE_DEBUG                        0
 #endif
+
+#ifndef BE_P2_HEAP_BYTES
+#define BE_P2_HEAP_BYTES                (192 * 1024)
+#endif
+
+#include "p2_heap.h"
 
 /*
  * Favor smaller objects and lower VM overhead for the first Propeller 2 port.
@@ -20,7 +25,7 @@
 #define BE_P2_CUSTOM_PRECOMPILED_BUILTINS 1
 #define BE_P2_NO_SMALL_POOLS            1
 #define BE_P2_SIMPLE_REALLOC            1
-#define BE_P2_BUMP_HEAP_BYTES           (16 * 1024)
+#define BE_P2_BUMP_HEAP_BYTES           (128 * 1024)
 
 #define BE_DEBUG_SOURCE_FILE            0
 #define BE_DEBUG_RUNTIME_INFO           0

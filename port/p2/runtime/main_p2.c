@@ -1,4 +1,3 @@
-#include <string.h>
 #include <propeller2.h>
 
 #include "berry.h"
@@ -7,48 +6,48 @@
 
 int stackspace[4096];
 
-static int run_chunk(bvm *vm, const char *name, const char *source)
-{
-    int res = be_loadbuffer(vm, name, source, strlen(source));
+#if BE_DEBUG
+#define P2_FULL_VERSION "Berry " BERRY_VERSION " (debug)"
+#else
+#define P2_FULL_VERSION "Berry " BERRY_VERSION
+#endif
 
-    if (res == BE_OK) {
-        res = be_pcall(vm, 0);
-        if (res == BE_OK) {
-            if (!be_isnil(vm, -1)) {
-                be_dumpvalue(vm, -1);
-            } else {
-                be_pop(vm, 1);
-            }
-            return BE_OK;
-        }
-    }
+#if defined(__CATALINA__)
+#define P2_BUILD_TIME "unknown"
+#else
+#define P2_BUILD_TIME __TIME__
+#endif
 
-    if (res == BE_EXCEPTION) {
-        be_dumpexcept(vm);
-    } else if (res == BE_MALLOC_FAIL) {
-        be_writestring("error: out of memory\n");
-    } else {
-        be_writestring("error: boot script failed\n");
-    }
+#if defined(__CATALINA__)
+#define P2_COMPILER "Catalina"
+#define P2_RUNTIME "Propeller 2 Edge (P2_EDGE, compact)"
+#elif defined(__clang__)
+#define P2_COMPILER "clang"
+#define P2_RUNTIME "Propeller 2"
+#elif defined(__GNUC__)
+#define P2_COMPILER "GCC"
+#define P2_RUNTIME "Propeller 2"
+#else
+#define P2_COMPILER "Unknown Compiler"
+#define P2_RUNTIME "Propeller 2"
+#endif
 
-    return res;
-}
+#define P2_REPL_PRELUDE \
+    P2_FULL_VERSION " (build in " __DATE__ ", " P2_BUILD_TIME ")\n" \
+    "[" P2_COMPILER "] on " P2_RUNTIME " (p2)\n"
 
 static void berry_p2_main(void)
 {
     bvm *vm;
 
     p2_serial_init();
-
-    p2_serial_puts("\nBerry on Propeller 2\n");
+    p2_serial_puts(P2_REPL_PRELUDE);
     vm = be_vm_new();
     if (!vm) {
         p2_serial_puts("error: failed to create VM\n");
         for (;;) {
         }
     }
-
-    run_chunk(vm, "<boot>", "print(\"Berry on P2\")");
 
     for (;;) {
         int res = be_repl(vm, p2_readline, p2_freeline);

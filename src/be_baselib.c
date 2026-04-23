@@ -495,6 +495,39 @@ int be_baselib_isinstance(bvm *vm)
     return _issubv(vm, be_isinstance);
 }
 
+extern int m_clock_freq(bvm *vm);
+extern int m_clock_mode(bvm *vm);
+extern int m_misc_random(bvm *vm);
+extern int m_misc_reverse_bits(bvm *vm);
+extern int m_misc_encode(bvm *vm);
+extern int m_misc_isqrt(bvm *vm);
+extern int m_misc_muldiv64(bvm *vm);
+extern int m_counter_ticks(bvm *vm);
+extern int m_counter_ticks_high(bvm *vm);
+extern int m_counter_ticks64(bvm *vm);
+extern int m_counter_wait_until(bvm *vm);
+extern int m_counter_wait_ticks(bvm *vm);
+extern int m_counter_sleep_us(bvm *vm);
+extern int m_counter_sleep_ms(bvm *vm);
+extern int m_counter_sleep(bvm *vm);
+extern int m_pin_input(bvm *vm);
+extern int m_pin_output(bvm *vm);
+extern int m_pin_write(bvm *vm);
+extern int m_pin_low(bvm *vm);
+extern int m_pin_high(bvm *vm);
+extern int m_pin_toggle(bvm *vm);
+extern int m_pin_randomize(bvm *vm);
+extern int m_pin_float(bvm *vm);
+extern int m_pin_read(bvm *vm);
+extern int m_smartpin_write_mode(bvm *vm);
+extern int m_smartpin_write_x(bvm *vm);
+extern int m_smartpin_write_y(bvm *vm);
+extern int m_smartpin_ack(bvm *vm);
+extern int m_smartpin_read(bvm *vm);
+extern int m_smartpin_query(bvm *vm);
+extern int m_smartpin_start(bvm *vm);
+extern int m_smartpin_clear(bvm *vm);
+
 #if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
 void be_load_baselib(bvm *vm)
 {
@@ -538,6 +571,70 @@ void be_load_baselib(bvm *vm)
     be_regfunc(vm, "bool", l_bool);
     baselib_trace("format");
     be_regfunc(vm, "format", be_str_format);
+    baselib_trace("prop2_clock_freq");
+    be_regfunc(vm, "prop2_clock_freq", m_clock_freq);
+    baselib_trace("prop2_clock_mode");
+    be_regfunc(vm, "prop2_clock_mode", m_clock_mode);
+    baselib_trace("prop2_random");
+    be_regfunc(vm, "prop2_random", m_misc_random);
+    baselib_trace("prop2_reverse_bits");
+    be_regfunc(vm, "prop2_reverse_bits", m_misc_reverse_bits);
+    baselib_trace("prop2_encode");
+    be_regfunc(vm, "prop2_encode", m_misc_encode);
+    baselib_trace("prop2_isqrt");
+    be_regfunc(vm, "prop2_isqrt", m_misc_isqrt);
+    baselib_trace("prop2_muldiv64");
+    be_regfunc(vm, "prop2_muldiv64", m_misc_muldiv64);
+    baselib_trace("prop2_ticks");
+    be_regfunc(vm, "prop2_ticks", m_counter_ticks);
+    baselib_trace("prop2_ticks_high");
+    be_regfunc(vm, "prop2_ticks_high", m_counter_ticks_high);
+    baselib_trace("prop2_ticks64");
+    be_regfunc(vm, "prop2_ticks64", m_counter_ticks64);
+    baselib_trace("prop2_wait_until");
+    be_regfunc(vm, "prop2_wait_until", m_counter_wait_until);
+    baselib_trace("prop2_wait_ticks");
+    be_regfunc(vm, "prop2_wait_ticks", m_counter_wait_ticks);
+    baselib_trace("prop2_sleep_us");
+    be_regfunc(vm, "prop2_sleep_us", m_counter_sleep_us);
+    baselib_trace("prop2_sleep_ms");
+    be_regfunc(vm, "prop2_sleep_ms", m_counter_sleep_ms);
+    baselib_trace("prop2_sleep");
+    be_regfunc(vm, "prop2_sleep", m_counter_sleep);
+    baselib_trace("prop2_pin_input");
+    be_regfunc(vm, "prop2_pin_input", m_pin_input);
+    baselib_trace("prop2_pin_output");
+    be_regfunc(vm, "prop2_pin_output", m_pin_output);
+    baselib_trace("prop2_pin_write");
+    be_regfunc(vm, "prop2_pin_write", m_pin_write);
+    baselib_trace("prop2_pin_low");
+    be_regfunc(vm, "prop2_pin_low", m_pin_low);
+    baselib_trace("prop2_pin_high");
+    be_regfunc(vm, "prop2_pin_high", m_pin_high);
+    baselib_trace("prop2_pin_toggle");
+    be_regfunc(vm, "prop2_pin_toggle", m_pin_toggle);
+    baselib_trace("prop2_pin_randomize");
+    be_regfunc(vm, "prop2_pin_randomize", m_pin_randomize);
+    baselib_trace("prop2_pin_float");
+    be_regfunc(vm, "prop2_pin_float", m_pin_float);
+    baselib_trace("prop2_pin_read");
+    be_regfunc(vm, "prop2_pin_read", m_pin_read);
+    baselib_trace("prop2_smartpin_write_mode");
+    be_regfunc(vm, "prop2_smartpin_write_mode", m_smartpin_write_mode);
+    baselib_trace("prop2_smartpin_write_x");
+    be_regfunc(vm, "prop2_smartpin_write_x", m_smartpin_write_x);
+    baselib_trace("prop2_smartpin_write_y");
+    be_regfunc(vm, "prop2_smartpin_write_y", m_smartpin_write_y);
+    baselib_trace("prop2_smartpin_ack");
+    be_regfunc(vm, "prop2_smartpin_ack", m_smartpin_ack);
+    baselib_trace("prop2_smartpin_read");
+    be_regfunc(vm, "prop2_smartpin_read", m_smartpin_read);
+    baselib_trace("prop2_smartpin_query");
+    be_regfunc(vm, "prop2_smartpin_query", m_smartpin_query);
+    baselib_trace("prop2_smartpin_start");
+    be_regfunc(vm, "prop2_smartpin_start", m_smartpin_start);
+    baselib_trace("prop2_smartpin_clear");
+    be_regfunc(vm, "prop2_smartpin_clear", m_smartpin_clear);
 }
 #elif !BE_USE_PRECOMPILED_OBJECT
 void be_load_baselib(bvm *vm)
@@ -601,6 +698,38 @@ vartab m_builtin (scope: local) {
     call, func(l_call)
     bool, func(l_bool)
     format, func(be_str_format)
+    prop2_clock_freq, func(m_clock_freq)
+    prop2_clock_mode, func(m_clock_mode)
+    prop2_random, func(m_misc_random)
+    prop2_reverse_bits, func(m_misc_reverse_bits)
+    prop2_encode, func(m_misc_encode)
+    prop2_isqrt, func(m_misc_isqrt)
+    prop2_muldiv64, func(m_misc_muldiv64)
+    prop2_ticks, func(m_counter_ticks)
+    prop2_ticks_high, func(m_counter_ticks_high)
+    prop2_ticks64, func(m_counter_ticks64)
+    prop2_wait_until, func(m_counter_wait_until)
+    prop2_wait_ticks, func(m_counter_wait_ticks)
+    prop2_sleep_us, func(m_counter_sleep_us)
+    prop2_sleep_ms, func(m_counter_sleep_ms)
+    prop2_sleep, func(m_counter_sleep)
+    prop2_pin_input, func(m_pin_input)
+    prop2_pin_output, func(m_pin_output)
+    prop2_pin_write, func(m_pin_write)
+    prop2_pin_low, func(m_pin_low)
+    prop2_pin_high, func(m_pin_high)
+    prop2_pin_toggle, func(m_pin_toggle)
+    prop2_pin_randomize, func(m_pin_randomize)
+    prop2_pin_float, func(m_pin_float)
+    prop2_pin_read, func(m_pin_read)
+    prop2_smartpin_write_mode, func(m_smartpin_write_mode)
+    prop2_smartpin_write_x, func(m_smartpin_write_x)
+    prop2_smartpin_write_y, func(m_smartpin_write_y)
+    prop2_smartpin_ack, func(m_smartpin_ack)
+    prop2_smartpin_read, func(m_smartpin_read)
+    prop2_smartpin_query, func(m_smartpin_query)
+    prop2_smartpin_start, func(m_smartpin_start)
+    prop2_smartpin_clear, func(m_smartpin_clear)
 }
 @const_object_info_end */
 #include "../generate/be_fixed_m_builtin.h"

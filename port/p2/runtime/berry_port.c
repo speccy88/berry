@@ -3,7 +3,11 @@
 #include "berry_port.h"
 #include "p2_serial.h"
 
+#if defined(__CATALINA__)
+#include <stdio.h>
+#else
 #include <propeller2.h>
+#endif
 #include <string.h>
 
 enum {
@@ -15,7 +19,9 @@ enum {
 void p2_serial_init(void)
 {
     p2_smartserial_init(BERRY_P2_RX_PIN, BERRY_P2_TX_PIN, BERRY_P2_BAUD);
+#if !defined(__CATALINA__)
     _waitms(100);
+#endif
 }
 
 static const char *map_prompt(const char *prompt)
@@ -51,6 +57,11 @@ static char *serial_readline(char *buffer, size_t size)
 {
     int pos = 0;
     int limit = (int)size;
+#if defined(__CATALINA__)
+    const int echo_input = 0;
+#else
+    const int echo_input = 1;
+#endif
 
     if (!buffer || limit <= 0) {
         return NULL;
@@ -64,7 +75,9 @@ static char *serial_readline(char *buffer, size_t size)
         }
 
         if (ch == '\r' || ch == '\n') {
-            serial_write_char('\n');
+            if (echo_input || pos > 0) {
+                serial_write_char('\n');
+            }
             if (pos + 1 < limit) {
                 buffer[pos++] = '\n';
             }
@@ -84,7 +97,9 @@ static char *serial_readline(char *buffer, size_t size)
         }
 
         buffer[pos++] = (char)ch;
-        serial_write_char(ch);
+        if (echo_input) {
+            serial_write_char(ch);
+        }
     }
 
     buffer[pos] = '\0';

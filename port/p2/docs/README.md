@@ -19,6 +19,24 @@ Bring up a basic Berry REPL on Propeller 2 with:
 - simple arithmetic
 - reliable serial interaction
 
+Current Catalina status on P2 Edge / latest silicon:
+
+- `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` reaches a working REPL
+- `print()`, assignment, and basic arithmetic are live-verified
+- P2 helpers are exposed as `prop2_*` globals for clock, counter, pin, and smart-pin operations
+
+Examples:
+
+- `prop2_clock_freq()`
+- `prop2_ticks()`
+- `prop2_ticks64()`
+- `prop2_pin_output(pin)`
+- `prop2_pin_write(pin, value)`
+- `prop2_pin_read(pin)`
+- `prop2_smartpin_write_mode(pin, mode)`
+- `prop2_smartpin_query(pin)`
+- `prop2_smartpin_start(pin, mode, x, y)`
+
 ## Main References
 
 - [`PORTING_STATUS.md`](./PORTING_STATUS.md)

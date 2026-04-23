@@ -1,3 +1,4 @@
+#include "berry_conf_p2.h"
 #include "p2_heap.h"
 
 #include <stdint.h>

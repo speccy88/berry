@@ -7,6 +7,8 @@ make p2 TOOLCHAIN=flexc
 make p2 TOOLCHAIN=catalina
 make p2-run TOOLCHAIN=flexc PORT=/dev/ttyUSB0
 make p2-run TOOLCHAIN=catalina PORT=COM5
+make p2-ram TOOLCHAIN=catalina PORT=/dev/ttyUSB0
+make p2-flash TOOLCHAIN=catalina PORT=/dev/ttyUSB0
 make p2-clean
 make p2-tools TOOLCHAIN=flexc
 make p2-tools TOOLCHAIN=catalina
