@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <string.h>
+#include <propeller2.h>
 
 enum {
     P2_HEAP_ALIGN = 8
@@ -15,40 +16,71 @@ typedef struct p2_heap_block {
     int free;
 } p2_heap_block;
 
-static p2_heap_block *p2_heap_head;
-static int p2_heap_ready;
+typedef struct p2_heap_arena {
+    p2_heap_block *head;
+    int ready;
+    unsigned char *raw;
+    size_t bytes;
+} p2_heap_arena;
+
 static union {
     unsigned char raw[BE_P2_HEAP_BYTES];
     uint64_t align;
 } p2_heap_storage;
+static union {
+    unsigned char raw[BE_P2_WORKER_HEAP_BYTES];
+    uint64_t align;
+} p2_worker_heap_storage;
+static p2_heap_arena p2_main_arena = {
+    NULL,
+    0,
+    p2_heap_storage.raw,
+    BE_P2_HEAP_BYTES
+};
+static p2_heap_arena p2_worker_arena = {
+    NULL,
+    0,
+    p2_worker_heap_storage.raw,
+    BE_P2_WORKER_HEAP_BYTES
+};
+static volatile int p2_worker_heap_cog = -1;
 
 static size_t p2_heap_align(size_t size)
 {
     return (size + (P2_HEAP_ALIGN - 1u)) & ~(size_t)(P2_HEAP_ALIGN - 1u);
 }
 
-static void p2_heap_init(void)
+static p2_heap_arena *p2_heap_current(void)
 {
-    if (p2_heap_ready) {
+    int cog = _cogid();
+    if (cog == p2_worker_heap_cog) {
+        return &p2_worker_arena;
+    }
+    return &p2_main_arena;
+}
+
+static void p2_heap_init(p2_heap_arena *arena)
+{
+    if (arena->ready) {
         return;
     }
 
     {
-        uintptr_t start = (uintptr_t)p2_heap_storage.raw;
+        uintptr_t start = (uintptr_t)arena->raw;
         uintptr_t aligned = (start + (P2_HEAP_ALIGN - 1u)) & ~(uintptr_t)(P2_HEAP_ALIGN - 1u);
         size_t offset = (size_t)(aligned - start);
 
-        if (offset + sizeof(p2_heap_block) >= BE_P2_HEAP_BYTES) {
+        if (offset + sizeof(p2_heap_block) >= arena->bytes) {
             return;
         }
 
-        p2_heap_head = (p2_heap_block *)aligned;
-        p2_heap_head->size = BE_P2_HEAP_BYTES - offset - sizeof(p2_heap_block);
+        arena->head = (p2_heap_block *)aligned;
+        arena->head->size = arena->bytes - offset - sizeof(p2_heap_block);
     }
-    p2_heap_head->next = NULL;
-    p2_heap_head->prev = NULL;
-    p2_heap_head->free = 1;
-    p2_heap_ready = 1;
+    arena->head->next = NULL;
+    arena->head->prev = NULL;
+    arena->head->free = 1;
+    arena->ready = 1;
 }
 
 static void p2_heap_split(p2_heap_block *block, size_t size)
@@ -90,11 +122,11 @@ static void p2_heap_merge_next(p2_heap_block *block)
     }
 }
 
-static p2_heap_block *p2_heap_find(size_t size)
+static p2_heap_block *p2_heap_find(p2_heap_arena *arena, size_t size)
 {
     p2_heap_block *block;
 
-    for (block = p2_heap_head; block; block = block->next) {
+    for (block = arena->head; block; block = block->next) {
         if (block->free && block->size >= size) {
             return block;
         }
@@ -105,15 +137,16 @@ static p2_heap_block *p2_heap_find(size_t size)
 
 void *p2_heap_malloc(size_t size)
 {
+    p2_heap_arena *arena = p2_heap_current();
     p2_heap_block *block;
 
     if (size == 0) {
         return NULL;
     }
 
-    p2_heap_init();
+    p2_heap_init(arena);
     size = p2_heap_align(size);
-    block = p2_heap_find(size);
+    block = p2_heap_find(arena, size);
     if (!block) {
         return NULL;
     }
@@ -125,13 +158,14 @@ void *p2_heap_malloc(size_t size)
 
 void p2_heap_free(void *ptr)
 {
+    p2_heap_arena *arena = p2_heap_current();
     p2_heap_block *block;
 
     if (!ptr) {
         return;
     }
 
-    p2_heap_init();
+    p2_heap_init(arena);
     block = ((p2_heap_block *)ptr) - 1;
     block->free = 1;
 
@@ -143,6 +177,7 @@ void p2_heap_free(void *ptr)
 
 void *p2_heap_realloc(void *ptr, size_t size)
 {
+    p2_heap_arena *arena = p2_heap_current();
     p2_heap_block *block;
     void *newptr;
 
@@ -154,7 +189,7 @@ void *p2_heap_realloc(void *ptr, size_t size)
         return NULL;
     }
 
-    p2_heap_init();
+    p2_heap_init(arena);
     size = p2_heap_align(size);
     block = ((p2_heap_block *)ptr) - 1;
 
@@ -179,4 +214,19 @@ void *p2_heap_realloc(void *ptr, size_t size)
     memcpy(newptr, ptr, block->size);
     p2_heap_free(ptr);
     return newptr;
+}
+
+void p2_heap_set_worker_cog(int cog)
+{
+    p2_worker_heap_cog = cog;
+}
+
+void *p2_heap_worker_base(void)
+{
+    return p2_worker_heap_storage.raw;
+}
+
+size_t p2_heap_worker_size(void)
+{
+    return (size_t)BE_P2_WORKER_HEAP_BYTES;
 }
