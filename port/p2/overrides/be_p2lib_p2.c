@@ -6,6 +6,7 @@
 #include "be_bus_common_p2.h"
 #include "be_module.h"
 #include "be_string.h"
+#include "berry_worker.h"
 #include "p2_heap.h"
 
 #include <propeller2.h>
@@ -137,6 +138,38 @@ static int m_p2_cog_stop(bvm *vm)
     be_return_nil(vm);
 }
 
+static int m_p2_cog_start(bvm *vm)
+{
+    const char *name;
+    int argc = be_top(vm) - 1;
+    int argv[BERRY_WORKER_ARGS_MAX];
+    int i;
+    int cog;
+    const char *error = NULL;
+
+    if (be_top(vm) < 1 || !be_isstring(vm, 1)) {
+        be_raise(vm, "type_error", "function name must be a string");
+    }
+    if (argc > BERRY_WORKER_ARGS_MAX) {
+        be_raise(vm, "value_error", "too many cog_start arguments");
+    }
+    name = be_tostring(vm, 1);
+    for (i = 0; i < argc; ++i) {
+        argv[i] = (int)p2_require_int_arg(vm, i + 2, "cog_start arguments must be ints");
+    }
+
+    cog = berry_worker_start_cog(&error);
+    if (cog < 0) {
+        be_raise(vm, "runtime_error", error ? error : "failed to start worker cog");
+    }
+    if (berry_worker_exec_ints(name, argc, argv, &error) != 0) {
+        be_raise(vm, "runtime_error", error ? error : "failed to start cog job");
+    }
+
+    be_pushint(vm, (bint)cog);
+    be_return(vm);
+}
+
 static int m_p2_cog_states(bvm *vm)
 {
     int cog;
@@ -261,6 +294,7 @@ void be_cache_p2module(bvm *vm)
     p2_module_set_func(vm, "sleep_ms", m_p2_sleep_ms);
     p2_module_set_func(vm, "delay_us", m_p2_delay_us);
     p2_module_set_func(vm, "cogid", m_p2_cogid);
+    p2_module_set_func(vm, "cog_start", m_p2_cog_start);
     p2_module_set_func(vm, "cog_stop", m_p2_cog_stop);
     p2_module_set_func(vm, "cog_states", m_p2_cog_states);
     p2_module_set_func(vm, "locknew", m_p2_locknew);
