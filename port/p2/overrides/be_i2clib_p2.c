@@ -20,6 +20,7 @@ typedef struct berry_p2_i2c_state {
     int scl_pin;
     int sda_pin;
     unsigned khz;
+    int pullup;
     uint32_t quarter_ticks;
 } berry_p2_i2c_state;
 
@@ -64,7 +65,18 @@ static void i2c_start_condition(void)
     i2c_delay(tix);
 }
 
-static void i2c_setup_bus(int scl, int sda, unsigned khz)
+static int i2c_optional_boolish(bvm *vm, int index, int default_value, const char *what)
+{
+    if (be_top(vm) < index || be_isnil(vm, index)) {
+        return default_value;
+    }
+    if (!be_isbool(vm, index) && !be_isint(vm, index)) {
+        be_raise(vm, "type_error", what);
+    }
+    return be_tobool(vm, index) ? 1 : 0;
+}
+
+static void i2c_setup_bus(int scl, int sda, unsigned khz, int pullup)
 {
     uint32_t quarter_ticks = (_clockfreq() / (khz * 1000u)) >> 2;
 
@@ -76,8 +88,13 @@ static void i2c_setup_bus(int scl, int sda, unsigned khz)
     g_i2c.scl_pin = scl;
     g_i2c.sda_pin = sda;
     g_i2c.khz = khz;
+    g_i2c.pullup = pullup;
     g_i2c.quarter_ticks = quarter_ticks;
 
+    /* The bit-banged v1 driver uses open-drain signaling. Most I2C devices,
+     * including the BMP180 breakout boards this port is tested with, provide
+     * external pull-ups; the pullup flag is kept for API compatibility and a
+     * future smart-pin/resistor-backed implementation. */
     _pinl(scl);
     _pinl(sda);
     _dirl(scl);
@@ -259,8 +276,9 @@ static int m_i2c_init(bvm *vm)
     int scl = berry_p2_bus_require_pin(vm, 1, "scl_pin must be an int");
     int sda = berry_p2_bus_require_pin(vm, 2, "sda_pin must be an int");
     unsigned khz = berry_p2_bus_require_khz(vm, 3, "khz must be an int");
+    int pullup = i2c_optional_boolish(vm, 4, 0, "pullup must be a bool or int");
 
-    i2c_setup_bus(scl, sda, khz);
+    i2c_setup_bus(scl, sda, khz, pullup);
     be_return_nil(vm);
 }
 
@@ -366,6 +384,59 @@ static int m_i2c_scan(bvm *vm)
     be_return(vm);
 }
 
+static int m_i2c_present(bvm *vm)
+{
+    int addr = berry_p2_bus_require_address7(vm, 1);
+
+    berry_p2_bus_require_init(vm, g_i2c.initialized, "i2c.init() must be called first");
+    be_pushbool(vm, i2c_probe_address(addr));
+    be_return(vm);
+}
+
+static int m_i2c_wait(bvm *vm)
+{
+    int addr = berry_p2_bus_require_address7(vm, 1);
+    bint timeout_ms = 1000;
+    bint waited = 0;
+
+    berry_p2_bus_require_init(vm, g_i2c.initialized, "i2c.init() must be called first");
+    if (be_top(vm) >= 2 && !be_isnil(vm, 2)) {
+        timeout_ms = berry_p2_bus_require_int(vm, 2, "timeout_ms must be an int");
+        if (timeout_ms < 0) {
+            be_raise(vm, "value_error", "timeout_ms must be >= 0");
+        }
+    }
+
+    do {
+        if (i2c_probe_address(addr)) {
+            be_pushbool(vm, 1);
+            be_return(vm);
+        }
+        if (waited >= timeout_ms) {
+            break;
+        }
+        _waitms(1);
+        ++waited;
+    } while (1);
+
+    be_pushbool(vm, 0);
+    be_return(vm);
+}
+
+static int m_i2c_start(bvm *vm)
+{
+    berry_p2_bus_require_init(vm, g_i2c.initialized, "i2c.init() must be called first");
+    i2c_start_condition();
+    be_return_nil(vm);
+}
+
+static int m_i2c_stop(bvm *vm)
+{
+    berry_p2_bus_require_init(vm, g_i2c.initialized, "i2c.init() must be called first");
+    i2c_stop_condition();
+    be_return_nil(vm);
+}
+
 void be_cache_i2cmodule(bvm *vm)
 {
     bstring *name = be_newstr(vm, "i2c");
@@ -376,6 +447,10 @@ void be_cache_i2cmodule(bvm *vm)
     i2c_module_set_func(vm, "read", m_i2c_read);
     i2c_module_set_func(vm, "writeread", m_i2c_writeread);
     i2c_module_set_func(vm, "scan", m_i2c_scan);
+    i2c_module_set_func(vm, "present", m_i2c_present);
+    i2c_module_set_func(vm, "wait", m_i2c_wait);
+    i2c_module_set_func(vm, "start", m_i2c_start);
+    i2c_module_set_func(vm, "stop", m_i2c_stop);
     be_cache_module(vm, name);
     be_pop(vm, 1);
 }

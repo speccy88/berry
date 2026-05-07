@@ -217,6 +217,19 @@ static int m_spi_transfer(bvm *vm)
     be_return(vm);
 }
 
+static int m_spi_stop(bvm *vm)
+{
+    berry_p2_bus_require_init(vm, g_spi.initialized, "spi.init() must be called first");
+
+    _pinw(g_spi.cs_pin, 1);
+    _dirl(g_spi.clk_pin);
+    _dirl(g_spi.mosi_pin);
+    _dirl(g_spi.miso_pin);
+    _dirl(g_spi.cs_pin);
+    g_spi.initialized = 0;
+    be_return_nil(vm);
+}
+
 void be_cache_spimodule(bvm *vm)
 {
     bstring *name = be_newstr(vm, "spi");
@@ -228,6 +241,7 @@ void be_cache_spimodule(bvm *vm)
     spi_module_set_func(vm, "write", m_spi_write);
     spi_module_set_func(vm, "read", m_spi_read);
     spi_module_set_func(vm, "transfer", m_spi_transfer);
+    spi_module_set_func(vm, "stop", m_spi_stop);
     be_cache_module(vm, name);
     be_pop(vm, 1);
 }
