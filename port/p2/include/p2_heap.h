@@ -14,6 +14,9 @@
 void *p2_heap_malloc(size_t size);
 void p2_heap_free(void *ptr);
 void *p2_heap_realloc(void *ptr, size_t size);
+size_t p2_heap_free_bytes(void);
+size_t p2_heap_main_free_bytes(void);
+size_t p2_heap_worker_free_bytes(void);
 void p2_heap_set_worker_cog(int cog);
 void *p2_heap_worker_base(void);
 size_t p2_heap_worker_size(void);

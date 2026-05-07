@@ -135,6 +135,20 @@ static p2_heap_block *p2_heap_find(p2_heap_arena *arena, size_t size)
     return NULL;
 }
 
+static size_t p2_heap_arena_free_bytes(p2_heap_arena *arena)
+{
+    p2_heap_block *block;
+    size_t total = 0;
+
+    p2_heap_init(arena);
+    for (block = arena->head; block; block = block->next) {
+        if (block->free) {
+            total += block->size;
+        }
+    }
+    return total;
+}
+
 void *p2_heap_malloc(size_t size)
 {
     p2_heap_arena *arena = p2_heap_current();
@@ -214,6 +228,21 @@ void *p2_heap_realloc(void *ptr, size_t size)
     memcpy(newptr, ptr, block->size);
     p2_heap_free(ptr);
     return newptr;
+}
+
+size_t p2_heap_free_bytes(void)
+{
+    return p2_heap_arena_free_bytes(p2_heap_current());
+}
+
+size_t p2_heap_main_free_bytes(void)
+{
+    return p2_heap_arena_free_bytes(&p2_main_arena);
+}
+
+size_t p2_heap_worker_free_bytes(void)
+{
+    return p2_heap_arena_free_bytes(&p2_worker_arena);
 }
 
 void p2_heap_set_worker_cog(int cog)
