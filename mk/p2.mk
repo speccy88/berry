@@ -15,6 +15,10 @@ P2_BUILD_INFO_LOG := $(P2_BUILD_DIR)/p2_build.log
 P2_BUILD_INFO_SCRIPT := scripts/gen-p2-build-info.py
 P2_BUILD_CONFIG_STAMP := $(P2_BUILD_DIR)/p2_build_config.stamp
 P2_CONFIG := $(P2_INCLUDE_DIR)/berry_conf_p2.h
+SPIN2_DIR := spin2
+SPIN2_BUILD_DIR := $(SPIN2_DIR)/build
+SPIN2_SRCS := $(wildcard $(SPIN2_DIR)/*.spin2)
+SPIN2_BINS := $(patsubst $(SPIN2_DIR)/%.spin2,$(SPIN2_BUILD_DIR)/%.bin,$(SPIN2_SRCS))
 P2_INCFLAGS := -I"$(P2_BUILD_DIR)" -I"$(P2_INCLUDE_DIR)" -I"src" -I"default"
 P2_COC_RUN := $(PYTHON) $(COC)
 P2_FLASH_FLAGS ?= -SPI
@@ -82,6 +86,7 @@ P2_OVERRIDE_SRCS := \
 	$(P2_OVERRIDES_DIR)/be_p2lib_p2.c \
 	$(P2_OVERRIDES_DIR)/be_prop2lib.c \
 	$(P2_OVERRIDES_DIR)/be_spilib_p2.c \
+	$(P2_OVERRIDES_DIR)/be_spin2lib_p2.c \
 	$(P2_OVERRIDES_DIR)/be_threadslib_p2.c \
 	$(P2_OVERRIDES_DIR)/be_workerlib_p2.c \
 	$(P2_OVERRIDES_DIR)/libc_compat.c
@@ -155,7 +160,7 @@ P2_SERIAL_PROBE_SRCS := $(P2_TEST_DIR)/serial_probe.c $(P2_RUNTIME_DIR)/berry_po
 P2_SERIAL_PROBE := $(P2_BUILD_DIR)/serial_probe.binary
 P2_PREBUILD_DEPS := $(COC) $(P2_CONFIG) scripts/prebuild-p2.sh scripts/prebuild-p2.ps1
 
-.PHONY: p2 p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run run configure configure-reset show-config
+.PHONY: p2 p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run spin2 spin2-clean run configure configure-reset show-config
 
 configure:
 	$(MSG) [Configure] $(P2_LOCAL_CONFIG)
@@ -210,6 +215,18 @@ endif
 
 $(P2_BUILD_DIR):
 	$(Q) $(call MKDIR_P,$@)
+
+$(SPIN2_BUILD_DIR):
+	$(Q) $(call MKDIR_P,$@)
+
+$(SPIN2_BUILD_DIR)/%.bin: $(SPIN2_DIR)/%.spin2 | $(SPIN2_BUILD_DIR) p2-tools
+	$(MSG) [Spin2] $<
+	$(Q) "$(FLEXSPIN)" -2 -b -o "$@" "$<"
+
+spin2: $(SPIN2_BINS)
+
+spin2-clean:
+	$(Q) $(call RM_RF,$(SPIN2_BUILD_DIR))
 
 $(P2_BUILD_INFO_HEADER): $(P2_BUILD_INFO_SCRIPT) | $(P2_BUILD_DIR)
 	$(Q) "$(PYTHON)" "$(P2_BUILD_INFO_SCRIPT)" --log "$(P2_BUILD_INFO_LOG)" --binary "$(P2_IMAGE)" --header "$@"

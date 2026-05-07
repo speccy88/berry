@@ -1,0 +1,32 @@
+DAT
+                long    2                       ' method count
+                long    service                 ' method 0: mailbox service
+                long    echo                    ' method 1: demo echo handler
+
+                org     3
+service         mov     mb, ptra
+                wrlong  zero, mb
+loop            rdlong  state, mb
+                cmp     state, #1 wz
+        if_z    call    #handle_request
+                jmp     #loop
+
+handle_request  mov     state, #2
+                wrlong  state, mb
+                mov     ptr, mb
+                add     ptr, #(3 * 4)
+                rdlong  result, ptr             ' return argv[0] for a smoke test
+                mov     ptr, mb
+                add     ptr, #(11 * 4)
+                wrlong  result, ptr
+                mov     state, #3
+                wrlong  state, mb
+                ret
+
+echo            ret
+
+zero            long    0
+mb              res     1
+ptr             res     1
+state           res     1
+result          res     1
