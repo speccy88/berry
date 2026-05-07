@@ -31,4 +31,12 @@ typedef struct berry_worker_boot {
     volatile int worker_cog;
 } berry_worker_boot;
 
+int berry_worker_start_cog(const char **error);
+int berry_worker_exec_ints(const char *name, int argc, const int *argv, const char **error);
+void berry_worker_stop_cog(void);
+int berry_worker_cog_id(void);
+int berry_worker_mailbox_state(void);
+const char *berry_worker_state_name(int state);
+const char *berry_worker_last_error(void);
+
 #endif

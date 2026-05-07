@@ -82,6 +82,7 @@ P2_OVERRIDE_SRCS := \
 	$(P2_OVERRIDES_DIR)/be_p2lib_p2.c \
 	$(P2_OVERRIDES_DIR)/be_prop2lib.c \
 	$(P2_OVERRIDES_DIR)/be_spilib_p2.c \
+	$(P2_OVERRIDES_DIR)/be_threadslib_p2.c \
 	$(P2_OVERRIDES_DIR)/be_workerlib_p2.c \
 	$(P2_OVERRIDES_DIR)/libc_compat.c
 P2_LIB_SRCS := \

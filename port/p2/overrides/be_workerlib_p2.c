@@ -49,7 +49,7 @@ static void worker_set_error(berry_worker_mailbox *mailbox, const char *message)
     mailbox->error[BERRY_WORKER_ERROR_MAX - 1] = '\0';
 }
 
-static const char *worker_state_name(int state)
+const char *berry_worker_state_name(int state)
 {
     switch (state) {
     case BERRY_WORKER_STOPPED:
@@ -163,23 +163,16 @@ static void worker_entry(void *arg)
     }
 }
 
-static int worker_require_started(bvm *vm)
-{
-    if (!g_worker_started || g_worker_cog < 0) {
-        be_raise(vm, "runtime_error", "worker has not been started");
-        return -1;
-    }
-    return g_worker_cog;
-}
-
-static int m_worker_start(bvm *vm)
+int berry_worker_start_cog(const char **error)
 {
     int waited = 0;
     int cog;
 
+    if (error) {
+        *error = NULL;
+    }
     if (g_worker_started) {
-        be_pushint(vm, (bint)g_worker_cog);
-        be_return(vm);
+        return g_worker_cog;
     }
 
     memset(&g_worker_mailbox, 0, sizeof(g_worker_mailbox));
@@ -194,7 +187,10 @@ static int m_worker_start(bvm *vm)
      * the boot pointer in the new cog's PTRA. */
     cog = _cogstart_C(worker_entry, &g_worker_boot, g_worker_stack, sizeof(g_worker_stack));
     if (cog < 0) {
-        be_raise(vm, "runtime_error", "failed to start worker cog");
+        if (error) {
+            *error = "failed to start worker cog";
+        }
+        return -1;
     }
     g_worker_cog = cog;
     g_worker_started = 1;
@@ -202,13 +198,119 @@ static int m_worker_start(bvm *vm)
     while (g_worker_mailbox.state == BERRY_WORKER_STOPPED ||
            g_worker_mailbox.state == BERRY_WORKER_BOOTING) {
         if (waited >= BERRY_WORKER_START_TIMEOUT_MS) {
-            be_raise(vm, "runtime_error", "worker start timed out");
+            if (error) {
+                *error = "worker start timed out";
+            }
+            return -1;
         }
         _waitms(1);
         ++waited;
     }
     if (g_worker_mailbox.state == BERRY_WORKER_ERROR) {
-        be_raise(vm, "runtime_error", g_worker_mailbox.error);
+        if (error) {
+            *error = g_worker_mailbox.error;
+        }
+        return -1;
+    }
+
+    return cog;
+}
+
+int berry_worker_exec_ints(const char *name, int argc, const int *argv, const char **error)
+{
+    size_t len;
+    int i;
+
+    if (error) {
+        *error = NULL;
+    }
+    if (!g_worker_started || g_worker_cog < 0) {
+        if (error) {
+            *error = "worker has not been started";
+        }
+        return -1;
+    }
+    if (g_worker_mailbox.state != BERRY_WORKER_READY) {
+        if (error) {
+            *error = "worker is not ready";
+        }
+        return -1;
+    }
+    if (!name) {
+        if (error) {
+            *error = "function name is required";
+        }
+        return -1;
+    }
+
+    len = strlen(name);
+    if (len == 0 || len > BERRY_WORKER_NAME_MAX) {
+        if (error) {
+            *error = "function name is too long";
+        }
+        return -1;
+    }
+    if (argc < 0 || argc > BERRY_WORKER_ARGS_MAX) {
+        if (error) {
+            *error = "too many worker arguments";
+        }
+        return -1;
+    }
+
+    memset((void *)&g_worker_mailbox, 0, sizeof(g_worker_mailbox));
+    memcpy(g_worker_mailbox.name, name, len + 1);
+    g_worker_mailbox.argc = argc;
+    for (i = 0; i < argc; ++i) {
+        g_worker_mailbox.argv[i] = argv ? argv[i] : 0;
+    }
+    g_worker_mailbox.state = BERRY_WORKER_REQUEST;
+    return 0;
+}
+
+void berry_worker_stop_cog(void)
+{
+    if (g_worker_started && g_worker_cog >= 0) {
+        _cogstop(g_worker_cog);
+    }
+    g_worker_started = 0;
+    g_worker_cog = -1;
+    g_worker_boot.worker_cog = -1;
+    g_worker_mailbox.state = BERRY_WORKER_STOPPED;
+    p2_heap_set_worker_cog(-1);
+}
+
+int berry_worker_cog_id(void)
+{
+    return g_worker_started ? g_worker_cog : -1;
+}
+
+int berry_worker_mailbox_state(void)
+{
+    return g_worker_mailbox.state;
+}
+
+const char *berry_worker_last_error(void)
+{
+    return g_worker_mailbox.error[0] ? g_worker_mailbox.error : NULL;
+}
+
+static int worker_require_started(bvm *vm)
+{
+    if (!g_worker_started || g_worker_cog < 0) {
+        be_raise(vm, "runtime_error", "worker has not been started");
+        return -1;
+    }
+    return g_worker_cog;
+}
+
+static int m_worker_start(bvm *vm)
+{
+    int cog;
+    const char *error = NULL;
+
+    cog = berry_worker_start_cog(&error);
+    if (cog < 0) {
+        be_raise(vm, "runtime_error", error ? error : "failed to start worker cog");
     }
 
     be_pushint(vm, (bint)cog);
@@ -218,23 +320,17 @@ static int m_worker_start(bvm *vm)
 static int m_worker_exec(bvm *vm)
 {
     const char *name;
-    size_t len;
     int argc;
+    int argv[BERRY_WORKER_ARGS_MAX];
     int i;
+    const char *error = NULL;
 
     worker_require_started(vm);
     if (be_top(vm) < 1 || !be_isstring(vm, 1)) {
         be_raise(vm, "type_error", "function name must be a string");
     }
-    if (g_worker_mailbox.state != BERRY_WORKER_READY) {
-        be_raise(vm, "runtime_error", "worker is not ready");
-    }
 
     name = be_tostring(vm, 1);
-    len = strlen(name);
-    if (len == 0 || len > BERRY_WORKER_NAME_MAX) {
-        be_raise(vm, "value_error", "function name is too long");
-    }
     argc = be_top(vm) - 1;
     if (argc > BERRY_WORKER_ARGS_MAX) {
         be_raise(vm, "value_error", "too many worker arguments");
@@ -244,22 +340,19 @@ static int m_worker_exec(bvm *vm)
         if (!be_isint(vm, i + 2)) {
             be_raise(vm, "type_error", "worker arguments must be integers");
         }
+        argv[i] = (int)be_toint(vm, i + 2);
     }
 
-    memset((void *)&g_worker_mailbox, 0, sizeof(g_worker_mailbox));
-    memcpy(g_worker_mailbox.name, name, len + 1);
-    g_worker_mailbox.argc = argc;
-    for (i = 0; i < argc; ++i) {
-        g_worker_mailbox.argv[i] = (int)be_toint(vm, i + 2);
+    if (berry_worker_exec_ints(name, argc, argv, &error) != 0) {
+        be_raise(vm, "runtime_error", error ? error : "worker exec failed");
     }
-    g_worker_mailbox.state = BERRY_WORKER_REQUEST;
 
     be_return_nil(vm);
 }
 
 static int m_worker_state(bvm *vm)
 {
-    be_pushstring(vm, worker_state_name(g_worker_mailbox.state));
+    be_pushstring(vm, berry_worker_state_name(g_worker_mailbox.state));
     be_return(vm);
 }
 
@@ -273,11 +366,19 @@ static int m_worker_error(bvm *vm)
     be_return(vm);
 }
 
+static int m_worker_stop(bvm *vm)
+{
+    (void)vm;
+    berry_worker_stop_cog();
+    be_return_nil(vm);
+}
+
 be_native_module_attr_table(worker) {
     be_native_module_function("start", m_worker_start),
     be_native_module_function("exec", m_worker_exec),
     be_native_module_function("state", m_worker_state),
-    be_native_module_function("error", m_worker_error)
+    be_native_module_function("error", m_worker_error),
+    be_native_module_function("stop", m_worker_stop)
 };
 
 be_define_native_module(worker, NULL);
