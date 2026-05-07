@@ -57,7 +57,7 @@ docker run --rm \
             "${CATALINA_DIR}" \
             "${CATALINA_PLATFORM}" \
             "${CATALINA_MODEL}" \
-            "${CATALINA_CLIB#-}" >/dev/null
+            "${CATALINA_CLIB#-l}" >/dev/null
         make "${TARGET}" \
             TOOLCHAIN=catalina \
             CATALINA_DIR="${CATALINA_DIR}" \

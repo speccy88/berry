@@ -12,8 +12,8 @@
 
 typedef struct bmapkey {
     union bvaldata v;
-    uint32_t type:8;
-    uint32_t next:24;
+    unsigned int type:8;
+    unsigned int next:24;
 } bmapkey;
 
 typedef struct bmapnode {
