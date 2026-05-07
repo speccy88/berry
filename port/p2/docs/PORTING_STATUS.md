@@ -25,6 +25,40 @@ This note is the handoff for the next P2 porting session.
 
 On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 
+- `make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds a RAM image with Catalina 8.8.9:
+  - image: `497664` bytes
+  - code: `249864` bytes
+  - const: `17352` bytes
+  - init: `10748` bytes
+  - data: `205128` bytes
+- `make p2-run TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build PORT=/dev/cu.usbserial-P97cvdxp` RAM-loads and reaches the Berry prompt
+- P2 cached module loading is live-verified after the Catalina const native function hang fix:
+  - `import p2`; `print(p2.cogid())` -> `0`
+  - `import i2c`; `i2c.init(25,24,400)` returns to the prompt
+  - `import spi`; `spi.init(10,11,12,13,0,1000)` returns to the prompt
+  - `import threads`; channel put/get works
+  - `import spin2`; `print(spin2.path())` -> `/spin2`
+  - `import worker`; `print(worker.start())` -> `5`
+- P2 pins on the no-PSRAM P2 Edge path:
+  - `p2.pinmode(56,p2.OUTPUT); p2.low(56); print(p2.read(56))` -> `0`
+  - `p2.high(56); print(p2.read(56))` -> `1`
+  - pin `57` is no longer blocked by validation and accepts low/high/toggle calls; physical readback on the current board stayed high, so visually confirm the LED wiring before treating readback as authoritative
+- BMP180 on `SCL=25`, `SDA=24`:
+  - `i2c.init(25,24,400)`
+  - `print(i2c.scan())` -> `[119]`
+  - `print(i2c.present(0x77))` -> `true`
+  - `print(i2c.writeread(0x77,"\xD0",1))` -> `U` (`0x55`, BMP180 chip id)
+- Worker/cog path:
+  - `print(worker.start())` -> `5`
+  - `worker.exec("noop",7); p2.sleep_ms(50); print(worker.state())` -> `ready`
+  - `print(worker.error())` -> `nil`
+  - `worker.exec("blink",56,50); p2.sleep_ms(200); print(worker.state())` -> `running`
+  - `worker.stop(); print(worker.state())` -> `stopped`
+  - `print(p2.cog_start("noop",9))` -> `5`, followed by worker state `ready`
+- `threads.channel("a"); threads.put("a",123); print(threads.get("a"))` -> `123`
+- `spin2.path()` returns `/spin2`; `spin2.list()` returned `[]` when no compatible binaries were present on the SD-visible path
+- `os.listdir("/")` returned to the prompt and produced `[]` on the current media/session
+- `spi.read(1)` returns a one-byte raw string after `spi.init(10,11,12,13,0,1000)`; full JEDEC validation still needs a known attached SPI target
 - `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` loads and reaches the Berry prompt
 - startup banner is now a single Berry-style banner instead of the old duplicated `Berry on Propeller 2` / `Berry on P2`
 - basic REPL usage is live-verified:
@@ -119,8 +153,10 @@ Current machine focus to preserve:
 
 Known limitation:
 
-- not every standard library module has been re-verified interactively yet on the cached-runtime-module path; `string` and `math` are verified, and the rest still need a focused pass
+- not every standard library module has been re-verified interactively yet on the cached-runtime-module path; `string`, `math`, `json`, `bytes`, `os`, and the P2 hardware modules have current or prior hardware coverage, but longer mixed-module sessions still need stress testing
 - `prop2_cog_start_c()` now builds but still needs a focused Berry FFI validation pass on hardware
+- `spin2.call()` needs an SD-card run with a copied compatible `berry_mailbox_demo.bin`; `make spin2` is build-verified, but the current live SD-visible `/spin2` path had no binaries
+- pin 57 is accessible through the APIs, but the current board readback stayed high after low writes; confirm LED behavior visually or with a meter
 - `../tests/fs_probe.c` is intentionally destructive and mutates the SD card; keep it for Catalina DOSFS debugging only
 
 ## Relevant Files

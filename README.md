@@ -93,28 +93,88 @@ This fork is meant to be usable, not just buildable. Each release should describ
 
 The current release notes live here:
 
-- [`docs/releases/v0.9.2.md`](./docs/releases/v0.9.2.md)
+- [`docs/releases/v0.9.3.md`](./docs/releases/v0.9.3.md)
 
 ### New Features
 
+#### `p2` Hardware Module
+
+The `p2` module is the friendly hardware namespace for day-to-day P2 work: GPIO, delays, cog ID/state helpers, hardware locks, heap reporting, and a small tone helper.
+
+```berry
+import p2
+
+p2.pinmode(56, p2.OUTPUT)
+p2.high(56)
+p2.sleep_ms(250)
+p2.low(56)
+print(p2.cogid())
+print(p2.sbrk())
+```
+
+#### Second-Cog Berry Worker
+
+The first worker backend starts a second cog with its own Berry VM and Hub-RAM heap. Jobs are sent through a Hub-RAM mailbox by function name with integer arguments.
+
+```berry
+import worker
+
+print(worker.start())
+worker.exec("blink", 56, 250)
+print(worker.state())
+worker.stop()
+```
+
+#### `p2.cog_start()` Convenience
+
+`p2.cog_start()` exposes the same worker backend from the `p2` module. It deliberately uses name-based dispatch instead of moving Berry closures between VMs.
+
+```berry
+import p2
+import worker
+
+cog = p2.cog_start("blink", 56, 250)
+print(cog)
+print(worker.state())
+worker.stop()
+```
+
+#### `threads` Channels
+
+The `threads` module begins the Catalina-Lua-style concurrency layer with named Hub-RAM channels and a tiny shared key/value store. Values are integers or strings in v1.
+
+```berry
+import threads
+
+threads.channel("sensor")
+threads.put("sensor", 123)
+print(threads.get("sensor"))
+threads.update("last", "ok")
+print(threads.value("last"))
+```
+
 #### Native `i2c` Module
 
-The P2 port now has a native Berry `i2c` module for simple device bring-up, register access, and bus scanning. It uses module-global bus state, so the first version stays easy to use from the REPL and small scripts.
+The P2 port has a native Berry `i2c` module for simple device bring-up, register access, readiness checks, and bus scanning. It uses module-global bus state, so the first version stays easy to use from the REPL and small scripts.
 
 ```berry
 import i2c
 
-i2c.init(25, 24, 100)
+i2c.init(25, 24, 400)
 print(i2c.scan())                  # [119] on a BMP180
+print(i2c.present(0x77))           # true
 print(i2c.writeread(0x77, "\xD0", 1))  # "U" == 0x55 chip id
 ```
 
 Supported API:
 
-- `i2c.init(scl_pin, sda_pin, khz)`
+- `i2c.init(scl_pin, sda_pin, khz, pullup=false)`
 - `i2c.write(addr, data)`
 - `i2c.read(addr, count)`
 - `i2c.writeread(addr, txdata, rxcount)`
+- `i2c.present(addr)`
+- `i2c.wait(addr, timeout_ms=1000)`
+- `i2c.start()` / `i2c.stop()`
 - `i2c.scan()`
 
 #### Native `spi` Module
@@ -139,6 +199,26 @@ Supported API:
 - `spi.write(data)`
 - `spi.read(count, filler=0xFF)`
 - `spi.transfer(data)`
+- `spi.stop()`
+
+#### `spin2` Loader Prototype
+
+The `spin2` module is the first path for running compatible Spin2/PASM binaries from Berry. Binaries live on the SD card under `/spin2` by default and use the documented integer mailbox convention.
+
+```berry
+import spin2
+
+print(spin2.list())
+handle = spin2.start("berry_mailbox_demo.bin")
+print(spin2.call(handle, 1, 123))
+spin2.stop(handle)
+```
+
+Build bundled Spin2 examples with:
+
+```sh
+make spin2
+```
 
 ### Existing Features
 
@@ -195,7 +275,7 @@ print(open("/TMPD/TEST.TXT", "r").read())
 
 #### Propeller 2 Hardware Helpers
 
-Low-level P2 helpers are already exposed as `prop2_*` globals for clocks, counters, pins, smartpins, CORDIC, locks, and cog control. These are useful when you want board access without writing C first.
+Low-level P2 helpers are still exposed as `prop2_*` globals for clocks, counters, pins, smartpins, CORDIC, locks, and cog control. These are useful when you want board access without writing C first or when a helper has not yet moved into a friendlier module.
 
 ```berry
 print(prop2_clock_freq())

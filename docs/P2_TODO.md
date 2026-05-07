@@ -1,6 +1,6 @@
-# Propeller 2 Port TODO
+# Propeller 2 Port Roadmap And Status
 
-This TODO blends the current P2 Berry port notes into one implementation backlog. It is intentionally a planning document only: do not treat every API below as implemented yet.
+This document started as the implementation backlog for matching and then surpassing Catalina Lua's P2 hardware surface. As of `v0.9.3`, the first working versions of the main items are implemented; the remaining notes are the next hardening and expansion work.
 
 ## Current Repo Map
 
@@ -15,14 +15,29 @@ This TODO blends the current P2 Berry port notes into one implementation backlog
 
 ## Native Module Registration Path
 
-- P2 native modules are registered through `port/p2/overrides/be_modtab_p2.c`.
+- Standard const native modules still flow through `port/p2/overrides/be_modtab_p2.c`.
+- P2 hardware modules are cached during `be_loadlibs()` in `port/p2/overrides/be_libs_p2.c` because Catalina/P2 currently hangs when some const native function attributes are called directly.
 - Existing P2 native modules and overrides should be used as templates:
   - `port/p2/overrides/be_prop2lib.c`
+  - `port/p2/overrides/be_p2lib_p2.c`
   - `port/p2/overrides/be_i2clib_p2.c`
   - `port/p2/overrides/be_spilib_p2.c`
   - `port/p2/overrides/be_workerlib_p2.c`
+  - `port/p2/overrides/be_threadslib_p2.c`
+  - `port/p2/overrides/be_spin2lib_p2.c`
   - `port/p2/overrides/be_libs_p2.c`
 - Native functions use the Berry C API style: `int fn(bvm *vm)`, extract args with `be_toint()` / `be_tostring()`-style helpers, push returns with `be_pushint()` / `be_pushstring()` / lists, then return via the repo's existing convention.
+
+## v0.9.3 Implementation Summary
+
+- `p2`: implemented GPIO, delays, cog helpers, locks, heap reporting, and `beep`.
+- `i2c`: implemented module-global init/write/read/writeread/scan/present/wait/start/stop.
+- `spi`: implemented module-global init/select/deselect/write/read/transfer/stop.
+- `worker`: implemented a second-cog Berry VM with Hub-RAM mailbox and integer name-based dispatch.
+- `p2.cog_start`: implemented as a safe name-based convenience wrapper over the worker backend.
+- `threads`: implemented fixed named channels, integer/string messages, shared update/value storage, and worker-backed `new`.
+- `spin2`: implemented SD binary listing, Hub-RAM load/start, integer mailbox call, stop, info, and `make spin2` tooling.
+- Build/release: Catalina 8.8.9 Docker build path works, RAM image fits no-PSRAM P2 Edge Hub RAM, and flash-loader binary generation remains available.
 
 ## Reference Sources
 
@@ -48,6 +63,8 @@ This TODO blends the current P2 Berry port notes into one implementation backlog
 - Add a repeatable helper script for building Catalina `v8.8.9` binaries and P2 COMPACT libraries from source, if we decide this should become supported workflow.
 
 ## Phase 1: Digital I/O `p2` Module
+
+Status: first working version implemented in `v0.9.3`.
 
 Goal: make the P2 module comparable to Catalina Lua's `propeller` basics.
 
@@ -77,6 +94,8 @@ Goal: make the P2 module comparable to Catalina Lua's `propeller` basics.
 
 ## Phase 2: I2C Module
 
+Status: first working version implemented and live-verified with BMP180 in `v0.9.3`.
+
 Goal: practical bus support first, with `i2c.scan()` especially reliable.
 
 - Keep module-global bus state after `i2c.init()`.
@@ -99,6 +118,8 @@ Goal: practical bus support first, with `i2c.scan()` especially reliable.
   ```
 
 ## Phase 3: SPI Module
+
+Status: first working version implemented in `v0.9.3`; import/init/read smoke-tested on hardware.
 
 Goal: full-duplex byte transfer with simple module-global state.
 
@@ -124,6 +145,8 @@ Goal: full-duplex byte transfer with simple module-global state.
 
 ## Phase 4: Worker And Cog Management
 
+Status: first working worker VM and name-based dispatch implemented in `v0.9.3`.
+
 Goal: evolve the current `worker` prototype into a clean P2 cog/concurrency layer.
 
 - Keep rule: one Berry VM must never be used concurrently by more than one cog.
@@ -140,10 +163,12 @@ Goal: evolve the current `worker` prototype into a clean P2 cog/concurrency laye
   worker.start()
   worker.exec("blink", 56, 250)
   ```
-- Add future `p2.cog_start(fn, args...)` only after the VM ownership and function-loading model is clear.
-- Add `p2.cog_stop(cog_id)` once we can safely track cog ownership and cleanup.
+- `p2.cog_start(name, args...)` is implemented as a name-based worker wrapper.
+- `p2.cog_stop(cog_id)` is implemented as a direct cog stop helper; prefer `worker.stop()` for worker-owned cogs.
 
 ## Phase 5: Threads And Channels
+
+Status: simplified fixed-channel layer implemented in `v0.9.3`.
 
 Goal: a simplified Berry equivalent inspired by Catalina Lua threads, not a full scheduler.
 
@@ -161,6 +186,8 @@ Goal: a simplified Berry equivalent inspired by Catalina Lua threads, not a full
 
 ## Phase 6: Spin2 Build Directory
 
+Status: implemented in `v0.9.3` with `spin2/`, `spin2/README.md`, sample source, and `make spin2`.
+
 Goal: add repo support for Spin2 source assets without coupling it too tightly to the Berry runtime.
 
 - Add top-level `spin2/` directory for `.spin2` sources.
@@ -175,11 +202,13 @@ Goal: add repo support for Spin2 source assets without coupling it too tightly t
 
 ## Phase 7: `spin2` Native Module
 
+Status: loader prototype implemented in `v0.9.3`; compatible mailbox binaries are required.
+
 Goal: dynamic loading of compiled Spin2/P2 binaries from SD and launching them in cogs.
 
 - Create the module under the P2-native location, probably `port/p2/overrides/be_spin2lib_p2.c`, unless a better repo convention emerges.
-- Register `spin2` in `port/p2/overrides/be_modtab_p2.c`.
-- `spin2.list(path="/sd/spin2")`: return `.bin`, `.binary`, and `.p2` files.
+- Cache `spin2` from `port/p2/overrides/be_libs_p2.c`.
+- `spin2.list(path="/spin2")`: return `.bin`, `.binary`, and `.p2` files.
 - `spin2.start(file, par=0)`: load binary from SD into Hub RAM and launch with `COGINIT`.
 - Return a handle that tracks cog ID, Hub code base, binary size, mailbox, method table, and ownership.
 - `spin2.call(handle, method_id, ...int_args)`: integer-only v1 call through a Hub mailbox.
@@ -188,6 +217,8 @@ Goal: dynamic loading of compiled Spin2/P2 binaries from SD and launching them i
 - Raise Berry errors for invalid handles and resource exhaustion.
 
 ## Phase 8: Spin2 Calling Convention
+
+Status: v1 convention documented and implemented by the native module and sample source.
 
 Goal: define a simple ABI we can implement and document.
 
@@ -219,6 +250,8 @@ Goal: define a simple ABI we can implement and document.
 
 ## Phase 9: Smart Pin And Optional P2 Features
 
+Status: low-level `prop2_*` smart-pin helpers exist; friendly `p2` wrappers are future work except for `p2.beep`.
+
 - Smart pin helpers for PWM.
 - Smart pin helpers for ADC/DAC.
 - Frequency measurement.
@@ -228,15 +261,16 @@ Goal: define a simple ABI we can implement and document.
 
 ## Phase 10: Examples And Mini Tutorials
 
-Add examples as each feature becomes real:
+Status: examples added for the implemented v1 APIs.
 
 - `examples/p2_blink.be`: LED blink on pins 56/57.
 - `examples/p2_i2c_scan.be`: BMP180/I2C scan on SDA 24, SCL 25.
 - `examples/p2_spi_jedec.be`: SPI flash JEDEC ID read.
 - `examples/p2_worker_blink.be`: second-cog worker blink.
+- `examples/p2_cog_start.be`: `p2.cog_start()` worker wrapper.
 - `examples/p2_threads_channel.be`: simple channel put/get.
 - `examples/p2_spin2_list.be`: list Spin2 binaries on SD.
-- `examples/p2_spin2_smartserial.be`: start/call/stop SmartSerial-style object.
+- `examples/p2_spin2_mailbox_demo.be`: start/call/stop the bundled mailbox demo.
 
 ## Phase 11: Tests And Hardware Verification
 
@@ -247,18 +281,17 @@ Add examples as each feature becomes real:
   make build/p2/catalina/berry_p2_flash_loader.binary TOOLCHAIN=catalina CATALINA_USE_DOCKER=1
   ```
 - On hardware, test:
-  - Pin 56 and 57 high/low/toggle/read.
+  - Pin 56 and 57 high/low/toggle/read. Pin 56 readback is verified; pin 57 calls are accepted but the current board readback stayed high and still needs visual LED confirmation.
   - `os` SD-card file operations.
   - `i2c.scan()` with BMP180 on SDA 24 / SCL 25.
   - SPI transfer with a known JEDEC-ID device.
   - Worker cog blink does not hang main REPL.
-  - Spin2 binary can load, start, call, and stop.
+  - Spin2 binary can load, start, call, and stop from SD.
 
 ## Open Design Decisions
 
-- Whether cog/concurrency APIs live in `p2`, `worker`, `threads`, or all three with clear layering.
-- Whether `spin2.start()` returns a Berry object, integer handle, or map-like opaque handle.
-- Whether Spin2 binaries should use a Berry-defined call-table ABI or external manifest files.
-- Whether SD paths should use `/sd/spin2`, `/SPIN2`, or the existing P2 filesystem path style.
+- Keep `worker`, `p2`, and `threads` as layered APIs or collapse them later.
+- Decide if `spin2.start()` should continue returning integer handles or move to Berry objects when object support is worth the footprint.
+- Decide whether Spin2 method metadata should stay in the binary call table or move to external manifests.
+- Decide whether SD paths should remain `/spin2` or support aliases like `/sd/spin2` and `/SPIN2`.
 - How much Catalina Lua behavior should be copied directly versus exposed as Berry-native idioms.
-

@@ -12,8 +12,8 @@ This directory holds the P2-specific notes that sit closest to the runtime and b
 
 ## Current Goal
 
-Stabilize and round out the Berry REPL on Propeller 2 so normal interactive
-use feels like Berry on other targets:
+Make Berry feel native on the Propeller 2: keep the REPL stable, expose useful
+hardware modules, and grow the multicog model in small safe layers.
 
 - `print()`
 - variable assignment
@@ -24,8 +24,15 @@ use feels like Berry on other targets:
 - `import json`
 - `import bytes`
 - `import os`
+- `import p2`
+- `import worker`
+- `import threads`
+- `import i2c`
+- `import spi`
+- `import spin2`
 - SD card backed file and directory access through `open()` and `os`
 - reliable serial interaction without prompt drift or blank-line heap loss
+- second-cog Berry worker jobs through Hub-RAM mailboxes
 
 Current Catalina status on P2 Edge / latest silicon:
 
@@ -33,19 +40,30 @@ Current Catalina status on P2 Edge / latest silicon:
 - `print()`, assignment, and basic arithmetic are live-verified
 - `for i:0..3`, `for e:list`, `for v:map`, and `for k:map.keys()` are live-verified
 - `import string`, `import math`, `import json`, `import bytes`, and `import os` are live-verified
-- `import i2c` and `import spi` are now live-verified
+- `import p2`, `import worker`, `import threads`, `import i2c`, `import spi`, and `import spin2` are now live-verified
 - blank Enter presses no longer leak the REPL into an out-of-memory state
 - `bytes('1122')`, `bytes().fromstring('AB')`, `tohex()`, `asstring()`, `readbytes()`, and range slicing are live-verified
 - `json.load()` and `json.dump()` are live-verified
 - SD card access through `open('/HELLO.TXT','r')`, `os.listdir('/')`, `os.mkdir()`, `os.rename()`, `os.remove()`, `os.chdir()`, `os.getcwd()`, and `os.path.*` is live-verified
 - P2 helpers are exposed as `prop2_*` globals for clock, counter, pin, and smart-pin operations
-- native bus helpers are now exposed as `i2c.*` and `spi.*`
+- friendlier P2 helpers are exposed as `p2.*`
+- native bus helpers are exposed as `i2c.*` and `spi.*`
+- the first worker VM path is exposed as `worker.*` and `p2.cog_start()`
+- fixed v1 channels are exposed as `threads.*`
+- Spin2/PASM binary loading scaffolding is exposed as `spin2.*`
 
 Current hardware verification examples:
 
-- `import i2c; i2c.init(25, 24, 100); print(i2c.scan())` -> `[119]`
+- `import p2; print(p2.cogid())` -> `0`
+- `p2.pinmode(56,p2.OUTPUT); p2.low(56); print(p2.read(56))` -> `0`
+- `p2.high(56); print(p2.read(56))` -> `1`
+- `import i2c; i2c.init(25, 24, 400); print(i2c.scan())` -> `[119]`
 - `print(i2c.writeread(0x77, "\xD0", 1))` -> `U` (`0x55`, BMP180 chip id)
 - `import spi; spi.init(10, 11, 12, 13, 0, 1000)` is live-verified
+- `import worker; print(worker.start())` -> `5`
+- `worker.exec("blink", 56, 50); print(worker.state())` -> `running`
+- `import threads; threads.channel("a"); threads.put("a",123); print(threads.get("a"))` -> `123`
+- `import spin2; print(spin2.path()); print(spin2.list())` -> `/spin2` and `[]` on the current SD-visible path
 
 Examples:
 

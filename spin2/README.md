@@ -8,6 +8,18 @@ make spin2
 
 The generated binaries are written to `spin2/build/*.bin`. Copy the binaries to the P2 SD card under `/spin2` so Berry can find them with `spin2.list()`.
 
+Berry-side smoke test for the bundled mailbox demo:
+
+```berry
+import spin2
+
+print(spin2.list())
+handle = spin2.start("berry_mailbox_demo.bin")
+print(spin2.info(handle))
+print(spin2.call(handle, 1, 123))
+spin2.stop(handle)
+```
+
 ## v1 Mailbox Convention
 
 `spin2.call(handle, method_id, args...)` is intentionally small for the first port. It supports integer arguments only and expects compatible binaries to use the Hub-RAM mailbox passed in `PTRA`.
