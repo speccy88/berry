@@ -281,45 +281,41 @@ static int m_p2_beep(bvm *vm)
     be_return_nil(vm);
 }
 
+static int m_p2_member(bvm *vm)
+{
+    const char *name = be_tostring(vm, 1);
+
+    if (!strcmp(name, "high")) be_pushntvfunction(vm, m_p2_high);
+    else if (!strcmp(name, "low")) be_pushntvfunction(vm, m_p2_low);
+    else if (!strcmp(name, "toggle")) be_pushntvfunction(vm, m_p2_toggle);
+    else if (!strcmp(name, "read")) be_pushntvfunction(vm, m_p2_read);
+    else if (!strcmp(name, "pinmode")) be_pushntvfunction(vm, m_p2_pinmode);
+    else if (!strcmp(name, "sleep_ms")) be_pushntvfunction(vm, m_p2_sleep_ms);
+    else if (!strcmp(name, "delay_us")) be_pushntvfunction(vm, m_p2_delay_us);
+    else if (!strcmp(name, "cogid")) be_pushntvfunction(vm, m_p2_cogid);
+    else if (!strcmp(name, "cog_start")) be_pushntvfunction(vm, m_p2_cog_start);
+    else if (!strcmp(name, "cog_stop")) be_pushntvfunction(vm, m_p2_cog_stop);
+    else if (!strcmp(name, "cog_states")) be_pushntvfunction(vm, m_p2_cog_states);
+    else if (!strcmp(name, "locknew")) be_pushntvfunction(vm, m_p2_locknew);
+    else if (!strcmp(name, "lockset")) be_pushntvfunction(vm, m_p2_lockset);
+    else if (!strcmp(name, "lockclr")) be_pushntvfunction(vm, m_p2_lockclr);
+    else if (!strcmp(name, "lockret")) be_pushntvfunction(vm, m_p2_lockret);
+    else if (!strcmp(name, "sbrk")) be_pushntvfunction(vm, m_p2_sbrk);
+    else if (!strcmp(name, "heap_info")) be_pushntvfunction(vm, m_p2_heap_info);
+    else if (!strcmp(name, "beep")) be_pushntvfunction(vm, m_p2_beep);
+    else if (!strcmp(name, "INPUT")) be_pushint(vm, P2_PINMODE_INPUT);
+    else if (!strcmp(name, "OUTPUT")) be_pushint(vm, P2_PINMODE_OUTPUT);
+    else if (!strcmp(name, "OPENDRAIN")) be_pushint(vm, P2_PINMODE_OPENDRAIN);
+    else be_pushnil(vm);
+    be_return(vm);
+}
+
 void be_cache_p2module(bvm *vm)
 {
     bstring *name = be_newstr(vm, "p2");
 
     be_newmodule(vm);
-    p2_module_set_func(vm, "high", m_p2_high);
-    p2_module_set_func(vm, "low", m_p2_low);
-    p2_module_set_func(vm, "toggle", m_p2_toggle);
-    p2_module_set_func(vm, "read", m_p2_read);
-    p2_module_set_func(vm, "pinmode", m_p2_pinmode);
-    p2_module_set_func(vm, "sleep_ms", m_p2_sleep_ms);
-    p2_module_set_func(vm, "delay_us", m_p2_delay_us);
-    p2_module_set_func(vm, "cogid", m_p2_cogid);
-    p2_module_set_func(vm, "cog_start", m_p2_cog_start);
-    p2_module_set_func(vm, "cog_stop", m_p2_cog_stop);
-    p2_module_set_func(vm, "cog_states", m_p2_cog_states);
-    p2_module_set_func(vm, "locknew", m_p2_locknew);
-    p2_module_set_func(vm, "lockset", m_p2_lockset);
-    p2_module_set_func(vm, "lockclr", m_p2_lockclr);
-    p2_module_set_func(vm, "lockret", m_p2_lockret);
-    p2_module_set_func(vm, "sbrk", m_p2_sbrk);
-    p2_module_set_func(vm, "heap_info", m_p2_heap_info);
-    p2_module_set_func(vm, "beep", m_p2_beep);
-
-    be_pushstring(vm, "INPUT");
-    be_pushint(vm, P2_PINMODE_INPUT);
-    be_setindex(vm, -3);
-    be_pop(vm, 2);
-
-    be_pushstring(vm, "OUTPUT");
-    be_pushint(vm, P2_PINMODE_OUTPUT);
-    be_setindex(vm, -3);
-    be_pop(vm, 2);
-
-    be_pushstring(vm, "OPENDRAIN");
-    be_pushint(vm, P2_PINMODE_OPENDRAIN);
-    be_setindex(vm, -3);
-    be_pop(vm, 2);
-
+    p2_module_set_func(vm, "member", m_p2_member);
     be_cache_module(vm, name);
     be_pop(vm, 1);
 }

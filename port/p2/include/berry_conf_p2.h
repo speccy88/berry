@@ -9,11 +9,11 @@
 #endif
 
 #ifndef BE_P2_HEAP_BYTES
-#define BE_P2_HEAP_BYTES                (192 * 1024)
+#define BE_P2_HEAP_BYTES                (128 * 1024)
 #endif
 
 #ifndef BE_P2_WORKER_HEAP_BYTES
-#define BE_P2_WORKER_HEAP_BYTES         (64 * 1024)
+#define BE_P2_WORKER_HEAP_BYTES         (32 * 1024)
 #endif
 
 #ifndef BE_P2_ENABLE_EXTENDED_MODULES

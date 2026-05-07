@@ -10,6 +10,7 @@
 #include <propeller2.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef struct berry_p2_spi_state {
     int initialized;
@@ -230,18 +231,29 @@ static int m_spi_stop(bvm *vm)
     be_return_nil(vm);
 }
 
+static int m_spi_member(bvm *vm)
+{
+    const char *name = be_tostring(vm, 1);
+
+    if (!strcmp(name, "init")) be_pushntvfunction(vm, m_spi_init);
+    else if (!strcmp(name, "select")) be_pushntvfunction(vm, m_spi_select);
+    else if (!strcmp(name, "deselect")) be_pushntvfunction(vm, m_spi_deselect);
+    else if (!strcmp(name, "write")) be_pushntvfunction(vm, m_spi_write);
+    else if (!strcmp(name, "read")) be_pushntvfunction(vm, m_spi_read);
+    else if (!strcmp(name, "transfer")) be_pushntvfunction(vm, m_spi_transfer);
+    else if (!strcmp(name, "stop")) be_pushntvfunction(vm, m_spi_stop);
+    else be_pushnil(vm);
+    be_return(vm);
+}
+
 void be_cache_spimodule(bvm *vm)
 {
     bstring *name = be_newstr(vm, "spi");
 
     be_newmodule(vm);
+    /* Keep init eager: Berry does not route missing init through member(). */
     spi_module_set_func(vm, "init", m_spi_init);
-    spi_module_set_func(vm, "select", m_spi_select);
-    spi_module_set_func(vm, "deselect", m_spi_deselect);
-    spi_module_set_func(vm, "write", m_spi_write);
-    spi_module_set_func(vm, "read", m_spi_read);
-    spi_module_set_func(vm, "transfer", m_spi_transfer);
-    spi_module_set_func(vm, "stop", m_spi_stop);
+    spi_module_set_func(vm, "member", m_spi_member);
     be_cache_module(vm, name);
     be_pop(vm, 1);
 }

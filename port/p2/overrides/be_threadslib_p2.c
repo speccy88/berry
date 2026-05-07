@@ -416,20 +416,29 @@ static int m_threads_new(bvm *vm)
     be_return(vm);
 }
 
+static int m_threads_member(bvm *vm)
+{
+    const char *name = be_tostring(vm, 1);
+
+    if (!strcmp(name, "workers")) be_pushntvfunction(vm, m_threads_workers);
+    else if (!strcmp(name, "channel")) be_pushntvfunction(vm, m_threads_channel);
+    else if (!strcmp(name, "put")) be_pushntvfunction(vm, m_threads_put);
+    else if (!strcmp(name, "get")) be_pushntvfunction(vm, m_threads_get);
+    else if (!strcmp(name, "output")) be_pushntvfunction(vm, m_threads_output);
+    else if (!strcmp(name, "msleep")) be_pushntvfunction(vm, m_threads_msleep);
+    else if (!strcmp(name, "update")) be_pushntvfunction(vm, m_threads_update);
+    else if (!strcmp(name, "value")) be_pushntvfunction(vm, m_threads_value);
+    else if (!strcmp(name, "new")) be_pushntvfunction(vm, m_threads_new);
+    else be_pushnil(vm);
+    be_return(vm);
+}
+
 void be_cache_threadsmodule(bvm *vm)
 {
     bstring *name = be_newstr(vm, "threads");
 
     be_newmodule(vm);
-    threads_module_set_func(vm, "workers", m_threads_workers);
-    threads_module_set_func(vm, "channel", m_threads_channel);
-    threads_module_set_func(vm, "put", m_threads_put);
-    threads_module_set_func(vm, "get", m_threads_get);
-    threads_module_set_func(vm, "output", m_threads_output);
-    threads_module_set_func(vm, "msleep", m_threads_msleep);
-    threads_module_set_func(vm, "update", m_threads_update);
-    threads_module_set_func(vm, "value", m_threads_value);
-    threads_module_set_func(vm, "new", m_threads_new);
+    threads_module_set_func(vm, "member", m_threads_member);
     be_cache_module(vm, name);
     be_pop(vm, 1);
 }

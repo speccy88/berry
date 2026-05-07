@@ -9,6 +9,7 @@
 #include <propeller2.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 enum {
     BERRY_P2_I2C_ACK = 0,
@@ -437,20 +438,32 @@ static int m_i2c_stop(bvm *vm)
     be_return_nil(vm);
 }
 
+static int m_i2c_member(bvm *vm)
+{
+    const char *name = be_tostring(vm, 1);
+
+    if (!strcmp(name, "init")) be_pushntvfunction(vm, m_i2c_init);
+    else if (!strcmp(name, "write")) be_pushntvfunction(vm, m_i2c_write);
+    else if (!strcmp(name, "read")) be_pushntvfunction(vm, m_i2c_read);
+    else if (!strcmp(name, "writeread")) be_pushntvfunction(vm, m_i2c_writeread);
+    else if (!strcmp(name, "scan")) be_pushntvfunction(vm, m_i2c_scan);
+    else if (!strcmp(name, "present")) be_pushntvfunction(vm, m_i2c_present);
+    else if (!strcmp(name, "wait")) be_pushntvfunction(vm, m_i2c_wait);
+    else if (!strcmp(name, "start")) be_pushntvfunction(vm, m_i2c_start);
+    else if (!strcmp(name, "stop")) be_pushntvfunction(vm, m_i2c_stop);
+    else be_pushnil(vm);
+    be_return(vm);
+}
+
 void be_cache_i2cmodule(bvm *vm)
 {
     bstring *name = be_newstr(vm, "i2c");
 
     be_newmodule(vm);
+    /* Berry synthesizes a default constructor for missing "init" members, so
+     * init must be materialized instead of served through the lazy dispatcher. */
     i2c_module_set_func(vm, "init", m_i2c_init);
-    i2c_module_set_func(vm, "write", m_i2c_write);
-    i2c_module_set_func(vm, "read", m_i2c_read);
-    i2c_module_set_func(vm, "writeread", m_i2c_writeread);
-    i2c_module_set_func(vm, "scan", m_i2c_scan);
-    i2c_module_set_func(vm, "present", m_i2c_present);
-    i2c_module_set_func(vm, "wait", m_i2c_wait);
-    i2c_module_set_func(vm, "start", m_i2c_start);
-    i2c_module_set_func(vm, "stop", m_i2c_stop);
+    i2c_module_set_func(vm, "member", m_i2c_member);
     be_cache_module(vm, name);
     be_pop(vm, 1);
 }

@@ -27,6 +27,7 @@ extern void be_cache_i2cmodule(bvm *vm);
 extern void be_cache_spimodule(bvm *vm);
 extern void be_cache_threadsmodule(bvm *vm);
 extern void be_cache_spin2module(bvm *vm);
+extern void be_cache_workermodule(bvm *vm);
 void be_loadlibs(bvm *vm)
 {
     be_load_baselib(vm);
@@ -45,4 +46,5 @@ void be_loadlibs(bvm *vm)
     be_cache_spimodule(vm);
     be_cache_threadsmodule(vm);
     be_cache_spin2module(vm);
+    be_cache_workermodule(vm);
 }

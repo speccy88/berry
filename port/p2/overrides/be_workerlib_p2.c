@@ -14,13 +14,16 @@
 #include <string.h>
 
 enum {
-    BERRY_WORKER_STACK_BYTES = 4096,
+    BERRY_WORKER_STACK_BYTES = 16 * 1024,
     BERRY_WORKER_START_TIMEOUT_MS = 3000
 };
 
 static berry_worker_mailbox g_worker_mailbox;
 static berry_worker_boot g_worker_boot;
-static unsigned char g_worker_stack[BERRY_WORKER_STACK_BYTES];
+static union {
+    unsigned char raw[BERRY_WORKER_STACK_BYTES];
+    uint64_t align;
+} g_worker_stack;
 static int g_worker_started;
 static int g_worker_cog = -1;
 
@@ -47,6 +50,13 @@ static void worker_set_error(berry_worker_mailbox *mailbox, const char *message)
     }
     strncpy(mailbox->error, message, BERRY_WORKER_ERROR_MAX - 1);
     mailbox->error[BERRY_WORKER_ERROR_MAX - 1] = '\0';
+}
+
+static void worker_module_set_func(bvm *vm, const char *name, bntvfunc func)
+{
+    be_pushntvfunction(vm, func);
+    be_setmember(vm, -2, name);
+    be_pop(vm, 1);
 }
 
 const char *berry_worker_state_name(int state)
@@ -185,7 +195,7 @@ int berry_worker_start_cog(const char **error)
 
     /* Catalina's C cog launcher uses SETQ + COGINIT internally and passes
      * the boot pointer in the new cog's PTRA. */
-    cog = _cogstart_C(worker_entry, &g_worker_boot, g_worker_stack, sizeof(g_worker_stack));
+    cog = _cogstart_C(worker_entry, &g_worker_boot, g_worker_stack.raw, sizeof(g_worker_stack.raw));
     if (cog < 0) {
         if (error) {
             *error = "failed to start worker cog";
@@ -373,12 +383,25 @@ static int m_worker_stop(bvm *vm)
     be_return_nil(vm);
 }
 
-be_native_module_attr_table(worker) {
-    be_native_module_function("start", m_worker_start),
-    be_native_module_function("exec", m_worker_exec),
-    be_native_module_function("state", m_worker_state),
-    be_native_module_function("error", m_worker_error),
-    be_native_module_function("stop", m_worker_stop)
-};
+static int m_worker_member(bvm *vm)
+{
+    const char *name = be_tostring(vm, 1);
 
-be_define_native_module(worker, NULL);
+    if (!strcmp(name, "start")) be_pushntvfunction(vm, m_worker_start);
+    else if (!strcmp(name, "exec")) be_pushntvfunction(vm, m_worker_exec);
+    else if (!strcmp(name, "state")) be_pushntvfunction(vm, m_worker_state);
+    else if (!strcmp(name, "error")) be_pushntvfunction(vm, m_worker_error);
+    else if (!strcmp(name, "stop")) be_pushntvfunction(vm, m_worker_stop);
+    else be_pushnil(vm);
+    be_return(vm);
+}
+
+void be_cache_workermodule(bvm *vm)
+{
+    bstring *name = be_newstr(vm, "worker");
+
+    be_newmodule(vm);
+    worker_module_set_func(vm, "member", m_worker_member);
+    be_cache_module(vm, name);
+    be_pop(vm, 1);
+}

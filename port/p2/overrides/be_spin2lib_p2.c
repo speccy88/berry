@@ -466,17 +466,26 @@ static int m_spin2_info(bvm *vm)
     be_return(vm);
 }
 
+static int m_spin2_member(bvm *vm)
+{
+    const char *name = be_tostring(vm, 1);
+
+    if (!strcmp(name, "path")) be_pushntvfunction(vm, m_spin2_path);
+    else if (!strcmp(name, "list")) be_pushntvfunction(vm, m_spin2_list);
+    else if (!strcmp(name, "start")) be_pushntvfunction(vm, m_spin2_start);
+    else if (!strcmp(name, "call")) be_pushntvfunction(vm, m_spin2_call);
+    else if (!strcmp(name, "stop")) be_pushntvfunction(vm, m_spin2_stop);
+    else if (!strcmp(name, "info")) be_pushntvfunction(vm, m_spin2_info);
+    else be_pushnil(vm);
+    be_return(vm);
+}
+
 void be_cache_spin2module(bvm *vm)
 {
     bstring *name = be_newstr(vm, "spin2");
 
     be_newmodule(vm);
-    spin2_module_set_func(vm, "path", m_spin2_path);
-    spin2_module_set_func(vm, "list", m_spin2_list);
-    spin2_module_set_func(vm, "start", m_spin2_start);
-    spin2_module_set_func(vm, "call", m_spin2_call);
-    spin2_module_set_func(vm, "stop", m_spin2_stop);
-    spin2_module_set_func(vm, "info", m_spin2_info);
+    spin2_module_set_func(vm, "member", m_spin2_member);
     be_cache_module(vm, name);
     be_pop(vm, 1);
 }
