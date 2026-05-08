@@ -80,8 +80,8 @@ berry_mbox_handle_request
 
                 mov     result, #0
                 cmp     berry_mbox_method, #1 wz
-        if_z    call    #berry_mbox_method_1
         if_nz   jmp     #berry_mbox_bad_method
+                call    #berry_mbox_method_1
 
                 mov     berry_mbox_ptr, berry_mbox_mb
                 add     berry_mbox_ptr, #(11 * 4)
@@ -1319,7 +1319,8 @@ def mailbox_file(name: str, description: str, method: str) -> str:
 
    Callable from Berry with:
 
-     handle = spin2.start("{Path(name).stem.upper()}.BIN")
+     'make spin2' writes an uppercase 8.3 filename to spin2/build/MANIFEST.TXT.
+     handle = spin2.start("<manifest binary name>")
      print(spin2.call(handle, 1, arg0, arg1, arg2))
      spin2.stop(handle)
 

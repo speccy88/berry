@@ -9,6 +9,7 @@ build/*
 !build/p2/
 build/p2/*
 !build/p2/.gitkeep
+spin2/build/
 *.binary
 *.bin
 *.p2asm

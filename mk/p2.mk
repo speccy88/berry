@@ -19,8 +19,10 @@ P2_HUB_RAM_MAX_BYTES ?= 524288
 P2_CONFIG := $(P2_INCLUDE_DIR)/berry_conf_p2.h
 SPIN2_DIR := spin2
 SPIN2_BUILD_DIR := $(SPIN2_DIR)/build
+SPIN2_ASM_DIR := $(SPIN2_BUILD_DIR)/p2asm
+SPIN2_MANIFEST := $(SPIN2_BUILD_DIR)/MANIFEST.TXT
+SPIN2_BUILD_SCRIPT := tools/spin2/build_all.py
 SPIN2_SRCS := $(wildcard $(SPIN2_DIR)/*.spin2)
-SPIN2_BINS := $(patsubst $(SPIN2_DIR)/%.spin2,$(SPIN2_BUILD_DIR)/%.bin,$(SPIN2_SRCS))
 SPIN2_SD_LOADER_SRC := tools/p2/sd_loader/sd_loader.c
 SPIN2_SD_HOST := tools/p2/sd_loader/spin2_sdload.py
 SPIN2_SD_LOADER_BASE := $(P2_BUILD_DIR)/spin2_sd_loader
@@ -28,7 +30,8 @@ SPIN2_SD_LOADER_IMAGE := $(P2_BUILD_DIR)/spin2_sd_loader.binary
 SPIN2_SD_DIR ?= /spin2
 SPIN2_SD_FILE ?=
 SPIN2_SD_NAME ?=
-SPIN2_SD_CHUNK ?= 128
+SPIN2_SD_CHUNK ?= 32
+SPIN2_SD_LINE_DELAY ?= 0.05
 P2_INCFLAGS := -I"$(P2_BUILD_DIR)" -I"$(P2_INCLUDE_DIR)" -I"src" -I"default"
 P2_COC_RUN := $(PYTHON) $(COC)
 P2_FLASH_FLAGS ?= -SPI
@@ -235,11 +238,10 @@ $(P2_BUILD_DIR):
 $(SPIN2_BUILD_DIR):
 	$(Q) $(call MKDIR_P,$@)
 
-$(SPIN2_BUILD_DIR)/%.bin: $(SPIN2_DIR)/%.spin2 | $(SPIN2_BUILD_DIR) p2-tools
-	$(MSG) [Spin2] $<
-	$(Q) "$(FLEXSPIN)" -2 -b -o "$@" "$<"
-
-spin2: $(SPIN2_BINS)
+spin2: $(SPIN2_SRCS) $(SPIN2_BUILD_SCRIPT) | $(SPIN2_BUILD_DIR) p2-tools
+	$(Q) "$(PYTHON)" "$(SPIN2_BUILD_SCRIPT)" --flexspin "$(FLEXSPIN)" \
+		--src-dir "$(SPIN2_DIR)" --bin-dir "$(SPIN2_BUILD_DIR)" \
+		--asm-dir "$(SPIN2_ASM_DIR)" --manifest "$(SPIN2_MANIFEST)"
 
 spin2-clean:
 	$(Q) $(call RM_RF,$(SPIN2_BUILD_DIR))
@@ -275,18 +277,19 @@ endif
 spin2-sd-put: spin2-sd-loader
 	@if [ -z "$(PORT)" ]; then \
 		echo "error: PORT is not set"; \
-		echo "usage: make spin2-sd-put TOOLCHAIN=catalina PORT=/dev/ttyUSB0 SPIN2_SD_FILE=spin2/build/MB_01ALU.bin"; \
+		echo "usage: make spin2-sd-put TOOLCHAIN=catalina PORT=/dev/ttyUSB0 SPIN2_SD_FILE=spin2/build/MB_01ALU.BIN"; \
 		exit 1; \
 	fi
 	@if [ -z "$(SPIN2_SD_FILE)" ]; then \
 		echo "error: SPIN2_SD_FILE is not set"; \
-		echo "usage: make spin2-sd-put TOOLCHAIN=catalina PORT=/dev/ttyUSB0 SPIN2_SD_FILE=spin2/build/MB_01ALU.bin"; \
+		echo "usage: make spin2-sd-put TOOLCHAIN=catalina PORT=/dev/ttyUSB0 SPIN2_SD_FILE=spin2/build/MB_01ALU.BIN"; \
 		exit 1; \
 	fi
 	$(Q) NAME_ARG=""; \
 	if [ -n "$(SPIN2_SD_NAME)" ]; then NAME_ARG="--target-name $(SPIN2_SD_NAME)"; fi; \
 	"$(PYTHON)" "$(SPIN2_SD_HOST)" --loadp2 "$(LOADP2)" --port "$(PORT)" --baud "$(P2_BAUD)" \
 		--loader "$(SPIN2_SD_LOADER_IMAGE)" --target-dir "$(SPIN2_SD_DIR)" --chunk-size "$(SPIN2_SD_CHUNK)" \
+		--line-delay "$(SPIN2_SD_LINE_DELAY)" \
 		--file "$(SPIN2_SD_FILE)" $$NAME_ARG
 
 spin2-sd-sync: spin2 spin2-sd-loader
@@ -297,6 +300,7 @@ spin2-sd-sync: spin2 spin2-sd-loader
 	fi
 	$(Q) "$(PYTHON)" "$(SPIN2_SD_HOST)" --loadp2 "$(LOADP2)" --port "$(PORT)" --baud "$(P2_BAUD)" \
 		--loader "$(SPIN2_SD_LOADER_IMAGE)" --target-dir "$(SPIN2_SD_DIR)" --chunk-size "$(SPIN2_SD_CHUNK)" \
+		--line-delay "$(SPIN2_SD_LINE_DELAY)" \
 		--directory "$(SPIN2_BUILD_DIR)"
 
 spin2-load: spin2-sd-put

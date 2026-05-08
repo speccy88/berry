@@ -126,7 +126,6 @@ static int ensure_parent_dirs(const char *path)
     char *slash;
     size_t len;
 
-    path = fs_path(path);
     slash = strrchr(path, '/');
     if (!slash) {
         return 0;
@@ -194,6 +193,7 @@ static int receive_file(const char *header)
     uint32_t expected_crc;
     uint32_t actual_size = 0;
     uint32_t actual_crc = 0;
+    FILEINFO fileinfo;
     int fd;
     int failed = 0;
 
@@ -203,8 +203,7 @@ static int receive_file(const char *header)
     }
 
     ensure_parent_dirs(path);
-    (void)_unlink(fs_path(path));
-    fd = _create(fs_path(path), 1);
+    fd = _create_unmanaged(path, 1, &fileinfo);
     if (fd < 0) {
         out("ERR create ");
         outln(path);
@@ -240,9 +239,9 @@ static int receive_file(const char *header)
         actual_size += (uint32_t)got;
     }
 
-    _close(fd);
+    _close_unmanaged(fd);
     if (failed || actual_size != expected_size || actual_crc != expected_crc) {
-        (void)_unlink(fs_path(path));
+        (void)_unlink(path);
         out("ERR verify ");
         outln(path);
         return -1;

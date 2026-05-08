@@ -2,7 +2,8 @@
 
    Callable from Berry with:
 
-     handle = spin2.start("MB_15MISC.BIN")
+     'make spin2' writes an uppercase 8.3 filename to spin2/build/MANIFEST.TXT.
+     handle = spin2.start("<manifest binary name>")
      print(spin2.call(handle, 1, arg0, arg1, arg2))
      spin2.stop(handle)
 

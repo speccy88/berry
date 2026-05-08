@@ -42,17 +42,24 @@ Direct hardware transfer requires a connected P2 serial port:
 
 ```sh
 make spin2-sd-put TOOLCHAIN=catalina PORT=/dev/cu.usbserial-XXXX \
-  SPIN2_SD_FILE=spin2/build/mb_01alu.bin
+  SPIN2_SD_FILE=spin2/build/MB_01ALU.BIN
 
 make spin2-sd-sync TOOLCHAIN=catalina PORT=/dev/cu.usbserial-XXXX
 ```
 
-`spin2-sd-sync` transfers every `spin2/build/*.bin` to `/spin2` and writes
+`make spin2` writes uppercase DOS 8.3 binaries to `spin2/build/*.BIN`, records
+the source-to-binary mapping in `spin2/build/MANIFEST.TXT`, and moves FlexSpin
+`.p2asm` listings to `spin2/build/p2asm`.
+
+`spin2-sd-sync` transfers every `spin2/build/*.BIN` to `/spin2` and writes
 `/spin2/INDEX.TXT`.
 
 ## Spin2 Feature Examples
 
-The `s2_*.spin2` files are intentionally small and heavily commented.
+The `s2_*.spin2` files are intentionally small and heavily commented. They are
+compiled to prove FlexSpin coverage, but their high-level FlexSpin binaries are
+not Berry mailbox services and should not be treated as `spin2.call()` runtime
+tests.
 
 ```text
 s2_01con  CON numeric, binary, character, float constants
@@ -125,7 +132,8 @@ mb_20pat   event/interrupt syntax matrix, runtime-safe return
 ```
 
 `examples/p2_spin2_mailbox_suite.be` starts each `MB_*.BIN`, calls method 1 with
-sample integer arguments, prints the result, and stops the cog.
+sample integer arguments, prints the result, and stops the cog. Hardware results
+for the generated binaries are recorded in `spin2/SPIN2_BINARY_TEST_REPORT.md`.
 
 ## Compile-Only PASM2 Matrix
 

@@ -61,8 +61,8 @@ berry_mbox_handle_request
 
                 mov     result, #0
                 cmp     berry_mbox_method, #1 wz
-        if_z    call    #berry_mbox_method_1
         if_nz   jmp     #berry_mbox_bad_method
+                call    #berry_mbox_method_1
 
                 mov     berry_mbox_ptr, berry_mbox_mb
                 add     berry_mbox_ptr, #(11 * 4)

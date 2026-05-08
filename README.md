@@ -95,7 +95,7 @@ This fork is meant to be usable, not just buildable. Each release should describ
 
 The current release notes live here:
 
-- [`docs/releases/v0.9.4.md`](./docs/releases/v0.9.4.md)
+- [`docs/releases/v0.9.5.md`](./docs/releases/v0.9.5.md)
 
 ### New Features
 

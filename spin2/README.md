@@ -6,19 +6,22 @@ Place Propeller 2 `.spin2` sources here and build them with:
 make spin2 TOOLCHAIN=catalina
 ```
 
-The generated binaries are written to `spin2/build/*.bin`. The new examples use
-8.3-friendly names where practical so Catalina DOSFS exposes predictable SD-card
-filenames such as `MB_01ALU.BIN` and `S2_01CON.BIN`.
+The generated binaries are written to uppercase 8.3 names in
+`spin2/build/*.BIN`; `spin2/build/MANIFEST.TXT` maps each source file to its SD
+filename. FlexSpin `.p2asm` listings are kept separately in
+`spin2/build/p2asm`.
 
 ## Example Suite
 
-- `s2_01con.spin2` through `s2_27dit.spin2`: compile/run Spin2 language feature examples from the v54 documentation, limited to the subset FlexSpin 7.6.6 can compile.
+- `s2_01con.spin2` through `s2_27dit.spin2`: compile-time Spin2 language feature examples from the v54 documentation, limited to the subset FlexSpin 7.6.6 can compile. Their high-level FlexSpin binaries are not mailbox-callable with `spin2.call()`.
 - `mb_01alu.spin2` through `mb_20pat.spin2`: Berry-callable PASM2 mailbox binaries. Start them with `spin2.start()` and call method `1`.
 - `p2instmx.spin2`: compile-only PASM2 instruction matrix for broad mnemonic coverage.
 - `common/berry_mbox_service.spin2h`: shared PASM2 mailbox service used by the callable examples.
 
 Full coverage notes and validation commands live in
 [`docs/SPIN2_MODULE_TESTS.md`](../docs/SPIN2_MODULE_TESTS.md).
+Hardware binary results live in
+[`SPIN2_BINARY_TEST_REPORT.md`](SPIN2_BINARY_TEST_REPORT.md).
 
 ## Copy To The P2 SD Card
 
@@ -26,7 +29,7 @@ For a mounted SD card on the host:
 
 ```sh
 mkdir -p /Volumes/<sdcard>/spin2
-cp spin2/build/mb_01alu.bin /Volumes/<sdcard>/spin2/MB_01ALU.BIN
+cp spin2/build/MB_01ALU.BIN /Volumes/<sdcard>/spin2/MB_01ALU.BIN
 ```
 
 For direct transfer through the Propeller, build and run the temporary RAM SD
@@ -34,13 +37,13 @@ loader:
 
 ```sh
 make spin2-sd-put TOOLCHAIN=catalina PORT=/dev/cu.usbserial-XXXX \
-  SPIN2_SD_FILE=spin2/build/mb_01alu.bin
+  SPIN2_SD_FILE=spin2/build/MB_01ALU.BIN
 
 make spin2-sd-sync TOOLCHAIN=catalina PORT=/dev/cu.usbserial-XXXX
 ```
 
 `spin2-sd-put` transfers one binary. `spin2-sd-sync` runs `make spin2`, loads the
-temporary Catalina SD receiver to RAM, transfers every `spin2/build/*.bin` to
+temporary Catalina SD receiver to RAM, transfers every `spin2/build/*.BIN` to
 `/spin2`, and writes `/spin2/INDEX.TXT` with the source-to-SD name mapping.
 
 ## Berry Smoke Tests

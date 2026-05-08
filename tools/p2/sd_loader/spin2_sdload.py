@@ -167,11 +167,13 @@ class LoaderSession:
         self.stdin.write(line.encode("ascii") + b"\n")
         self.stdin.flush()
 
-    def put_bytes(self, target: str, data: bytes, chunk_size: int) -> None:
+    def put_bytes(self, target: str, data: bytes, chunk_size: int, line_delay: float) -> None:
         crc = zlib.crc32(data) & 0xFFFFFFFF
         self.send_line(f"PUT {target} {len(data)} {crc:08X}")
         for offset in range(0, len(data), chunk_size):
             self.send_line(":" + data[offset : offset + chunk_size].hex().upper())
+            if line_delay > 0:
+                time.sleep(line_delay)
         self.send_line("END")
         response = self.read_response()
         if not response.startswith("OK "):
@@ -180,6 +182,8 @@ class LoaderSession:
 
 def target_join(directory: str, name: str) -> str:
     directory = "/" + directory.strip("/")
+    if directory == "/":
+        return f"/{name}"
     return f"{directory}/{name}"
 
 
@@ -198,7 +202,7 @@ def collect_transfers(args: argparse.Namespace) -> list[tuple[Path, str]]:
         directory = Path(args.directory)
         if not directory.is_dir():
             raise FileNotFoundError(directory)
-        for src in sorted(directory.glob("*.bin")):
+        for src in sorted(path for path in directory.iterdir() if path.suffix.lower() == ".bin"):
             transfers.append((src, target_join(args.target_dir, short_name(src, used))))
 
     return transfers
@@ -215,6 +219,7 @@ def main() -> int:
     parser.add_argument("--directory")
     parser.add_argument("--target-name")
     parser.add_argument("--chunk-size", type=int, default=128)
+    parser.add_argument("--line-delay", type=float, default=0.01)
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--no-index", action="store_true")
     args = parser.parse_args()
@@ -247,15 +252,21 @@ def main() -> int:
             data = src.read_bytes()
             crc = zlib.crc32(data) & 0xFFFFFFFF
             print(f"[SDLoad] {src} -> {target} ({len(data)} bytes, crc {crc:08X})")
-            session.put_bytes(target, data, args.chunk_size)
+            session.put_bytes(target, data, args.chunk_size, args.line_delay)
             index_lines.append(f"{target} {len(data)} {crc:08X} {src.name}\n")
 
         if transfers and not args.no_index:
             index_data = "".join(index_lines).encode("ascii")
-            session.put_bytes(target_join(args.target_dir, "INDEX.TXT"), index_data, args.chunk_size)
+            session.put_bytes(target_join(args.target_dir, "INDEX.TXT"), index_data, args.chunk_size, args.line_delay)
 
         session.send_line("QUIT")
-        session.read_until(BYE, timeout=5.0)
+        try:
+            session.read_until(BYE, timeout=5.0)
+        except TimeoutError:
+            # Some loadp2 terminal sessions reset back into Berry immediately
+            # after the loader returns; all file transfers have already been
+            # acknowledged by this point.
+            pass
         print("[SDLoad] done")
         return 0
     finally:
