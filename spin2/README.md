@@ -8,13 +8,30 @@ make spin2
 
 The generated binaries are written to `spin2/build/*.bin`. Copy the binaries to the P2 SD card under `/spin2` so Berry can find them with `spin2.list()`.
 
+The current Catalina DOSFS path exposes 8.3 filenames to Berry. If you copy the generated long filename directly, Berry may see it as a short alias such as `BERRY_~2.BIN`:
+
+```berry
+import os
+import spin2
+
+print(os.listdir("/"))
+print(os.listdir("/spin2"))
+print(spin2.list())
+```
+
+For predictable examples, rename the demo binary on the SD card to `MBOXDEMO.BIN`:
+
+```sh
+cp spin2/build/berry_mailbox_demo.bin /Volumes/<sdcard>/spin2/MBOXDEMO.BIN
+```
+
 Berry-side smoke test for the bundled mailbox demo:
 
 ```berry
 import spin2
 
 print(spin2.list())
-handle = spin2.start("berry_mailbox_demo.bin")
+handle = spin2.start("MBOXDEMO.BIN")
 print(spin2.info(handle))
 print(spin2.call(handle, 1, 123))
 spin2.stop(handle)

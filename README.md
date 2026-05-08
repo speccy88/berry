@@ -24,13 +24,6 @@ make
 ./berry
 ```
 
-P2 build with FlexC:
-
-```sh
-make p2 TOOLCHAIN=flexc
-make p2-run TOOLCHAIN=flexc PORT=/dev/ttyUSB0
-```
-
 P2 build with Catalina:
 
 ```sh
@@ -38,21 +31,30 @@ make p2 TOOLCHAIN=catalina
 make p2-run TOOLCHAIN=catalina PORT=COM5
 ```
 
+Catalina is the preferred and verified P2 toolchain for compiling Berry. The
+old FlexC targets are still present for historical/debugging work, but do not
+use FlexC for normal Berry P2 builds unless you are deliberately investigating
+that toolchain.
+
 P2 Edge flash install with Catalina:
 
 ```sh
-make configure TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT
+make configure TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
 make p2-flash
 tio -b 230400 /dev/cu.usbserial-P97cvdxp
 ```
 
 For the verified P2 Edge Rev D path, use boot switches `FLASH=ON, △=OFF, ▽=OFF`. Catalina flash uses a generated `flshload.t` programmer image; do not flash `build/p2/catalina/berry_p2.binary` directly with `loadp2 -SPI`.
 
+The default Catalina P2 Edge profile targets the no-PSRAM board, where pins `56` and `57` are LEDs. Do not add `-lpsram` for that board; Catalina's PSRAM profile uses pin `57` as chip-select. Keep `CATALINA_MODEL=COMPACT` for `make p2-ram`; `NATIVE` builds are too large for the Hub RAM load path.
+
+P2 app images are checked against the 512 KiB Hub RAM limit. Oversized builds fail before `berry_p2.binary` is published.
+
 Windows PowerShell example:
 
 ```powershell
-make p2 TOOLCHAIN=flexc
-make p2-run TOOLCHAIN=flexc PORT=COM6
+make p2 TOOLCHAIN=catalina CATALINA_DIR=C:\tools\catalina
+make p2-run TOOLCHAIN=catalina PORT=COM6 LOADP2=C:\tools\flexprop\bin\loadp2.exe
 ```
 
 ## Release Binaries
@@ -93,13 +95,16 @@ This fork is meant to be usable, not just buildable. Each release should describ
 
 The current release notes live here:
 
-- [`docs/releases/v0.9.3.md`](./docs/releases/v0.9.3.md)
+- [`docs/releases/v0.9.4.md`](./docs/releases/v0.9.4.md)
 
 ### New Features
 
 #### `p2` Hardware Module
 
 The `p2` module is the friendly hardware namespace for day-to-day P2 work: GPIO, delays, cog ID/state helpers, hardware locks, heap reporting, and a small tone helper.
+The P2 REPL includes a tiny line editor: Up/Down cycles through the last three
+commands, Left/Right moves within the line, and Backspace/Delete edit recalled
+commands before Enter.
 
 ```berry
 import p2
@@ -110,11 +115,30 @@ p2.sleep_ms(250)
 p2.low(56)
 print(p2.cogid())
 print(p2.sbrk())
+p2.status()
 ```
 
 #### Second-Cog Berry Worker
 
 The first worker backend starts a second cog with its own Berry VM and Hub-RAM heap. Jobs are sent through a Hub-RAM mailbox by function name with integer arguments.
+
+The v1 worker preloads a worker-side `blink` method equivalent to this Berry function:
+
+```berry
+def blink(pin, sleep_ms)
+    p2.pinmode(pin, p2.OUTPUT)
+
+    while true
+        p2.high(pin)
+        p2.sleep_ms(sleep_ms)
+
+        p2.low(pin)
+        p2.sleep_ms(sleep_ms)
+    end
+end
+```
+
+Test the worker mailbox dispatch from the main REPL like this:
 
 ```berry
 import worker
@@ -209,7 +233,7 @@ The `spin2` module is the first path for running compatible Spin2/PASM binaries 
 import spin2
 
 print(spin2.list())
-handle = spin2.start("berry_mailbox_demo.bin")
+handle = spin2.start("MBOXDEMO.BIN")
 print(spin2.call(handle, 1, 123))
 spin2.stop(handle)
 ```
@@ -219,6 +243,8 @@ Build bundled Spin2 examples with:
 ```sh
 make spin2
 ```
+
+Copy the demo to the SD card with an 8.3 filename, for example `/spin2/MBOXDEMO.BIN`. The current Catalina DOSFS path may show long filenames as aliases such as `BERRY_~2.BIN`.
 
 ### Existing Features
 
@@ -294,7 +320,7 @@ The Catalina path is already set up so RAM loading and flash programming are sep
 
 ```sh
 make configure TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp \
-  P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT
+  P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
 
 make p2-ram
 make p2-flash
@@ -303,23 +329,24 @@ make p2-attach
 
 ## P2 Toolchain Model
 
-Two P2 compiler flows are supported:
+Catalina is the preferred and verified compiler flow for Berry on P2:
 
-- `TOOLCHAIN=flexc`
 - `TOOLCHAIN=catalina`
+
+The old `TOOLCHAIN=flexc` path remains in the tree for historical/debugging
+work, but do not use it for normal Berry P2 builds.
 
 Path overrides:
 
 ```sh
-make p2 TOOLCHAIN=flexc FLEXPROP_DIR=/opt/flexprop
 make p2 TOOLCHAIN=catalina CATALINA_DIR=/opt/catalina
-make p2-run TOOLCHAIN=flexc LOADP2=/opt/flexprop/bin/loadp2 PORT=/dev/ttyUSB0
+make p2-run TOOLCHAIN=catalina LOADP2=/opt/flexprop/bin/loadp2 PORT=/dev/ttyUSB0
 ```
 
 Local managed caches are supported and ignored by git:
 
-- `.third_party_cache/flexprop/`
 - `.third_party_cache/catalina/`
+- `.third_party_cache/flexprop/` for loader tools such as `loadp2`
 
 ## P2 Silicon Selection
 
@@ -333,8 +360,8 @@ The P2 build keeps explicit silicon selection:
 Examples:
 
 ```sh
-make p2 TOOLCHAIN=flexc P2_SILICON=latest
-make p2-run TOOLCHAIN=flexc P2_SILICON=a PORT=COM6
+make configure TOOLCHAIN=catalina P2_SILICON=latest
+make p2
 ```
 
 ## Repository Layout

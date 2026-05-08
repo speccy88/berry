@@ -9,9 +9,7 @@ This note is the handoff for the next P2 porting session.
 - The P2 build interface is now:
   - `make configure`
   - `make show-config`
-  - `make p2 TOOLCHAIN=flexc`
   - `make p2 TOOLCHAIN=catalina`
-  - `make p2-run TOOLCHAIN=flexc PORT=...`
   - `make p2-run TOOLCHAIN=catalina PORT=...`
   - `make p2-ram`
   - `make p2-flash`
@@ -19,7 +17,7 @@ This note is the handoff for the next P2 porting session.
   - `P2_SILICON=a` -> `-2a`
   - `P2_SILICON=latest|b|c` -> `-2`
 - The primary focus path is now macOS + Catalina + `P2_EDGE` + latest silicon (Rev C / current silicon path).
-- Other build paths should stay available, but this macOS Catalina path is the first one to validate.
+- Other build paths should stay available as legacy/debugging support, but do not spend normal bring-up time trying to compile Berry with FlexC. Catalina is the verified path and the first one to validate.
 
 ## What Was Last Verified
 
@@ -42,7 +40,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 - P2 pins on the no-PSRAM P2 Edge path:
   - `p2.pinmode(56,p2.OUTPUT); p2.low(56); print(p2.read(56))` -> `0`
   - `p2.high(56); print(p2.read(56))` -> `1`
-  - pin `57` is no longer blocked by validation and accepts low/high/toggle calls; physical readback on the current board stayed high, so visually confirm the LED wiring before treating readback as authoritative
+  - pin `57` must be tested with `CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, and no `-lpsram`; Catalina PSRAM builds reserve it as memory chip-select
 - BMP180 on `SCL=25`, `SDA=24`:
   - `i2c.init(25,24,400)`
   - `print(i2c.scan())` -> `[119]`
@@ -124,6 +122,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - pins `58..61` are the SD card interface
   - pins `62..63` are the serial console
   - pins `56..57` are intentionally left available for Berry GPIO use because they are exposed as LEDs on the tested board
+  - PSRAM P2 Edge builds reserve pins `40..57`
 - REPL input cleanup is improved enough that backspace now sends the normal erase sequence and prompts/newlines are no longer drifting the way they did earlier
 - interactive quit on the macOS Catalina path is now verified:
   - `Ctrl-C` or `Ctrl-D` at an empty `berry>` prompt makes Berry print `bye`
@@ -156,7 +155,7 @@ Known limitation:
 - not every standard library module has been re-verified interactively yet on the cached-runtime-module path; `string`, `math`, `json`, `bytes`, `os`, and the P2 hardware modules have current or prior hardware coverage, but longer mixed-module sessions still need stress testing
 - `prop2_cog_start_c()` now builds but still needs a focused Berry FFI validation pass on hardware
 - `spin2.call()` needs an SD-card run with a copied compatible `berry_mailbox_demo.bin`; `make spin2` is build-verified, but the current live SD-visible `/spin2` path had no binaries
-- pin 57 is accessible through the APIs, but the current board readback stayed high after low writes; confirm LED behavior visually or with a meter
+- pin 57 must be tested with the no-PSRAM Catalina profile (`CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, no `-lpsram`); PSRAM builds use pin 57 as chip-select and will hold it under the memory interface
 - `../tests/fs_probe.c` is intentionally destructive and mutates the SD card; keep it for Catalina DOSFS debugging only
 
 ## Relevant Files
@@ -174,7 +173,7 @@ Known limitation:
 
 1. Continue first on macOS with Catalina and `P2_EDGE`.
 2. Keep the local environment configured with:
-   - `make configure TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT`
+   - `make configure TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=`
 3. Start with:
    - `make p2-run`
    - or `make p2-ram`

@@ -16,7 +16,11 @@ int stackspace[4096];
 
 #if defined(__CATALINA__)
 #define P2_COMPILER "Catalina"
-#define P2_RUNTIME "Propeller 2 Edge (P2_EDGE, compact)"
+#if defined(__CATALINA_libpsram) || defined(__CATALINA_PSRAM)
+#define P2_RUNTIME "Propeller 2 Edge (P2_EDGE, PSRAM)"
+#else
+#define P2_RUNTIME "Propeller 2 Edge (P2_EDGE, no PSRAM)"
+#endif
 #elif defined(__clang__)
 #define P2_COMPILER "clang"
 #define P2_RUNTIME "Propeller 2"

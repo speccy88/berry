@@ -31,6 +31,13 @@ extern void p2_serial_puts(const char *s);
 #define VM_TRACE(_msg) ((void)0)
 #endif
 
+#if defined(BE_P2_ENABLE_MAIN_INTERRUPT) && BE_P2_ENABLE_MAIN_INTERRUPT
+extern void p2_check_interrupt(bvm *vm);
+#define P2_INTERRUPT_HOOK() p2_check_interrupt(vm)
+#else
+#define P2_INTERRUPT_HOOK()
+#endif
+
 #define NOT_METHOD          BE_NONE
 
 #define vm_error(vm, except, ...) \
@@ -77,6 +84,7 @@ extern void p2_serial_puts(const char *s);
         DEBUG_HOOK(); \
         COUNTER_HOOK(); \
         VM_HEARTBEAT(); \
+        P2_INTERRUPT_HOOK(); \
         switch (IGET_OP(ins = *vm->ip++))
 
 #if BE_USE_SINGLE_FLOAT && !defined(__CATALINA__)

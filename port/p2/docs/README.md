@@ -32,21 +32,25 @@ hardware modules, and grow the multicog model in small safe layers.
 - `import spin2`
 - SD card backed file and directory access through `open()` and `os`
 - reliable serial interaction without prompt drift or blank-line heap loss
+- tiny REPL line editing with three-command history and arrow-key navigation
 - second-cog Berry worker jobs through Hub-RAM mailboxes
 
 Current Catalina status on P2 Edge / latest silicon:
 
+- the default build targets the no-PSRAM P2 Edge: `CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, with no `-lpsram`
 - `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` reaches a working REPL
 - `print()`, assignment, and basic arithmetic are live-verified
 - `for i:0..3`, `for e:list`, `for v:map`, and `for k:map.keys()` are live-verified
 - `import string`, `import math`, `import json`, `import bytes`, and `import os` are live-verified
 - `import p2`, `import worker`, `import threads`, `import i2c`, `import spi`, and `import spin2` are now live-verified
 - blank Enter presses no longer leak the REPL into an out-of-memory state
+- Up/Down recall the last three REPL commands and Left/Right/Backspace edit the current line
 - `bytes('1122')`, `bytes().fromstring('AB')`, `tohex()`, `asstring()`, `readbytes()`, and range slicing are live-verified
 - `json.load()` and `json.dump()` are live-verified
 - SD card access through `open('/HELLO.TXT','r')`, `os.listdir('/')`, `os.mkdir()`, `os.rename()`, `os.remove()`, `os.chdir()`, `os.getcwd()`, and `os.path.*` is live-verified
 - P2 helpers are exposed as `prop2_*` globals for clock, counter, pin, and smart-pin operations
 - friendlier P2 helpers are exposed as `p2.*`
+- `p2.status()` prints build size, heap usage bars, clock info, and all 8 cog states
 - native bus helpers are exposed as `i2c.*` and `spi.*`
 - the first worker VM path is exposed as `worker.*` and `p2.cog_start()`
 - fixed v1 channels are exposed as `threads.*`
@@ -55,6 +59,7 @@ Current Catalina status on P2 Edge / latest silicon:
 Current hardware verification examples:
 
 - `import p2; print(p2.cogid())` -> `0`
+- `p2.status()` prints the current P2 runtime status table
 - `p2.pinmode(56,p2.OUTPUT); p2.low(56); print(p2.read(56))` -> `0`
 - `p2.high(56); print(p2.read(56))` -> `1`
 - `import i2c; i2c.init(25, 24, 400); print(i2c.scan())` -> `[119]`
@@ -64,6 +69,22 @@ Current hardware verification examples:
 - `worker.exec("blink", 56, 50); print(worker.state())` -> `running`
 - `import threads; threads.channel("a"); threads.put("a",123); print(threads.get("a"))` -> `123`
 - `import spin2; print(spin2.path()); print(spin2.list())` -> `/spin2` and `[]` on the current SD-visible path
+
+Worker-side blink method used for mailbox tests:
+
+```berry
+def blink(pin, sleep_ms)
+    p2.pinmode(pin, p2.OUTPUT)
+
+    while true
+        p2.high(pin)
+        p2.sleep_ms(sleep_ms)
+
+        p2.low(pin)
+        p2.sleep_ms(sleep_ms)
+    end
+end
+```
 
 Examples:
 
@@ -82,6 +103,7 @@ Reserved-pin note on the current Catalina `P2_EDGE` path:
 - pins `58..61` are reserved by the SD card interface
 - pins `62..63` are reserved by the serial console
 - on the tested no-PSRAM board, pins `56` and `57` are exposed as LEDs and are left available for Berry GPIO use
+- on PSRAM P2 Edge builds, pins `40..57` are reserved by the memory interface, and pin `57` is PSRAM chip-select
 - Berry GPIO, `i2c`, and `spi` helpers should avoid the SD and serial pins
 
 Primary development focus from now on:
@@ -90,9 +112,12 @@ Primary development focus from now on:
 - Catalina / `lcc`
 - `P2_EDGE`
 - latest silicon path (`P2_SILICON=latest`, targeting your Rev C board)
+- no-PSRAM P2 Edge defaults (`CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, no `-lpsram`)
 
 Other toolchains and silicon paths should still be kept buildable, but this is
-the first path to validate when continuing the port.
+the first path to validate when continuing the port. In particular, do not
+spend normal Berry bring-up time trying to compile with FlexC unless that
+toolchain is the explicit task; Catalina is the path that works well.
 
 Filesystem probe note:
 

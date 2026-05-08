@@ -13,6 +13,21 @@
 
 #if BE_USE_SCRIPT_COMPILER
 
+static bbool is_keyboard_interrupt(bvm *vm)
+{
+    return be_isstring(vm, -2) && !strcmp(be_tostring(vm, -2), "keyboard_interrupt");
+}
+
+static void dump_repl_exception(bvm *vm)
+{
+    if (is_keyboard_interrupt(vm)) {
+        be_pop(vm, 2);
+        be_writestring("KeyboardInterrupt\n");
+    } else {
+        be_dumpexcept(vm);
+    }
+}
+
 static int try_return(bvm *vm, const char *line)
 {
     int res, idx;
@@ -73,7 +88,7 @@ static int call_script(bvm *vm)
         be_pop(vm, 1); /* pop the result value */
         break;
     case BE_EXCEPTION: /* vm run error */
-        be_dumpexcept(vm);
+        dump_repl_exception(vm);
         be_pop(vm, 1); /* pop the function value */
         break;
     default: /* BE_EXIT or BE_MALLOC_FAIL */
@@ -91,7 +106,7 @@ BERRY_API int be_repl(bvm *vm, breadline getline, bfreeline freeline)
         if (res == BE_MALLOC_FAIL)
             return BE_MALLOC_FAIL;
         if (res) {
-            be_dumpexcept(vm);
+            dump_repl_exception(vm);
         } else { /* compiled successfully */
             res = call_script(vm);
             if (res) {

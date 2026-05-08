@@ -5,26 +5,27 @@
 ```sh
 make configure
 make show-config
-make p2 TOOLCHAIN=flexc
 make p2 TOOLCHAIN=catalina
-make p2-run TOOLCHAIN=flexc PORT=/dev/ttyUSB0
 make p2-run TOOLCHAIN=catalina PORT=COM5
 make p2-ram TOOLCHAIN=catalina PORT=/dev/ttyUSB0
 make p2-flash TOOLCHAIN=catalina PORT=/dev/ttyUSB0
 make p2-stop
 make p2-clean
-make p2-tools TOOLCHAIN=flexc
 make p2-tools TOOLCHAIN=catalina
 make p2-prebuild
 ```
 
+Catalina is the preferred and verified toolchain for compiling Berry on P2.
+The FlexC targets remain in the makefiles as legacy/debugging support, but the
+normal workflow should not try to build Berry with FlexC unless that is the
+specific task.
+
 ## Required Variables
 
-- `TOOLCHAIN=flexc|catalina`
+- `TOOLCHAIN=catalina`
 - `PORT=...`
-- `FLEXPROP_DIR=...`
 - `CATALINA_DIR=...`
-- `LOADP2=...`
+- `LOADP2=...` for the loader from FlexProp
 
 ## Local Environment Defaults
 
@@ -37,7 +38,9 @@ make configure \
   PORT=/dev/cu.usbserial-P97cvdxp \
   P2_SILICON=latest \
   CATALINA_PLATFORM=P2_EDGE \
-  CATALINA_MODEL=COMPACT
+  CATALINA_MODEL=COMPACT \
+  CATALINA_CLIB=-lcx \
+  CATALINA_SERIAL_LIB=
 ```
 
 This writes a local `.p2.local.mk` file in the repo root. It is ignored by git,
@@ -62,6 +65,11 @@ make p2-stop
 
 Current macOS Catalina notes:
 
+- the default P2 Edge build targets the no-PSRAM board: `CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, with no `-lpsram`
+- on that no-PSRAM board, pins `56` and `57` are LEDs and are available for Berry GPIO
+- keep `COMPACT` for `make p2-ram`; `NATIVE` builds are larger than the Hub RAM load path can reliably start
+- `berry_p2.binary` is checked against the P2 Hub RAM limit of `524288` bytes; oversized builds fail before the target image is published
+- for the PSRAM P2 Edge, build explicitly with `CATALINA_MODEL=COMPACT CATALINA_SERIAL_LIB=-lpsram`; that profile reserves pins `40..57` for memory, including pin `57` as PSRAM chip-select
 - `make p2-ram` is the normal interactive RAM-load command
 - `make p2-flash` now builds Catalina's `flshload.t` flash-programmer image, loads that to RAM, and waits until Berry boots back from SPI flash
 - `make p2-flash-run` uses the same Catalina flash-programmer image but keeps the terminal attached
@@ -101,8 +109,6 @@ Install:
 Examples:
 
 ```sh
-make p2 TOOLCHAIN=flexc
-make p2-run TOOLCHAIN=flexc PORT=/dev/ttyUSB0
 make p2 TOOLCHAIN=catalina CATALINA_DIR=/opt/catalina
 make p2-run TOOLCHAIN=catalina PORT=/dev/ttyUSB0 LOADP2=/opt/flexprop/bin/loadp2
 ```
@@ -110,13 +116,12 @@ make p2-run TOOLCHAIN=catalina PORT=/dev/ttyUSB0 LOADP2=/opt/flexprop/bin/loadp2
 Bootstrap-managed cache examples:
 
 ```sh
-make p2-tools TOOLCHAIN=flexc FLEXPROP_DIR=.third_party_cache/flexprop
 make p2-tools TOOLCHAIN=catalina CATALINA_DIR=.third_party_cache/catalina
 ```
 
 Notes:
 
-- the FlexProp shell bootstrap can fetch a cache directly on Unix-like hosts
+- FlexProp is still used for loader tools such as `loadp2`
 - the Catalina shell bootstrap expects either `CATALINA_DIR` to point at an existing installation or `CATALINA_REPO` to be set for a shallow clone
 
 ## Windows PowerShell
@@ -134,8 +139,6 @@ Recommended board port for the next session:
 Examples:
 
 ```powershell
-make p2 TOOLCHAIN=flexc
-make p2-run TOOLCHAIN=flexc PORT=COM6
 make p2 TOOLCHAIN=catalina CATALINA_DIR=C:\tools\catalina
 make p2-run TOOLCHAIN=catalina PORT=COM6 LOADP2=C:\tools\flexprop\bin\loadp2.exe
 ```
@@ -149,13 +152,17 @@ Notes:
 
 ## Silicon Selection
 
-Examples:
+Legacy FlexC commands, for old-toolchain debugging only:
 
 ```sh
 make p2 TOOLCHAIN=flexc P2_SILICON=latest
 make p2 TOOLCHAIN=flexc P2_SILICON=a
 make p2-run TOOLCHAIN=flexc P2_SILICON=latest PORT=COM6
 ```
+
+These FlexC commands are retained for old-toolchain debugging only. For normal
+Berry P2 work, select silicon through the Catalina configuration and build with
+`TOOLCHAIN=catalina`.
 
 ## Output Layout
 

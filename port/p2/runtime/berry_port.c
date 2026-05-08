@@ -2,10 +2,12 @@
 #include "be_sys.h"
 #include "berry_port.h"
 #include "p2_serial.h"
+#include "p2_smartserial.h"
 
 #if defined(__CATALINA__)
 #include <stdio.h>
 #include <fs.h>
+#include <propeller2.h>
 extern VOLINFO __vi;
 #else
 #include <propeller2.h>
@@ -307,13 +309,50 @@ enum {
 static int p2_exit_requested;
 static int p2_swallow_newline;
 static int p2_prompt_needs_cr;
+static int p2_main_cog = -1;
+static char p2_readline_history[3][256];
+static int p2_readline_history_count;
+static int p2_readline_history_next;
 
 void p2_serial_init(void)
 {
+    p2_main_cog = _cogid();
     p2_smartserial_init(BERRY_P2_RX_PIN, BERRY_P2_TX_PIN, BERRY_P2_BAUD);
 #if !defined(__CATALINA__)
     _waitms(100);
 #endif
+}
+
+static int p2_is_main_cog(void)
+{
+    return p2_main_cog < 0 || _cogid() == p2_main_cog;
+}
+
+static int p2_interrupt_key_pressed(void)
+{
+    int ch;
+
+    if (!p2_is_main_cog()) {
+        return 0;
+    }
+    ch = p2_smartserial_rxcheck();
+    return ch == 3 || ch == 4;
+}
+
+void p2_check_interrupt_now(bvm *vm)
+{
+    if (p2_interrupt_key_pressed()) {
+        be_raise(vm, "keyboard_interrupt", "interrupted");
+    }
+}
+
+void p2_check_interrupt(bvm *vm)
+{
+    static unsigned int poll_tick;
+
+    if ((++poll_tick & 0x3ffu) == 0) {
+        p2_check_interrupt_now(vm);
+    }
 }
 
 static const char *map_prompt(const char *prompt)
@@ -346,15 +385,110 @@ void p2_serial_puts(const char *s)
     }
 }
 
-static char *serial_readline(char *buffer, size_t size)
+static void serial_repaint_line(const char *prompt, const char *buffer, int pos, int cursor)
+{
+    int back = pos - cursor;
+
+    serial_write_char('\r');
+    if (prompt) {
+        p2_serial_puts(prompt);
+    }
+    p2_serial_puts(buffer);
+    p2_serial_puts("\033[K");
+    while (back-- > 0) {
+        p2_serial_puts("\033[D");
+    }
+}
+
+static void serial_set_line(char *buffer, size_t size, int *pos, int *cursor, const char *text)
+{
+    size_t len = strlen(text);
+
+    if (len >= size) {
+        len = size - 1u;
+    }
+    memcpy(buffer, text, len);
+    buffer[len] = '\0';
+    *pos = (int)len;
+    *cursor = (int)len;
+}
+
+static const char *serial_history_at_age(int age)
+{
+    int index = p2_readline_history_next - 1 - age;
+
+    while (index < 0) {
+        index += 3;
+    }
+    return p2_readline_history[index % 3];
+}
+
+static void serial_history_add(const char *line)
+{
+    if (!line || !*line) {
+        return;
+    }
+    if (p2_readline_history_count > 0 && !strcmp(serial_history_at_age(0), line)) {
+        return;
+    }
+
+    strncpy(p2_readline_history[p2_readline_history_next], line,
+        sizeof(p2_readline_history[p2_readline_history_next]) - 1u);
+    p2_readline_history[p2_readline_history_next]
+        [sizeof(p2_readline_history[p2_readline_history_next]) - 1u] = '\0';
+    p2_readline_history_next = (p2_readline_history_next + 1) % 3;
+    if (p2_readline_history_count < 3) {
+        ++p2_readline_history_count;
+    }
+}
+
+static int serial_read_escape_key(void)
+{
+    int ch = p2_smartserial_rx();
+
+    if (ch != '[' && ch != 'O') {
+        return 0;
+    }
+    ch = p2_smartserial_rx();
+    if (ch >= '0' && ch <= '9') {
+        int suffix = p2_smartserial_rx();
+        if (ch == '3' && suffix == '~') {
+            return 'D' + 256;
+        }
+        return 0;
+    }
+    switch (ch) {
+    case 'A':
+        return 'U' + 256;
+    case 'B':
+        return 'N' + 256;
+    case 'C':
+        return 'R' + 256;
+    case 'D':
+        return 'L' + 256;
+    case 'H':
+        return 'H' + 256;
+    case 'F':
+        return 'E' + 256;
+    default:
+        return 0;
+    }
+}
+
+static char *serial_readline(char *buffer, size_t size, const char *prompt)
 {
     int pos = 0;
+    int cursor = 0;
     int limit = (int)size;
     const int echo_input = 1;
+    int history_age = -1;
+    char draft[256];
 
     if (!buffer || limit <= 0) {
         return NULL;
     }
+    buffer[0] = '\0';
+    draft[0] = '\0';
 
     for (;;) {
         int ch = p2_smartserial_rx();
@@ -369,6 +503,65 @@ static char *serial_readline(char *buffer, size_t size)
                 continue;
             }
             p2_swallow_newline = 0;
+        }
+
+        if (ch == 27) {
+            int key = serial_read_escape_key();
+
+            switch (key) {
+            case 'U' + 256:
+                if (p2_readline_history_count > 0 && history_age < p2_readline_history_count - 1) {
+                    if (history_age < 0) {
+                        strncpy(draft, buffer, sizeof(draft) - 1u);
+                        draft[sizeof(draft) - 1u] = '\0';
+                    }
+                    ++history_age;
+                    serial_set_line(buffer, size, &pos, &cursor, serial_history_at_age(history_age));
+                    serial_repaint_line(prompt, buffer, pos, cursor);
+                }
+                break;
+            case 'N' + 256:
+                if (history_age > 0) {
+                    --history_age;
+                    serial_set_line(buffer, size, &pos, &cursor, serial_history_at_age(history_age));
+                    serial_repaint_line(prompt, buffer, pos, cursor);
+                } else if (history_age == 0) {
+                    history_age = -1;
+                    serial_set_line(buffer, size, &pos, &cursor, draft);
+                    serial_repaint_line(prompt, buffer, pos, cursor);
+                }
+                break;
+            case 'L' + 256:
+                if (cursor > 0) {
+                    --cursor;
+                    p2_serial_puts("\033[D");
+                }
+                break;
+            case 'R' + 256:
+                if (cursor < pos) {
+                    ++cursor;
+                    p2_serial_puts("\033[C");
+                }
+                break;
+            case 'H' + 256:
+                cursor = 0;
+                serial_repaint_line(prompt, buffer, pos, cursor);
+                break;
+            case 'E' + 256:
+                cursor = pos;
+                serial_repaint_line(prompt, buffer, pos, cursor);
+                break;
+            case 'D' + 256:
+                if (cursor < pos) {
+                    memmove(buffer + cursor, buffer + cursor + 1, (size_t)(pos - cursor));
+                    --pos;
+                    serial_repaint_line(prompt, buffer, pos, cursor);
+                }
+                break;
+            default:
+                break;
+            }
+            continue;
         }
 
         if (ch == 3 || ch == 4) {
@@ -386,11 +579,15 @@ static char *serial_readline(char *buffer, size_t size)
             break;
         }
 
-        if ((ch == '\b' || ch == 127) && pos > 0) {
+        if ((ch == '\b' || ch == 127) && cursor > 0) {
+            memmove(buffer + cursor - 1, buffer + cursor, (size_t)(pos - cursor + 1));
             pos--;
-            serial_write_char('\b');
-            serial_write_char(' ');
-            serial_write_char('\b');
+            cursor--;
+            serial_repaint_line(prompt, buffer, pos, cursor);
+            continue;
+        }
+
+        if (ch < 32 || ch > 126) {
             continue;
         }
 
@@ -398,13 +595,24 @@ static char *serial_readline(char *buffer, size_t size)
             break;
         }
 
-        buffer[pos++] = (char)ch;
-        if (echo_input) {
+        if (cursor == pos) {
+            buffer[pos++] = (char)ch;
+            buffer[pos] = '\0';
+            cursor = pos;
+        } else {
+            memmove(buffer + cursor + 1, buffer + cursor, (size_t)(pos - cursor + 1));
+            buffer[cursor++] = (char)ch;
+            ++pos;
+        }
+        if (echo_input && cursor == pos) {
             serial_write_char(ch);
+        } else if (echo_input) {
+            serial_repaint_line(prompt, buffer, pos, cursor);
         }
     }
 
     buffer[pos] = '\0';
+    serial_history_add(buffer);
     return buffer;
 }
 
@@ -419,7 +627,7 @@ BERRY_API void be_writebuffer(const char *buffer, size_t length)
 
 BERRY_API char *be_readstring(char *buffer, size_t size)
 {
-    return serial_readline(buffer, size);
+    return serial_readline(buffer, size, NULL);
 }
 
 char *p2_readline(const char *prompt)
@@ -431,7 +639,7 @@ char *p2_readline(const char *prompt)
         p2_prompt_needs_cr = 0;
     }
     p2_serial_puts(map_prompt(prompt));
-    return serial_readline(line, sizeof(line));
+    return serial_readline(line, sizeof(line), map_prompt(prompt));
 }
 
 void p2_freeline(char *line)

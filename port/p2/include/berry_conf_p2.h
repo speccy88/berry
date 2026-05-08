@@ -16,6 +16,10 @@
 #define BE_P2_WORKER_HEAP_BYTES         (32 * 1024)
 #endif
 
+#ifndef BE_P2_HUB_RAM_BYTES
+#define BE_P2_HUB_RAM_BYTES             (512 * 1024)
+#endif
+
 #ifndef BE_P2_ENABLE_EXTENDED_MODULES
 #define BE_P2_ENABLE_EXTENDED_MODULES   0
 #endif
@@ -42,6 +46,7 @@
 #define BE_DEBUG_RUNTIME_INFO           0
 #define BE_DEBUG_VAR_INFO               0
 #define BE_P2_STARTUP_TRACE             0
+#define BE_P2_ENABLE_MAIN_INTERRUPT     1
 #define BE_USE_PERF_COUNTERS            0
 #define BE_VM_OBSERVABILITY_SAMPLING    18
 

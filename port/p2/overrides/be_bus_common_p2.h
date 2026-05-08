@@ -2,6 +2,10 @@
 #define BE_BUS_COMMON_P2_H
 
 #include "berry.h"
+#if defined(__CATALINA__)
+#include <cog.h>
+#endif
+#include <propeller2.h>
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -23,10 +27,14 @@ static inline bint berry_p2_bus_require_int(bvm *vm, int index, const char *what
 
 static inline void berry_p2_bus_validate_pin_usage(bvm *vm, int pin, const char *usage)
 {
-    /* Guard only the pins that are still known to be in active platform use
-     * on the current Catalina P2 path. Pins 56/57 are intentionally left
-     * available for boards that expose them as GPIO/LEDs instead of PSRAM. */
+    /* On the no-PSRAM P2 Edge, pins 56/57 are exposed as LEDs. If Catalina is
+     * explicitly built for the PSRAM P2 Edge, pins 40..57 belong to memory. */
 #if defined(__CATALINA__)
+#if defined(__CATALINA_libpsram) || defined(__CATALINA_PSRAM)
+    if (pin >= 40 && pin <= 57) {
+        be_raise(vm, "value_error", "pin is reserved by the P2 Edge PSRAM interface");
+    }
+#endif
     if (pin >= 58 && pin <= 61) {
         be_raise(vm, "value_error", "pin is reserved by the P2 Edge SD card interface");
     }
@@ -49,6 +57,108 @@ static inline int berry_p2_bus_require_pin(bvm *vm, int index, const char *what)
     }
     berry_p2_bus_validate_pin_usage(vm, (int)pin, "bus");
     return (int)pin;
+}
+
+static inline void berry_p2_gpio_reset(int pin)
+{
+    _wrpin(pin, 0);
+    _dirl(pin);
+    _wxpin(pin, 0);
+    _wypin(pin, 0);
+    _akpin(pin);
+}
+
+static inline void berry_p2_gpio_input(int pin)
+{
+    uint32_t mask = (uint32_t)1u << (pin & 31);
+#if defined(__CATALINA__)
+    if (pin < 32) {
+        _dira(mask, 0u);
+    } else {
+        _dirb(mask, 0u);
+    }
+#else
+    if (pin < 32) {
+        _DIRA &= ~mask;
+    } else {
+        _DIRB &= ~mask;
+    }
+#endif
+}
+
+static inline void berry_p2_gpio_output_value(int pin, int value)
+{
+    uint32_t mask = (uint32_t)1u << (pin & 31);
+    uint32_t output = value ? mask : 0u;
+#if defined(__CATALINA__)
+    if (pin < 32) {
+        _outa(mask, output);
+        _dira(mask, mask);
+    } else {
+        _outb(mask, output);
+        _dirb(mask, mask);
+    }
+#else
+    if (pin < 32) {
+        if (value) {
+            _OUTA |= mask;
+        } else {
+            _OUTA &= ~mask;
+        }
+        _DIRA |= mask;
+    } else {
+        if (value) {
+            _OUTB |= mask;
+        } else {
+            _OUTB &= ~mask;
+        }
+        _DIRB |= mask;
+    }
+#endif
+}
+
+static inline void berry_p2_gpio_output(int pin)
+{
+    uint32_t mask = (uint32_t)1u << (pin & 31);
+#if defined(__CATALINA__)
+    if (pin < 32) {
+        _dira(mask, mask);
+    } else {
+        _dirb(mask, mask);
+    }
+#else
+    if (pin < 32) {
+        _DIRA |= mask;
+    } else {
+        _DIRB |= mask;
+    }
+#endif
+}
+
+static inline int berry_p2_gpio_read(int pin)
+{
+    uint32_t mask = (uint32_t)1u << (pin & 31);
+#if defined(__CATALINA__)
+    return (int)(((pin < 32 ? _ina() : _inb()) & mask) != 0u);
+#else
+    return (int)(((pin < 32 ? _INA : _INB) & mask) != 0u);
+#endif
+}
+
+static inline void berry_p2_gpio_toggle(int pin)
+{
+#if defined(__CATALINA__)
+    berry_p2_gpio_output_value(pin, !berry_p2_gpio_read(pin));
+#else
+    uint32_t mask = (uint32_t)1u << (pin & 31);
+    if (pin < 32) {
+        _OUTA ^= mask;
+        _DIRA |= mask;
+    } else {
+        _OUTB ^= mask;
+        _DIRB |= mask;
+    }
+#endif
 }
 
 static inline unsigned berry_p2_bus_require_khz(bvm *vm, int index, const char *what)

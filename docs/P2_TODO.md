@@ -1,6 +1,6 @@
 # Propeller 2 Port Roadmap And Status
 
-This document started as the implementation backlog for matching and then surpassing Catalina Lua's P2 hardware surface. As of `v0.9.3`, the first working versions of the main items are implemented; the remaining notes are the next hardening and expansion work.
+This document started as the implementation backlog for matching and then surpassing Catalina Lua's P2 hardware surface. As of `v0.9.4`, the first working versions of the main items are implemented and the Catalina no-PSRAM P2 Edge workflow has been hardened; the remaining notes are the next expansion work.
 
 ## Current Repo Map
 
@@ -28,16 +28,18 @@ This document started as the implementation backlog for matching and then surpas
   - `port/p2/overrides/be_libs_p2.c`
 - Native functions use the Berry C API style: `int fn(bvm *vm)`, extract args with `be_toint()` / `be_tostring()`-style helpers, push returns with `be_pushint()` / `be_pushstring()` / lists, then return via the repo's existing convention.
 
-## v0.9.3 Implementation Summary
+## v0.9.4 Implementation Summary
 
 - `p2`: implemented GPIO, delays, cog helpers, locks, heap reporting, and `beep`.
+- `p2.status()`: added image/heap bars, clock info, and all 8 cog states.
+- REPL: added 3-command history, cursor editing, and cooperative Ctrl-C/Ctrl-D interrupts for the main Berry VM.
 - `i2c`: implemented module-global init/write/read/writeread/scan/present/wait/start/stop.
 - `spi`: implemented module-global init/select/deselect/write/read/transfer/stop.
 - `worker`: implemented a second-cog Berry VM with Hub-RAM mailbox and integer name-based dispatch.
 - `p2.cog_start`: implemented as a safe name-based convenience wrapper over the worker backend.
 - `threads`: implemented fixed named channels, integer/string messages, shared update/value storage, and worker-backed `new`.
 - `spin2`: implemented SD binary listing, Hub-RAM load/start, integer mailbox call, stop, info, and `make spin2` tooling.
-- Build/release: Catalina 8.8.9 Docker build path works, RAM image fits no-PSRAM P2 Edge Hub RAM, and flash-loader binary generation remains available.
+- Build/release: Catalina 8.8.9 Docker build path works, FlexC is documented as non-preferred for Berry P2 builds, RAM image size is guarded against the 512 KiB Hub RAM limit, no-PSRAM P2 Edge pins 56/57 are usable as LEDs, and flash-loader binary generation remains available.
 
 ## Reference Sources
 
@@ -80,6 +82,7 @@ Goal: make the P2 module comparable to Catalina Lua's `propeller` basics.
 - `p2.lockset(lock)`: set/acquire hardware lock.
 - `p2.lockclr(lock)`: clear/release hardware lock.
 - `p2.sbrk()`: report available heap or closest meaningful heap-space estimate.
+- `p2.status()`: print build image size, heap bars, clock info, and all 8 cog states.
 - Ensure pins 56 and 57 are accessible on P2 Edge boards without PSRAM.
 - Add examples:
   ```berry
@@ -158,6 +161,20 @@ Goal: evolve the current `worker` prototype into a clean P2 cog/concurrency laye
 - `worker.exec(name, ...int_args)`: send integer-only job to worker VM.
 - Ensure worker-side script/function environment is explicit.
 - Make `blink(pin, delay_ms)` demo reliable:
+  ```berry
+  def blink(pin, sleep_ms)
+      p2.pinmode(pin, p2.OUTPUT)
+
+      while true
+          p2.high(pin)
+          p2.sleep_ms(sleep_ms)
+
+          p2.low(pin)
+          p2.sleep_ms(sleep_ms)
+      end
+  end
+  ```
+- Test the worker-side `blink` dispatch from the main VM:
   ```berry
   import worker
   worker.start()
@@ -281,7 +298,7 @@ Status: examples added for the implemented v1 APIs.
   make build/p2/catalina/berry_p2_flash_loader.binary TOOLCHAIN=catalina CATALINA_USE_DOCKER=1
   ```
 - On hardware, test:
-  - Pin 56 and 57 high/low/toggle/read. Pin 56 readback is verified; pin 57 calls are accepted but the current board readback stayed high and still needs visual LED confirmation.
+  - Pin 56 and 57 high/low/toggle/read on the no-PSRAM Catalina profile (`CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, no `-lpsram`). Pin 57 is PSRAM chip-select on PSRAM builds.
   - `os` SD-card file operations.
   - `i2c.scan()` with BMP180 on SDA 24 / SCL 25.
   - SPI transfer with a known JEDEC-ID device.

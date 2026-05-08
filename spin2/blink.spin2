@@ -1,0 +1,8 @@
+CON
+    _clkfreq = 180_000_000
+
+PUB main()
+    pinlow(56)
+    repeat
+        pintoggle(56)
+        waitms(250)

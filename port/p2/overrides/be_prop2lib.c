@@ -3,6 +3,7 @@
 ********************************************************************/
 #include "berry.h"
 #include "be_bus_common_p2.h"
+#include "berry_port.h"
 #include <propeller2.h>
 #include <cog.h>
 #include <stdio.h>
@@ -49,12 +50,8 @@ static void p2_prepare_gpio_pin(int pin)
      * previous runtime, flash loader, or other firmware. _pinclear() only
      * clears direction and mode, so reset mode first, then clear X/Y and
      * drop back to a plain floating input before using GPIO on the pin. */
-    _wrpin(pin, 0);
-    _dirl(pin);
-    _wxpin(pin, 0);
-    _wypin(pin, 0);
-    _akpin(pin);
-    _dirl(pin);
+    berry_p2_gpio_reset(pin);
+    berry_p2_gpio_input(pin);
 }
 
 static int p2_optional_cog(bvm *vm, int index)
@@ -477,19 +474,38 @@ int m_counter_wait_ticks(bvm *vm)
 
 int m_counter_sleep_us(bvm *vm)
 {
-    _waitus(p2_require_u32(vm, 1, "usecs must be an int"));
+    uint32_t usecs = p2_require_u32(vm, 1, "usecs must be an int");
+    while (usecs > 0) {
+        uint32_t chunk = usecs > 10000u ? 10000u : usecs;
+        p2_check_interrupt_now(vm);
+        _waitus(chunk);
+        usecs -= chunk;
+    }
+    p2_check_interrupt_now(vm);
     be_return_nil(vm);
 }
 
 int m_counter_sleep_ms(bvm *vm)
 {
-    _waitms(p2_require_u32(vm, 1, "msecs must be an int"));
+    uint32_t msecs = p2_require_u32(vm, 1, "msecs must be an int");
+    while (msecs > 0) {
+        uint32_t chunk = msecs > 10u ? 10u : msecs;
+        p2_check_interrupt_now(vm);
+        _waitms(chunk);
+        msecs -= chunk;
+    }
+    p2_check_interrupt_now(vm);
     be_return_nil(vm);
 }
 
 int m_counter_sleep(bvm *vm)
 {
-    _waitsec(p2_require_u32(vm, 1, "secs must be an int"));
+    uint32_t secs = p2_require_u32(vm, 1, "secs must be an int");
+    while (secs-- > 0) {
+        p2_check_interrupt_now(vm);
+        _waitsec(1);
+    }
+    p2_check_interrupt_now(vm);
     be_return_nil(vm);
 }
 
@@ -497,7 +513,7 @@ int m_pin_input(bvm *vm)
 {
     int pin = p2_require_pin(vm, 1);
     p2_prepare_gpio_pin(pin);
-    _dirl(pin);
+    berry_p2_gpio_input(pin);
     be_return_nil(vm);
 }
 
@@ -505,7 +521,7 @@ int m_pin_output(bvm *vm)
 {
     int pin = p2_require_pin(vm, 1);
     p2_prepare_gpio_pin(pin);
-    _dirh(pin);
+    berry_p2_gpio_output(pin);
     be_return_nil(vm);
 }
 
@@ -514,7 +530,7 @@ int m_pin_write(bvm *vm)
     int pin = p2_require_pin(vm, 1);
     int value = p2_require_boolish(vm, 2, "value must be a bool or int");
     p2_prepare_gpio_pin(pin);
-    _pinw(pin, value);
+    berry_p2_gpio_output_value(pin, value);
     be_return_nil(vm);
 }
 
@@ -522,7 +538,7 @@ int m_pin_low(bvm *vm)
 {
     int pin = p2_require_pin(vm, 1);
     p2_prepare_gpio_pin(pin);
-    _pinl(pin);
+    berry_p2_gpio_output_value(pin, 0);
     be_return_nil(vm);
 }
 
@@ -530,7 +546,7 @@ int m_pin_high(bvm *vm)
 {
     int pin = p2_require_pin(vm, 1);
     p2_prepare_gpio_pin(pin);
-    _pinh(pin);
+    berry_p2_gpio_output_value(pin, 1);
     be_return_nil(vm);
 }
 
@@ -538,7 +554,7 @@ int m_pin_toggle(bvm *vm)
 {
     int pin = p2_require_pin(vm, 1);
     p2_prepare_gpio_pin(pin);
-    _pinnot(pin);
+    berry_p2_gpio_toggle(pin);
     be_return_nil(vm);
 }
 
@@ -549,7 +565,7 @@ int m_pin_randomize(bvm *vm)
     /* FlexC advertises _pinrnd() in propeller2.h but does not resolve it
      * reliably on the current P2 build path, so use a portable fallback. */
     p2_prepare_gpio_pin(pin);
-    _pinw(pin, (int)(_rnd() & 1u));
+    berry_p2_gpio_output_value(pin, (int)(_rnd() & 1u));
     be_return_nil(vm);
 }
 
@@ -557,13 +573,13 @@ int m_pin_float(bvm *vm)
 {
     int pin = p2_require_pin(vm, 1);
     p2_prepare_gpio_pin(pin);
-    _pinf(pin);
+    berry_p2_gpio_input(pin);
     be_return_nil(vm);
 }
 
 int m_pin_read(bvm *vm)
 {
-    be_pushint(vm, (bint)_pinr(p2_require_pin(vm, 1)));
+    be_pushint(vm, (bint)berry_p2_gpio_read(p2_require_pin(vm, 1)));
     be_return(vm);
 }
 

@@ -6,11 +6,16 @@
 #include "be_bus_common_p2.h"
 #include "be_module.h"
 #include "be_string.h"
+#include "berry_conf_p2.h"
+#include "berry_port.h"
 #include "berry_worker.h"
+#include "p2_build_info.h"
 #include "p2_heap.h"
 
 #include <propeller2.h>
+#include <stdarg.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 enum {
@@ -41,18 +46,14 @@ static int p2_require_pin_arg(bvm *vm, int index)
 
 static void p2_gpio_clear(int pin)
 {
-    _wrpin(pin, 0);
-    _dirl(pin);
-    _wxpin(pin, 0);
-    _wypin(pin, 0);
-    _akpin(pin);
+    berry_p2_gpio_reset(pin);
 }
 
 static int m_p2_high(bvm *vm)
 {
     int pin = p2_require_pin_arg(vm, 1);
     p2_gpio_clear(pin);
-    _pinh(pin);
+    berry_p2_gpio_output_value(pin, 1);
     be_return_nil(vm);
 }
 
@@ -60,7 +61,7 @@ static int m_p2_low(bvm *vm)
 {
     int pin = p2_require_pin_arg(vm, 1);
     p2_gpio_clear(pin);
-    _pinl(pin);
+    berry_p2_gpio_output_value(pin, 0);
     be_return_nil(vm);
 }
 
@@ -68,14 +69,14 @@ static int m_p2_toggle(bvm *vm)
 {
     int pin = p2_require_pin_arg(vm, 1);
     p2_gpio_clear(pin);
-    _pinnot(pin);
+    berry_p2_gpio_toggle(pin);
     be_return_nil(vm);
 }
 
 static int m_p2_read(bvm *vm)
 {
     int pin = p2_require_pin_arg(vm, 1);
-    be_pushint(vm, (bint)_pinr(pin));
+    be_pushint(vm, (bint)berry_p2_gpio_read(pin));
     be_return(vm);
 }
 
@@ -87,14 +88,14 @@ static int m_p2_pinmode(bvm *vm)
     p2_gpio_clear(pin);
     switch (mode) {
     case P2_PINMODE_INPUT:
-        _dirl(pin);
+        berry_p2_gpio_input(pin);
         break;
     case P2_PINMODE_OUTPUT:
-        _dirh(pin);
+        berry_p2_gpio_output(pin);
         break;
     case P2_PINMODE_OPENDRAIN:
-        _pinl(pin);
-        _dirl(pin);
+        berry_p2_gpio_output_value(pin, 0);
+        berry_p2_gpio_input(pin);
         break;
     default:
         be_raise(vm, "value_error", "mode must be p2.INPUT, p2.OUTPUT, or p2.OPENDRAIN");
@@ -108,7 +109,13 @@ static int m_p2_sleep_ms(bvm *vm)
     if (ms < 0) {
         be_raise(vm, "value_error", "ms must be >= 0");
     }
-    _waitms((uint32_t)ms);
+    while (ms > 0) {
+        uint32_t chunk = ms > 10 ? 10u : (uint32_t)ms;
+        p2_check_interrupt_now(vm);
+        _waitms(chunk);
+        ms -= (bint)chunk;
+    }
+    p2_check_interrupt_now(vm);
     be_return_nil(vm);
 }
 
@@ -118,7 +125,13 @@ static int m_p2_delay_us(bvm *vm)
     if (us < 0) {
         be_raise(vm, "value_error", "us must be >= 0");
     }
-    _waitus((uint32_t)us);
+    while (us > 0) {
+        uint32_t chunk = us > 10000 ? 10000u : (uint32_t)us;
+        p2_check_interrupt_now(vm);
+        _waitus(chunk);
+        us -= (bint)chunk;
+    }
+    p2_check_interrupt_now(vm);
     be_return_nil(vm);
 }
 
@@ -249,6 +262,145 @@ static int m_p2_heap_info(bvm *vm)
     be_return(vm);
 }
 
+static void p2_status_write(const char *text)
+{
+    be_writebuffer(text, strlen(text));
+}
+
+static void p2_status_write_line(const char *text)
+{
+    p2_status_write(text);
+    be_writenewline();
+}
+
+static void p2_status_writef(const char *fmt, ...)
+{
+    char buffer[160];
+    va_list ap;
+
+    va_start(ap, fmt);
+    vsnprintf(buffer, sizeof(buffer), fmt, ap);
+    va_end(ap);
+    p2_status_write(buffer);
+}
+
+static void p2_status_bar(char *out, size_t size, unsigned long used, unsigned long total)
+{
+    enum { P2_STATUS_BAR_WIDTH = 24 };
+    unsigned long filled = 0;
+    unsigned i;
+
+    if (!out || size < P2_STATUS_BAR_WIDTH + 3u) {
+        return;
+    }
+    if (total > 0) {
+        filled = (used * P2_STATUS_BAR_WIDTH + (total / 2u)) / total;
+        if (filled > P2_STATUS_BAR_WIDTH) {
+            filled = P2_STATUS_BAR_WIDTH;
+        }
+    }
+
+    out[0] = '[';
+    for (i = 0; i < P2_STATUS_BAR_WIDTH; ++i) {
+        out[i + 1u] = i < filled ? '#' : '.';
+    }
+    out[P2_STATUS_BAR_WIDTH + 1u] = ']';
+    out[P2_STATUS_BAR_WIDTH + 2u] = '\0';
+}
+
+static void p2_status_print_bar_line(const char *label,
+    unsigned long used,
+    unsigned long total)
+{
+    char bar[32];
+    unsigned long pct = 0;
+
+    if (total > 0) {
+        pct = (used * 100u + (total / 2u)) / total;
+        if (pct > 999u) {
+            pct = 999u;
+        }
+    }
+    p2_status_bar(bar, sizeof(bar), used, total);
+    p2_status_writef("  %-12s %s %3lu%% %7lu / %7lu B\n",
+        label,
+        bar,
+        pct,
+        used,
+        total);
+}
+
+static void p2_status_print_size_line(const char *label, unsigned long bytes)
+{
+    p2_status_writef("  %-12s %7lu B\n", label, bytes);
+}
+
+static int m_p2_status(bvm *vm)
+{
+    unsigned long image = (unsigned long)P2_BUILD_BINARY_BYTES;
+    unsigned long code = (unsigned long)P2_BUILD_CODE_BYTES;
+    unsigned long cnst = (unsigned long)P2_BUILD_CONST_BYTES;
+    unsigned long init = (unsigned long)P2_BUILD_INIT_BYTES;
+    unsigned long data = (unsigned long)P2_BUILD_DATA_BYTES;
+    unsigned long hub_total = (unsigned long)BE_P2_HUB_RAM_BYTES;
+    unsigned long main_total = (unsigned long)BE_P2_HEAP_BYTES;
+    unsigned long worker_total = (unsigned long)BE_P2_WORKER_HEAP_BYTES;
+    unsigned long main_free = (unsigned long)p2_heap_main_free_bytes();
+    unsigned long worker_free = (unsigned long)p2_heap_worker_free_bytes();
+    unsigned long current_free = (unsigned long)p2_heap_free_bytes();
+    unsigned long main_used = main_total > main_free ? main_total - main_free : 0u;
+    unsigned long worker_used = worker_total > worker_free ? worker_total - worker_free : 0u;
+    unsigned long hub_used = image <= hub_total ? image : hub_total;
+    unsigned long clock = (unsigned long)_clockfreq();
+    unsigned long mode = (unsigned long)_clockmode();
+    unsigned long cogid = (unsigned long)_cogid();
+    unsigned long ticks = (unsigned long)_cnt();
+    int cog;
+
+    (void)vm;
+
+    p2_status_write_line("");
+    p2_status_write_line("P2 status");
+    p2_status_write_line("---------");
+    p2_status_writef("Build       %s %s\n", P2_BUILD_DATE_STR, P2_BUILD_TIME_STR);
+    p2_status_writef("Runtime     Catalina P2_EDGE %s\n",
+#if defined(__CATALINA_libpsram) || defined(__CATALINA_PSRAM)
+        "PSRAM"
+#else
+        "no-PSRAM"
+#endif
+    );
+    p2_status_writef("Clock       %lu Hz  mode 0x%08lX  tick %lu\n", clock, mode, ticks);
+    p2_status_writef("Current cog %lu\n", cogid);
+    p2_status_write_line("");
+
+    p2_status_write_line("Memory");
+    p2_status_print_bar_line("image", image, hub_total);
+    p2_status_print_bar_line("main heap", main_used, main_total);
+    p2_status_print_bar_line("worker heap", worker_used, worker_total);
+    p2_status_writef("  current free %7lu B\n", current_free);
+    p2_status_print_size_line("code", code);
+    p2_status_print_size_line("const", cnst);
+    p2_status_print_size_line("init", init);
+    p2_status_print_size_line("data", data);
+    p2_status_print_size_line("bytes max", (unsigned long)BE_BYTES_MAX_SIZE);
+    p2_status_writef("  stack        %7lu slots\n", (unsigned long)BE_STACK_TOTAL_MAX);
+    p2_status_write_line("");
+
+    p2_status_write_line("Cogs");
+    for (cog = 0; cog < 8; ++cog) {
+        int raw = _cogchk(cog);
+        p2_status_writef("  cog %d  %-4s  raw %d%s\n",
+            cog,
+            raw ? "run" : "free",
+            raw,
+            cog == (int)cogid ? "  current" : "");
+    }
+    p2_status_write_line("");
+
+    be_return_nil(vm);
+}
+
 static int m_p2_beep(bvm *vm)
 {
     int pin = p2_require_pin_arg(vm, 1);
@@ -273,11 +425,11 @@ static int m_p2_beep(bvm *vm)
     }
     end_ticks = _cnt() + (uint32_t)((uint64_t)_clockfreq() * (uint32_t)ms / 1000u);
     do {
-        _pinnot(pin);
+        berry_p2_gpio_toggle(pin);
         _waitx(half_ticks);
         now = _cnt();
     } while ((int32_t)(end_ticks - now) > 0);
-    _pinl(pin);
+    berry_p2_gpio_output_value(pin, 0);
     be_return_nil(vm);
 }
 
@@ -302,6 +454,7 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "lockret")) be_pushntvfunction(vm, m_p2_lockret);
     else if (!strcmp(name, "sbrk")) be_pushntvfunction(vm, m_p2_sbrk);
     else if (!strcmp(name, "heap_info")) be_pushntvfunction(vm, m_p2_heap_info);
+    else if (!strcmp(name, "status")) be_pushntvfunction(vm, m_p2_status);
     else if (!strcmp(name, "beep")) be_pushntvfunction(vm, m_p2_beep);
     else if (!strcmp(name, "INPUT")) be_pushint(vm, P2_PINMODE_INPUT);
     else if (!strcmp(name, "OUTPUT")) be_pushint(vm, P2_PINMODE_OUTPUT);
