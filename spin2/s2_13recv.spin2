@@ -1,0 +1,18 @@
+{{ Feature 13: RECV method pointer.
+
+   RECV is the input counterpart to SEND.  It points to a no-argument method
+   that returns one value.
+}}
+
+VAR
+    LONG next_value
+
+PUB main() : r | i
+    next_value := 0
+    RECV := @source
+    REPEAT 4 WITH i
+        r += RECV()
+
+PRI source() : x
+    next_value++
+    x := next_value

@@ -1,0 +1,17 @@
+{{ Feature 01: CON constants.
+
+   Covers decimal, hexadecimal, binary, double-binary, character, floating-point
+   constants, underscore separators, and compile-time ROUND().
+}}
+
+CON
+    dec_value   = 1_234
+    hex_value   = $AA55
+    bin_value   = %1010_0101
+    dbin_value  = %%3210
+    char_A      = "A"
+    half_pi     = 1.5707963
+    rounded     = ROUND(4000.0 / half_pi)
+
+PUB main() : r
+    r := dec_value + hex_value + bin_value + dbin_value + char_A + rounded

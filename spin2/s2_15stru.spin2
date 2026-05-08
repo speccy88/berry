@@ -1,0 +1,17 @@
+{Spin2_v45}
+{{ Feature 15: basic STRUCT definitions.
+
+   STRUCT declarations are packed and allocate storage only when instantiated
+   in VAR or method headers.
+}}
+
+CON
+    STRUCT point(BYTE x, BYTE y)
+
+VAR
+    point p
+
+PUB main() : r
+    p.x := 10
+    p.y := 20
+    r := SIZEOF(point) + p.x + p.y

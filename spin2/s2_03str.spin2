@@ -1,0 +1,26 @@
+{Spin2_v52}
+{{ Feature 03: string/data methods.
+
+   STRING() produces a zero-terminated byte string.  @"..." is shorthand for a
+   string literal pointer, LSTRING() prefixes the byte count, and BYTE/WORD/LONG
+   declare literal data blocks that return pointers.
+}}
+
+PUB main() : r | p
+    p := STRING("abc")
+    r := BYTE[p] + BYTE[p][1] + BYTE[p][2]
+
+    p := @"a\n"
+    r += BYTE[p][1]
+
+    p := LSTRING("xyz")
+    r += BYTE[p]
+
+    p := BYTE(1, 2, 3, 0)
+    r += BYTE[p][2]
+
+    p := WORD($1234, $5678)
+    r += WORD[p][1]
+
+    p := LONG($01020304)
+    r += LONG[p]

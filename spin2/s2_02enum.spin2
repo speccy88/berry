@@ -1,0 +1,16 @@
+{{ Feature 02: enumerated constants.
+
+   The # syntax starts an enumeration and optional [step] values change the
+   increment.  This example keeps the math deterministic for compile/run smoke
+   testing.
+}}
+
+CON
+    #0, idle, running, done
+    #10[2], even10, even12, even14
+    #100
+    first_after_reset
+    second_after_reset
+
+PUB main() : r
+    r := done + even14 + second_after_reset

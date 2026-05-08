@@ -1,0 +1,20 @@
+{{ Feature 21: preprocessor conditionals.
+
+   FlexSpin supports the v48-style #DEFINE/#IFDEF family.  This file makes the
+   chosen branch observable through the return checksum.
+}}
+
+#define LOCAL_SYMBOL
+
+#ifdef LOCAL_SYMBOL
+CON selected = 7
+#else
+CON selected = 9
+#endif
+
+#ifndef MISSING_SYMBOL
+CON fallback = 3
+#endif
+
+PUB main() : r
+    r := selected + fallback

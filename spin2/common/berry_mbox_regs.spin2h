@@ -1,0 +1,22 @@
+{{ Registers shared by the mailbox service and each example method. }}
+
+berry_mbox_mb      res     1
+berry_mbox_ptr     res     1
+berry_mbox_state   res     1
+berry_mbox_method  res     1
+berry_mbox_argc    res     1
+
+arg0               res     1
+arg1               res     1
+arg2               res     1
+arg3               res     1
+arg4               res     1
+arg5               res     1
+arg6               res     1
+arg7               res     1
+
+result             res     1
+temp0              res     1
+temp1              res     1
+temp2              res     1
+temp3              res     1

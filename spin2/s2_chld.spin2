@@ -1,0 +1,15 @@
+{{ Child object for s2_14obj.spin2.
+
+   Parent objects can override CON symbols through OBJ parameters.  This child
+   is also buildable as a standalone file for make spin2.
+}}
+
+CON
+    base = 10
+    scale = 2
+
+PUB main() : r
+    r := value(1)
+
+PUB value(x) : r
+    r := base + (x * scale)

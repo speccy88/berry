@@ -1,0 +1,16 @@
+{Spin2_v46}
+{{ Feature 22: DEBUG gating syntax.
+
+   DEBUG statements compile away in normal builds.  DEBUG_DISABLE and
+   DEBUG_MASK show the documented control symbols without opening any debug
+   channel during make spin2.
+}}
+
+CON
+    DEBUG_DISABLE = 1
+    DEBUG_MASK = %1
+
+PUB main() : r | i
+    REPEAT 3 WITH i
+        DEBUG[0](UDEC(i))
+        r += i

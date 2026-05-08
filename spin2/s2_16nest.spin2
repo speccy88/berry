@@ -1,0 +1,26 @@
+{Spin2_v45}
+{{ Feature 16: nested STRUCTs and arrays.
+
+   Nested structure fields are accessed with dotted member syntax.  Arrays can
+   be declared at any structure level.
+}}
+
+CON
+    STRUCT point(BYTE x, BYTE y)
+    STRUCT line(point a, point b, BYTE color)
+
+VAR
+    line lines[2]
+
+PUB main() : r
+    lines[0].a.x := 1
+    lines[0].a.y := 2
+    lines[0].b.x := 3
+    lines[0].b.y := 4
+    lines[0].color := 5
+
+    lines[1].a.x := lines[0].b.x
+    lines[1].a.y := lines[0].b.y
+    lines[1].color := lines[0].color + 1
+
+    r := SIZEOF(line) + lines[1].a.x + lines[1].a.y + lines[1].color

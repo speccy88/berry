@@ -1,0 +1,34 @@
+{ PASM2 CORDIC divide/fraction/square-root operations.
+
+   Callable from Berry with:
+
+     handle = spin2.start("MB_08DIV.BIN")
+     print(spin2.call(handle, 1, arg0, arg1, arg2))
+     spin2.stop(handle)
+
+   Method 0 is the mailbox service entry.  Method 1 is the deterministic test
+   implemented below.  The shared service loads argv[0..7] into arg0..arg7 and
+   writes the result register back to mailbox long 11.
+}
+
+DAT
+                long    2
+                long    berry_mbox_service
+                long    berry_mbox_method_1
+
+#include "common/berry_mbox_service.spin2h"
+
+berry_mbox_method_1
+                qdiv    arg0, arg1
+                getqx   result
+                getqy   temp0
+                add     result, temp0
+                qfrac   arg0, arg1
+                getqx   temp1
+                xor     result, temp1
+                qsqrt   arg0, #0
+                getqx   temp2
+                add     result, temp2
+                ret
+
+#include "common/berry_mbox_regs.spin2h"

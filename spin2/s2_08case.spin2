@@ -1,0 +1,21 @@
+{{ Feature 08: CASE and CASE_FAST.
+
+   CASE handles ranges and OTHER.  CASE_FAST uses a compact jump table when the
+   matches are dense constants.
+}}
+
+PUB main() : r | x
+    x := 5
+    CASE x
+        0:      r := 10
+        1..4:   r := 20
+        5, 7:   r := 30
+        OTHER:  r := 40
+
+    CASE_FAST x
+        0: r += 1
+        1: r += 2
+        2: r += 3
+        3: r += 4
+        4: r += 5
+        5: r += 6

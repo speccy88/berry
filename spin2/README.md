@@ -3,43 +3,72 @@
 Place Propeller 2 `.spin2` sources here and build them with:
 
 ```sh
-make spin2
+make spin2 TOOLCHAIN=catalina
 ```
 
-The generated binaries are written to `spin2/build/*.bin`. Copy the binaries to the P2 SD card under `/spin2` so Berry can find them with `spin2.list()`.
+The generated binaries are written to `spin2/build/*.bin`. The new examples use
+8.3-friendly names where practical so Catalina DOSFS exposes predictable SD-card
+filenames such as `MB_01ALU.BIN` and `S2_01CON.BIN`.
 
-The current Catalina DOSFS path exposes 8.3 filenames to Berry. If you copy the generated long filename directly, Berry may see it as a short alias such as `BERRY_~2.BIN`:
+## Example Suite
 
-```berry
-import os
-import spin2
+- `s2_01con.spin2` through `s2_27dit.spin2`: compile/run Spin2 language feature examples from the v54 documentation, limited to the subset FlexSpin 7.6.6 can compile.
+- `mb_01alu.spin2` through `mb_20pat.spin2`: Berry-callable PASM2 mailbox binaries. Start them with `spin2.start()` and call method `1`.
+- `p2instmx.spin2`: compile-only PASM2 instruction matrix for broad mnemonic coverage.
+- `common/berry_mbox_service.spin2h`: shared PASM2 mailbox service used by the callable examples.
 
-print(os.listdir("/"))
-print(os.listdir("/spin2"))
-print(spin2.list())
-```
+Full coverage notes and validation commands live in
+[`docs/SPIN2_MODULE_TESTS.md`](../docs/SPIN2_MODULE_TESTS.md).
 
-For predictable examples, rename the demo binary on the SD card to `MBOXDEMO.BIN`:
+## Copy To The P2 SD Card
+
+For a mounted SD card on the host:
 
 ```sh
-cp spin2/build/berry_mailbox_demo.bin /Volumes/<sdcard>/spin2/MBOXDEMO.BIN
+mkdir -p /Volumes/<sdcard>/spin2
+cp spin2/build/mb_01alu.bin /Volumes/<sdcard>/spin2/MB_01ALU.BIN
 ```
 
-Berry-side smoke test for the bundled mailbox demo:
+For direct transfer through the Propeller, build and run the temporary RAM SD
+loader:
+
+```sh
+make spin2-sd-put TOOLCHAIN=catalina PORT=/dev/cu.usbserial-XXXX \
+  SPIN2_SD_FILE=spin2/build/mb_01alu.bin
+
+make spin2-sd-sync TOOLCHAIN=catalina PORT=/dev/cu.usbserial-XXXX
+```
+
+`spin2-sd-put` transfers one binary. `spin2-sd-sync` runs `make spin2`, loads the
+temporary Catalina SD receiver to RAM, transfers every `spin2/build/*.bin` to
+`/spin2`, and writes `/spin2/INDEX.TXT` with the source-to-SD name mapping.
+
+## Berry Smoke Tests
 
 ```berry
 import spin2
 
 print(spin2.list())
-handle = spin2.start("MBOXDEMO.BIN")
+handle = spin2.start("MB_01ALU.BIN")
 print(spin2.info(handle))
-print(spin2.call(handle, 1, 123))
+print(spin2.call(handle, 1, 10, 4, 0))
 spin2.stop(handle)
 ```
 
+The broader Berry-side smoke script can be run from the repo examples folder:
+
+```sh
+berry examples/p2_spin2_mailbox_suite.be
+```
+
+or paste/run the file contents from `examples/p2_spin2_mailbox_suite.be` at the
+P2 Berry prompt.
+
 ## v1 Mailbox Convention
 
-`spin2.call(handle, method_id, args...)` is intentionally small for the first port. It supports integer arguments only and expects compatible binaries to use the Hub-RAM mailbox passed in `PTRA`.
+`spin2.call(handle, method_id, args...)` is intentionally small for the first
+port. It supports integer arguments only and expects compatible binaries to use
+the Hub-RAM mailbox passed in `PTRA`.
 
 Mailbox longs:
 
@@ -52,16 +81,18 @@ Mailbox longs:
 10 argv[7]
 11 result
 12 par         optional user parameter from spin2.start(file, par)
-13 method_addr resolved method address from the binary call table
+13 method_addr reserved for future dispatch helpers
 ```
 
-Compatible binaries should put a call table at the start of the binary:
+Compatible binaries put a method table at the start of the binary:
 
 ```text
 long method_count
-long method_0_offset_or_address
-long method_1_offset_or_address
+long method_0_entry
+long method_1_entry
 ...
 ```
 
-For raw PASM examples, FlexSpin labels are usually long offsets, so Berry accepts both long offsets and byte offsets when resolving `method_addr`.
+Berry starts the PASM service after the table, so callable PASM binaries in this
+tree assemble their actual service code at `ORG 0` and treat the table as Berry
+metadata rather than executable cog code.

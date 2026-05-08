@@ -1,0 +1,26 @@
+{{ Feature 25: inline PASM and CALL(@hubcode).
+
+   ORG inline code runs from cog registers and ORGH inline code runs from hub
+   RAM.  CALL(@routine) invokes a DAT PASM routine from Spin2.
+}}
+
+PUB main() : r | x
+    x := 40
+
+    ORG
+        add     x, #1
+    END
+
+    ORGH
+        add     x, #1
+    END
+
+    PR0 := x
+    CALL(@add_three)
+    r := PR0
+
+DAT
+        ORGH
+add_three
+        add     PR0, #3
+ _RET_  ret

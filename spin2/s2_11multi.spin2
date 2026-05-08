@@ -1,0 +1,19 @@
+{{ Feature 11: multiple return values and ignored assignments.
+
+   Spin2 methods can return up to 15 values.  The underscore on the left side
+   discards a value while keeping the assignment positions aligned.
+}}
+
+PUB main() : r | a, b, c
+    a, b, c := triple(10)
+    _, b := pair(40)
+    r := a + b + c
+
+PRI triple(x) : a, b, c
+    a := x
+    b := x + 1
+    c := x + 2
+
+PRI pair(x) : a, b
+    a := x
+    b := x + 5

@@ -1,0 +1,29 @@
+{Spin2_v52}
+{{ Feature 09: REPEAT forms, NEXT, and QUIT.
+
+   Covers counted loops, WITH index loops, FROM/TO/STEP, WHILE, UNTIL, and
+   conditional NEXT/QUIT control transfer.
+}}
+
+PUB main() : r | i, guard
+    REPEAT 3
+        r += 1
+
+    REPEAT 4 WITH i
+        r += i
+
+    REPEAT i FROM 2 TO 8 STEP 2
+        r += i
+
+    guard := 0
+    REPEAT WHILE guard < 3
+        guard++
+        IF guard == 2
+            NEXT
+        r += guard
+
+    REPEAT
+        guard--
+        IF guard == 0
+            QUIT
+        r += 10

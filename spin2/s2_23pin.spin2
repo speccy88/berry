@@ -1,0 +1,17 @@
+{{ Feature 23: pinfields and GPIO helpers.
+
+   The normal P2 Edge profile exposes pins 56 and 57 as LEDs.  This example is
+   safe as a short LED pulse if run directly, but is mainly a compile test for
+   PINLOW/PINHIGH/PINWRITE/PINREAD and ADDPINS syntax.
+}}
+
+CON
+    led_base = 56
+    led_pair = led_base ADDPINS 1
+
+PUB main() : r
+    PINLOW(led_pair)
+    PINHIGH(led_base)
+    WAITMS(1)
+    PINWRITE(led_pair, 0)
+    r := PINREAD(led_base)

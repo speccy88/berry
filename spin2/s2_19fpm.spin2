@@ -1,0 +1,16 @@
+{Spin2_v52}
+{{ Feature 19: floating-point operators.
+
+   Spin2 stores floats as IEEE-754 single-precision longs.  Operators ending in
+   dots and LOG/EXP/POW treat their operands as floats.
+}}
+
+PUB main() : r | f
+    f := 3.0 *. 4.0
+    f := f /. 2.0
+    f := f +. 1.5
+    f := FSQRT(f)
+    f := 3.0 POW 4.0
+    f := LOG2(257.0)
+    f := EXP2(8.0)
+    r := ROUND(f)

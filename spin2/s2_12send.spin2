@@ -1,0 +1,21 @@
+{{ Feature 12: SEND method pointer.
+
+   SEND is inherited by called methods and works as a compact output callback.
+   This example routes values through a private sink method.
+}}
+
+VAR
+    LONG total
+
+PUB main() : r
+    total := 0
+    SEND := @sink
+    SEND(1, 2, 3, helper())
+    r := total
+
+PRI helper() : x
+    SEND(10)
+    x := 4
+
+PRI sink(x)
+    total += x

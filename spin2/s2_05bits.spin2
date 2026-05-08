@@ -1,0 +1,21 @@
+{{ Feature 05: indexed variables and bitfields.
+
+   The .[top..bottom] syntax reads and writes bitfields.  BYTE/WORD/LONG size
+   overrides can be combined with indexes when addressing hub variables.
+}}
+
+VAR
+    LONG value
+    BYTE mirror[4]
+
+PUB main() : r
+    value := $1234_5678
+    r := value.[7..0]
+    value.[15..8] := $AB
+
+    mirror[0] := value.BYTE[0]
+    mirror[1] := value.BYTE[1]
+    mirror[2] := value.BYTE[2]
+    mirror[3] := value.BYTE[3]
+
+    r += mirror[1] + value.[31..28]

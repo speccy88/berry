@@ -1,0 +1,23 @@
+{{ Feature 04: VAR storage.
+
+   Shows BYTE, WORD, and LONG object variables, arrays, and local loop indexes.
+   Spin2 zero-initializes VAR storage before the first method runs.
+}}
+
+VAR
+    BYTE bytes[4], one_byte
+    WORD words[2]
+    LONG longs[2]
+
+PUB main() : r | i
+    REPEAT 4 WITH i
+        bytes[i] := i + 1
+
+    one_byte := bytes[0] + bytes[3]
+    words[0] := $1234
+    words[1] := $00AA
+    longs[0] := $01020304
+    longs[1] := one_byte
+
+    r := bytes[0] + bytes[1] + bytes[2] + bytes[3]
+    r += words[0] + words[1] + longs[1]

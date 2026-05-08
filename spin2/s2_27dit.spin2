@@ -1,0 +1,18 @@
+{Spin2_v50}
+{{ Feature 27: DAT/PASM DITTO generation.
+
+   DITTO emits repeated assembly lines at compile time.  The special $$ symbol
+   is the zero-based generation index.
+}}
+
+DAT
+        ORG
+start   mov     total, #0
+
+gen     DITTO   4
+        add     total, #$$
+        DITTO   END
+
+        jmp     #$
+
+total   res     1

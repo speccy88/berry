@@ -1,0 +1,15 @@
+{Spin2_v46}
+{{ Feature 17: field pointers.
+
+   ^@ captures a hub or register variable plus an optional bitfield.  FIELD[p]
+   then reads or writes through that encoded pointer.
+}}
+
+PUB main() : r | p, packed, i
+    packed := 0
+    p := ^@packed.[2..0]
+
+    REPEAT 4 WITH i
+        FIELD[p][i] := i
+
+    r := packed

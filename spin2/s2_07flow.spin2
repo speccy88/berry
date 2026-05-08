@@ -1,0 +1,18 @@
+{{ Feature 07: IF, IFNOT, ELSEIF, ELSE.
+
+   Indentation defines controlled blocks.  The method returns a small checksum
+   that changes if any branch condition is compiled incorrectly.
+}}
+
+PUB main() : r | x
+    x := 7
+
+    IF x > 10
+        r := 100
+    ELSEIF x == 7
+        r := 7
+    ELSE
+        r := -1
+
+    IFNOT x == 0
+        r += 30

@@ -1,0 +1,11 @@
+{{ Feature 14: OBJ child object instantiation.
+
+   The child object is parameterized so its BASE and SCALE constants differ in
+   this parent from the child's standalone defaults.
+}}
+
+OBJ
+    child : "s2_chld" | base = 40, scale = 3
+
+PUB main() : r
+    r := child.value(2) + child.base

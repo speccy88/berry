@@ -1,0 +1,81 @@
+{{ Berry Spin2 mailbox service include.
+
+   Include this file after a two-entry method table:
+
+     DAT
+             long 2
+             long berry_mbox_service
+             long berry_mbox_method_1
+     #include "common/berry_mbox_service.spin2h"
+
+   Berry loads the binary after the method table, so this code is assembled at
+   cog address 0.  The table remains in hub RAM for Berry's method-count check.
+   The service waits for mailbox state 1, loads argv[0..7] into registers,
+   calls berry_mbox_method_1, writes result, and marks the call done.
+}}
+
+                org     0
+
+berry_mbox_service
+                mov     berry_mbox_mb, ptra
+                mov     berry_mbox_state, #0
+                wrlong  berry_mbox_state, berry_mbox_mb
+
+berry_mbox_loop
+                rdlong  berry_mbox_state, berry_mbox_mb
+                cmp     berry_mbox_state, #1 wz
+        if_z    call    #berry_mbox_handle_request
+                cmp     berry_mbox_state, #5 wz
+        if_z    cogid   berry_mbox_state
+        if_z    cogstop berry_mbox_state
+                waitx   ##2_000
+                jmp     #berry_mbox_loop
+
+berry_mbox_handle_request
+                mov     berry_mbox_state, #2
+                wrlong  berry_mbox_state, berry_mbox_mb
+
+                mov     berry_mbox_ptr, berry_mbox_mb
+                add     berry_mbox_ptr, #(1 * 4)
+                rdlong  berry_mbox_method, berry_mbox_ptr
+
+                mov     berry_mbox_ptr, berry_mbox_mb
+                add     berry_mbox_ptr, #(2 * 4)
+                rdlong  berry_mbox_argc, berry_mbox_ptr
+                add     berry_mbox_ptr, #4
+                rdlong  arg0, berry_mbox_ptr
+                add     berry_mbox_ptr, #4
+                rdlong  arg1, berry_mbox_ptr
+                add     berry_mbox_ptr, #4
+                rdlong  arg2, berry_mbox_ptr
+                add     berry_mbox_ptr, #4
+                rdlong  arg3, berry_mbox_ptr
+                add     berry_mbox_ptr, #4
+                rdlong  arg4, berry_mbox_ptr
+                add     berry_mbox_ptr, #4
+                rdlong  arg5, berry_mbox_ptr
+                add     berry_mbox_ptr, #4
+                rdlong  arg6, berry_mbox_ptr
+                add     berry_mbox_ptr, #4
+                rdlong  arg7, berry_mbox_ptr
+
+                mov     result, #0
+                cmp     berry_mbox_method, #1 wz
+        if_z    call    #berry_mbox_method_1
+        if_nz   jmp     #berry_mbox_bad_method
+
+                mov     berry_mbox_ptr, berry_mbox_mb
+                add     berry_mbox_ptr, #(11 * 4)
+                wrlong  result, berry_mbox_ptr
+                mov     berry_mbox_state, #3
+                wrlong  berry_mbox_state, berry_mbox_mb
+                ret
+
+berry_mbox_bad_method
+                neg     result, #1
+                mov     berry_mbox_ptr, berry_mbox_mb
+                add     berry_mbox_ptr, #(11 * 4)
+                wrlong  result, berry_mbox_ptr
+                mov     berry_mbox_state, #4
+                wrlong  berry_mbox_state, berry_mbox_mb
+                ret

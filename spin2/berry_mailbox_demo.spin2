@@ -1,32 +1,26 @@
+{{ Berry Spin2 mailbox demo.
+
+   This is the smallest human-readable callable binary for Berry's spin2
+   module.  It uses the same two-entry table and shared mailbox service as the
+   mb_*.spin2 examples:
+
+     method 0: berry_mbox_service, started automatically by spin2.start()
+     method 1: berry_mbox_method_1, called by spin2.call(handle, 1, value)
+
+   Berry starts execution after this table, so the service include assembles at
+   ORG 0.  The table remains at the front of the .bin only so Berry can count
+   methods before it launches the PASM service cog.
+}}
+
 DAT
-                long    2                       ' method count
-                long    service                 ' method 0: mailbox service
-                long    echo                    ' method 1: demo echo handler
+                long    2
+                long    berry_mbox_service
+                long    berry_mbox_method_1
 
-                org     3
-service         mov     mb, ptra
-                wrlong  zero, mb
-loop            rdlong  state, mb
-                cmp     state, #1 wz
-        if_z    call    #handle_request
-                jmp     #loop
+#include "common/berry_mbox_service.spin2h"
 
-handle_request  mov     state, #2
-                wrlong  state, mb
-                mov     ptr, mb
-                add     ptr, #(3 * 4)
-                rdlong  result, ptr             ' return argv[0] for a smoke test
-                mov     ptr, mb
-                add     ptr, #(11 * 4)
-                wrlong  result, ptr
-                mov     state, #3
-                wrlong  state, mb
+berry_mbox_method_1
+                mov     result, arg0            ' echo argv[0] for a smoke test
                 ret
 
-echo            ret
-
-zero            long    0
-mb              res     1
-ptr             res     1
-state           res     1
-result          res     1
+#include "common/berry_mbox_regs.spin2h"

@@ -1,0 +1,12 @@
+{{ Feature 24: counters, clock frequency, and timing helpers.
+
+   GETCT returns the free-running counter.  WAITX waits clock ticks.  MULDIV64
+   scales a 64-bit product back to a 32-bit quotient.
+}}
+
+PUB main() : r | before, after, elapsed
+    before := GETCT()
+    WAITX(10)
+    after := GETCT()
+    elapsed := after - before
+    r := MULDIV64(elapsed, 1_000_000, CLKFREQ)

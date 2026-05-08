@@ -1,0 +1,22 @@
+{Spin2_v47}
+{{ Feature 20: cooperative Spin2 tasks.
+
+   TASKSPIN creates a task in the current cog.  Each task must call TASKNEXT or
+   stop itself to cooperate with the scheduler.
+}}
+
+VAR
+    LONG stack[16]
+    LONG seen
+
+PUB main() : r | task
+    seen := 0
+    task := TASKSPIN(NEWTASK, worker(), @stack)
+    REPEAT 3
+        TASKNEXT()
+    r := TASKCHK(task) + seen
+    TASKSTOP(task)
+
+PRI worker()
+    seen++
+    TASKSTOP(THISTASK)

@@ -1,0 +1,20 @@
+{{ Feature 26: DAT data declarations.
+
+   BYTE/WORD/LONG, BYTEFIT/WORDFIT, ALIGNW, and ALIGNL are represented here.
+   The main method reads the data back through hub addresses.
+}}
+
+PUB main() : r
+    r := BYTE[@text]
+    r += WORD[@pattern][1]
+    r += LONG[@numbers][1]
+    r += BYTE[@checked]
+
+DAT
+text        BYTE    "ABC", 0
+            ALIGNW
+pattern     WORD    $1234, $5678
+            ALIGNL
+numbers     LONG    1.0, $01020304
+checked     BYTEFIT -$80, $FF
+            WORDFIT -$8000, $FFFF

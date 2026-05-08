@@ -1,0 +1,16 @@
+{{ Feature 10: PUB/PRI methods.
+
+   Public methods are callable from parent objects.  Private methods are local
+   helpers.  Parameters, return values, and locals are all hub variables.
+}}
+
+PUB main() : r | a, b
+    a := 9
+    b := 4
+    r := area(a, b) + perimeter(a, b)
+
+PRI area(width, height) : value
+    value := width * height
+
+PRI perimeter(width, height) : value
+    value := (width + height) * 2

@@ -1,0 +1,258 @@
+{{ PASM2 instruction matrix.
+
+   This compile-only object covers a broad set of PASM2 mnemonics grouped by
+   instruction family.  It is not meant to be launched by Berry; the first
+   instruction parks the cog before the matrix.  The callable mb_*.spin2 files
+   contain deterministic runtime checks for the safe arithmetic/logical/memory
+   families.
+}}
+
+DAT
+        ORG
+start   jmp     #start
+
+matrix
+        mov     a, #1
+        add     a, #2
+        addx    a, #0
+        neg     b, #1
+        adds    a, b
+        addsx   a, #0
+        sub     a, #1
+        subx    a, #0
+        neg     b, #1
+        subs    a, b
+        subsx   a, #0
+        subr    a, #10
+        cmpsub  a, #3 wc
+        neg     b, a
+        negc    b, a
+        negnc   b, a
+        negz    b, a
+        negnz   b, a
+        abs     b
+
+        and     a, b
+        andn    a, b
+        or      a, b
+        xor     a, b
+        not     a
+        muxc    a, b
+        muxnc   a, b
+        muxz    a, b
+        muxnz   a, b
+        test    a, b wz,wc
+        testb   a, #3 wz
+        testbn  a, #4 wz
+
+        shl     a, #1
+        shr     a, #1
+        sar     a, #1
+        rol     a, #1
+        ror     a, #1
+        rev     a
+        zerox   a, #7
+        signx   a, #7
+
+        cmp     a, b wz,wc
+        cmps    a, b wz,wc
+        cmpx    a, b wz,wc
+        cmpsx   a, b wz,wc
+        cmpr    a, b wz
+        cmpm    a, b wz
+
+        bitl    a, #0
+        bith    a, #1
+        bitc    a, #2
+        bitnc   a, #3
+        bitz    a, #4
+        bitnz   a, #5
+        bitrnd  a, #6
+        bitnot  a, #7
+
+        getnib  c, a, #0
+        getbyte c, a, #0
+        getword c, a, #0
+        setbyte a, #$12, #1
+        mov     c, ##$3456
+        setword a, c, #1
+        rolbyte a, b, #0
+        rolword a, b, #0
+        setq    #1
+        setq2   #1
+        setr    a, #0
+        setd    a, #0
+        sets    a, #0
+
+        alts    a, #0
+        altd    a, #0
+        altb    a, #0
+        altsb   a, #0
+        altgb   a, #0
+        splitb  a
+        mergeb  a
+        splitw  a
+        mergew  a
+        movbyts a, #%00_01_10_11
+
+        mul     a, b
+        muls    a, b
+        sca     a, b
+        scas    a, b
+        qmul    a, b
+        qdiv    a, b
+        qfrac   a, b
+        qsqrt   a, b
+        qrotate a, b
+        qvector a, b
+        qlog    a
+        qexp    a
+        getqx   a
+        getqy   b
+
+        rdbyte  a, ptra
+        rdword  a, ptra
+        rdlong  a, ptra
+        wrbyte  a, ptra
+        wrword  a, ptra
+        wrlong  a, ptra
+        rdlut   a, #0
+        wrlut   a, #0
+        rdfast  #0, ptra
+        wrfast  #0, ptra
+        rfbyte  a
+        rfword  a
+        rflong  a
+        rfvar   a
+        rfvars  a
+        wfbyte  a
+        wfword  a
+        wflong  a
+        getptr  a
+
+        push    a
+        pop     a
+        call    #subroutine
+        calla   #subroutine
+        callb   #subroutine
+        callpa  a, #subroutine
+        callpb  a, #subroutine
+        jmp     #next_branch
+next_branch
+        jmprel  #0
+        djnf    a, #next_branch
+        tjnf    a, #next_branch
+        tjz     a, #next_branch
+        tjnz    a, #next_branch
+        tjs     a, #next_branch
+        tjns    a, #next_branch
+        tjv     a, #next_branch
+        ret
+
+subroutine
+        reti1
+        reti2
+        reti3
+        ret
+
+        rep     #1, #1
+        nop
+        skip    #%1
+        skipf   #%1
+        execf   a
+
+        getct   a
+        waitx   #1
+        addct1  a, #1
+        addct2  a, #1
+        addct3  a, #1
+        waitct1
+        waitct2
+        waitct3
+        pollct1 wc
+        pollct2 wc
+        pollct3 wc
+
+        hubset  #0
+        cogid   a
+        cogstop a
+        coginit a, b wc
+        locknew a wc
+        lockret a
+        locktry a wc
+        lockrel a
+        cogatn  a
+        pollatn wc
+        waitatn
+
+        wrpin   a, #56
+        wxpin   a, #56
+        wypin   a, #56
+        akpin   #56
+        rdpin   a, #56
+        rqpin   a, #56
+        testp   #56 wz
+        dirl    #56
+        dirh    #56
+        dirc    #56
+        dirnc   #56
+        dirz    #56
+        dirnz   #56
+        dirrnd  #56
+        dirnot  #56
+        outl    #56
+        outh    #56
+        outc    #56
+        outnc   #56
+        outz    #56
+        outnz   #56
+        outrnd  #56
+        outnot  #56
+        drvl    #56
+        drvh    #56
+        drvc    #56
+        drvnc   #56
+        drvz    #56
+        drvnz   #56
+        drvrnd  #56
+        drvnot  #56
+        fltl    #56
+        flth    #56
+        fltc    #56
+        fltnc   #56
+        fltz    #56
+        fltnz   #56
+        fltrnd  #56
+        fltnot  #56
+
+        xinit   a, b
+        xzero   a, b
+        xcont   a, b
+        xstop
+        waitxmt
+        waitxfi
+        waitxro
+        waitxrl
+        pollxmt wc
+        pollxfi wc
+        pollxro wc
+        pollxrl wc
+
+        setpat  a, b
+        pollpat wc
+        waitpat
+        setint1 #0
+        setint2 #0
+        setint3 #0
+        allowi
+        stalli
+        trgint1
+        trgint2
+        trgint3
+        niksint1
+        niksint2
+        niksint3
+
+a       res     1
+b       res     1
+c       res     1

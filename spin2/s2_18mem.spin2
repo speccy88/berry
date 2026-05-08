@@ -1,0 +1,22 @@
+{Spin2_v52}
+{{ Feature 18: memory helper methods.
+
+   BYTEFILL/BYTEMOVE and the v44+ compare/swap helpers operate directly on hub
+   memory.  ENDIANW/ENDIANL are v52 byte-order helpers.
+}}
+
+VAR
+    BYTE a[8]
+    BYTE b[8]
+    WORD w[4]
+    LONG l[2]
+
+PUB main() : r
+    BYTEFILL(@a, $11, 8)
+    BYTEMOVE(@b, @a, 8)
+    BYTESWAP(@a, @b, 4)
+    r := BYTECOMP(@a, @b, 4)
+
+    WORDFILL(@w, $1234, 4)
+    LONGFILL(@l, $01020304, 2)
+    r += ENDIANW(w[0]) + ENDIANL(l[0])

@@ -1,0 +1,28 @@
+{{ Feature 06: integer expressions and operators.
+
+   Covers unary helpers, shifts, rotates, bit operations, min/max forcing,
+   logical operators, and the ternary operator.
+}}
+
+PUB main() : r | x, y
+    x := -123
+    y := ABS x
+    r := y
+
+    r += ENCOD($8000)
+    r += DECOD(3)
+    r += BMASK(5)
+    r += ONES(%1011_0101)
+    r += SQRT(10_000)
+
+    x := $0000_00F0
+    r += (x >> 4) + (x << 1)
+    r += (x ROR 4) & $FF
+    r += (x ROL 4) & $FF
+    r += (x REV 7)
+    r += ($F0 ZEROX 3)
+    r += ($F0 SIGNX 7)
+
+    r += (10 #> 20)
+    r += (99 <# 20)
+    r += ((1 AND 2) ? 7 : 9)

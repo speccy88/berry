@@ -21,6 +21,14 @@ SPIN2_DIR := spin2
 SPIN2_BUILD_DIR := $(SPIN2_DIR)/build
 SPIN2_SRCS := $(wildcard $(SPIN2_DIR)/*.spin2)
 SPIN2_BINS := $(patsubst $(SPIN2_DIR)/%.spin2,$(SPIN2_BUILD_DIR)/%.bin,$(SPIN2_SRCS))
+SPIN2_SD_LOADER_SRC := tools/p2/sd_loader/sd_loader.c
+SPIN2_SD_HOST := tools/p2/sd_loader/spin2_sdload.py
+SPIN2_SD_LOADER_BASE := $(P2_BUILD_DIR)/spin2_sd_loader
+SPIN2_SD_LOADER_IMAGE := $(P2_BUILD_DIR)/spin2_sd_loader.binary
+SPIN2_SD_DIR ?= /spin2
+SPIN2_SD_FILE ?=
+SPIN2_SD_NAME ?=
+SPIN2_SD_CHUNK ?= 128
 P2_INCFLAGS := -I"$(P2_BUILD_DIR)" -I"$(P2_INCLUDE_DIR)" -I"src" -I"default"
 P2_COC_RUN := $(PYTHON) $(COC)
 P2_FLASH_FLAGS ?= -SPI
@@ -164,7 +172,7 @@ P2_SERIAL_PROBE_SRCS := $(P2_TEST_DIR)/serial_probe.c $(P2_RUNTIME_DIR)/berry_po
 P2_SERIAL_PROBE := $(P2_BUILD_DIR)/serial_probe.binary
 P2_PREBUILD_DEPS := $(COC) $(P2_CONFIG) scripts/prebuild-p2.sh scripts/prebuild-p2.ps1 $(P2_IMAGE_SIZE_CHECK)
 
-.PHONY: p2 p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run spin2 spin2-clean run configure configure-reset show-config
+.PHONY: p2 p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run spin2 spin2-clean spin2-sd-loader spin2-sd-loader-host spin2-sd-put spin2-sd-sync spin2-load spin2-load-all run configure configure-reset show-config
 
 configure:
 	$(MSG) [Configure] $(P2_LOCAL_CONFIG)
@@ -235,6 +243,65 @@ spin2: $(SPIN2_BINS)
 
 spin2-clean:
 	$(Q) $(call RM_RF,$(SPIN2_BUILD_DIR))
+
+ifeq ($(TOOLCHAIN),catalina)
+spin2-sd-loader-host: $(SPIN2_SD_LOADER_SRC) | $(P2_BUILD_DIR)
+	$(MSG) [Spin2 SD Loader] $(SPIN2_SD_LOADER_IMAGE)
+	$(Q) CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" \
+		CATALINA_INCLUDE="$(CATALINA_INCLUDEDIR)" CATALINA_TARGET="$(CATALINA_TARGETDIR)" \
+		CATALINA_LIBRARY="$(CATALINA_DIR)" PATH="$(CATALINA_BINDIR)$(HOST_PATHSEP)$$PATH" \
+		"$(CATALINA)" -C99 -p2 $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) \
+		$(CATALINA_CONFIG_FLAGS) -C SD -o "$(SPIN2_SD_LOADER_BASE)" "$(SPIN2_SD_LOADER_SRC)"
+	$(Q) "$(PYTHON)" -c "from pathlib import Path; Path(r'$(SPIN2_SD_LOADER_IMAGE)').write_bytes(Path(r'$(SPIN2_SD_LOADER_BASE).bin').read_bytes())"
+	$(Q) "$(PYTHON)" "$(P2_IMAGE_SIZE_CHECK)" --image "$(SPIN2_SD_LOADER_IMAGE)" --max-bytes "$(P2_HUB_RAM_MAX_BYTES)" --label "Spin2 SD loader"
+	$(MSG) done
+
+ifeq ($(CATALINA_USE_DOCKER),1)
+spin2-sd-loader: $(SPIN2_SD_LOADER_SRC) p2-tools | $(P2_BUILD_DIR)
+	$(Q) CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" \
+		CATALINA_PLATFORM="$(CATALINA_PLATFORM)" CATALINA_MODEL="$(CATALINA_MODEL)" \
+		CATALINA_CLIB="$(CATALINA_CLIB)" CATALINA_SERIAL_LIB="$(CATALINA_SERIAL_LIB)" CATALINA_MLIB="$(CATALINA_MLIB)" \
+		CATALINA_CONFIG_FLAGS="$(CATALINA_CONFIG_FLAGS)" \
+		bash "$(P2_CATALINA_DOCKER_SCRIPT)" spin2-sd-loader-host
+else
+spin2-sd-loader: p2-tools spin2-sd-loader-host
+endif
+else
+spin2-sd-loader spin2-sd-loader-host:
+	@echo "error: Spin2 SD loader requires TOOLCHAIN=catalina"
+	@exit 1
+endif
+
+spin2-sd-put: spin2-sd-loader
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make spin2-sd-put TOOLCHAIN=catalina PORT=/dev/ttyUSB0 SPIN2_SD_FILE=spin2/build/MB_01ALU.bin"; \
+		exit 1; \
+	fi
+	@if [ -z "$(SPIN2_SD_FILE)" ]; then \
+		echo "error: SPIN2_SD_FILE is not set"; \
+		echo "usage: make spin2-sd-put TOOLCHAIN=catalina PORT=/dev/ttyUSB0 SPIN2_SD_FILE=spin2/build/MB_01ALU.bin"; \
+		exit 1; \
+	fi
+	$(Q) NAME_ARG=""; \
+	if [ -n "$(SPIN2_SD_NAME)" ]; then NAME_ARG="--target-name $(SPIN2_SD_NAME)"; fi; \
+	"$(PYTHON)" "$(SPIN2_SD_HOST)" --loadp2 "$(LOADP2)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--loader "$(SPIN2_SD_LOADER_IMAGE)" --target-dir "$(SPIN2_SD_DIR)" --chunk-size "$(SPIN2_SD_CHUNK)" \
+		--file "$(SPIN2_SD_FILE)" $$NAME_ARG
+
+spin2-sd-sync: spin2 spin2-sd-loader
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make spin2-sd-sync TOOLCHAIN=catalina PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" "$(SPIN2_SD_HOST)" --loadp2 "$(LOADP2)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--loader "$(SPIN2_SD_LOADER_IMAGE)" --target-dir "$(SPIN2_SD_DIR)" --chunk-size "$(SPIN2_SD_CHUNK)" \
+		--directory "$(SPIN2_BUILD_DIR)"
+
+spin2-load: spin2-sd-put
+
+spin2-load-all: spin2-sd-sync
 
 $(P2_BUILD_INFO_HEADER): $(P2_BUILD_INFO_SCRIPT) | $(P2_BUILD_DIR)
 	$(Q) "$(PYTHON)" "$(P2_BUILD_INFO_SCRIPT)" --log "$(P2_BUILD_INFO_LOG)" --binary "$(P2_IMAGE)" --header "$@"
