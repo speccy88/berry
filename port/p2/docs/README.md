@@ -38,6 +38,7 @@ hardware modules, and grow the multicog model in small safe layers.
 Current Catalina status on P2 Edge / latest silicon:
 
 - the default build targets the no-PSRAM P2 Edge: `CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, with no `-lpsram`
+- the default feature profile is `P2_PROFILE=full`; `make p2-minimal` builds the core-language/string-only footprint profile
 - `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` reaches a working REPL
 - `print()`, assignment, and basic arithmetic are live-verified
 - `for i:0..3`, `for e:list`, `for v:map`, and `for k:map.keys()` are live-verified
@@ -113,6 +114,7 @@ Primary development focus from now on:
 - `P2_EDGE`
 - latest silicon path (`P2_SILICON=latest`, targeting your Rev C board)
 - no-PSRAM P2 Edge defaults (`CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, no `-lpsram`)
+- profile defaults: `full` for normal work, `minimal` for footprint work, and `xmm` reserved for later PSRAM/XMM experiments
 
 Other toolchains and silicon paths should still be kept buildable, but this is
 the first path to validate when continuing the port. In particular, do not

@@ -132,9 +132,9 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 - flash programming on the current macOS path is now verified with:
   - `make p2-flash`
   - `make p2-flash-run`
-  - Catalina flash uses Catalina's `flshload.t` wrapper, generated as `build/p2/catalina/berry_p2_flash_loader.binary`
+  - Catalina flash uses Catalina's `flshload.t` wrapper, generated as `build/p2/catalina/full/berry_p2_flash_loader.binary`
   - `make p2-flash` loads the wrapper to RAM and waits until the flashed Berry image reboots to `berry>`
-  - direct `loadp2 -SPI build/p2/catalina/berry_p2.binary` is not the Catalina path and should not be used for Berry
+  - direct `loadp2 -SPI build/p2/catalina/full/berry_p2.binary` is not the Catalina path and should not be used for Berry
 - P2 Edge flash boot details to preserve:
   - for development with serial attach after reset, use `FLASH=ON, △=OFF, ▽=OFF`
   - for flash-only fast boot, use `FLASH=ON, △=OFF, ▽=ON`

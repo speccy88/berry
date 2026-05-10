@@ -495,6 +495,7 @@ int be_baselib_isinstance(bvm *vm)
     return _issubv(vm, be_isinstance);
 }
 
+#if !defined(BE_P2_USE_PROP2_GLOBALS) || BE_P2_USE_PROP2_GLOBALS
 extern int m_clock_freq(bvm *vm);
 extern int m_clock_mode(bvm *vm);
 extern int m_misc_random(bvm *vm);
@@ -546,6 +547,7 @@ extern int m_smartpin_read(bvm *vm);
 extern int m_smartpin_query(bvm *vm);
 extern int m_smartpin_start(bvm *vm);
 extern int m_smartpin_clear(bvm *vm);
+#endif
 #if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
 void be_load_baselib(bvm *vm)
 {
@@ -589,6 +591,7 @@ void be_load_baselib(bvm *vm)
     be_regfunc(vm, "bool", l_bool);
     baselib_trace("format");
     be_regfunc(vm, "format", be_str_format);
+#if !defined(BE_P2_USE_PROP2_GLOBALS) || BE_P2_USE_PROP2_GLOBALS
     baselib_trace("prop2_clock_freq");
     be_regfunc(vm, "prop2_clock_freq", m_clock_freq);
     baselib_trace("prop2_clock_mode");
@@ -691,6 +694,7 @@ void be_load_baselib(bvm *vm)
     be_regfunc(vm, "prop2_smartpin_start", m_smartpin_start);
     baselib_trace("prop2_smartpin_clear");
     be_regfunc(vm, "prop2_smartpin_clear", m_smartpin_clear);
+#endif
 }
 #elif !BE_USE_PRECOMPILED_OBJECT
 void be_load_baselib(bvm *vm)

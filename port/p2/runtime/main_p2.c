@@ -44,9 +44,10 @@ static void p2_print_banner(void)
     p2_serial_puts(buffer);
 
     snprintf(buffer, sizeof(buffer),
-        "[%s] on %s\n",
+        "[%s] on %s [%s profile]\n",
         P2_COMPILER,
-        P2_RUNTIME);
+        P2_RUNTIME,
+        BE_P2_PROFILE_NAME);
     p2_serial_puts(buffer);
 
     snprintf(buffer, sizeof(buffer),

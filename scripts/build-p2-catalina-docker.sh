@@ -20,6 +20,7 @@ CATALINA_CLIB="${CATALINA_CLIB:--lcix}"
 CATALINA_SERIAL_LIB="${CATALINA_SERIAL_LIB:-}"
 CATALINA_MLIB="${CATALINA_MLIB:--lm}"
 CATALINA_CONFIG_FLAGS="${CATALINA_CONFIG_FLAGS:--C ${CATALINA_PLATFORM} -C ${CATALINA_MODEL} -C SIMPLE -C VT100 -C NO_ARGS}"
+P2_PROFILE="${P2_PROFILE:-full}"
 
 if ! docker image inspect "${DOCKER_IMAGE}" >/dev/null 2>&1; then
     echo "[Docker] Building Catalina builder image: ${DOCKER_IMAGE}"
@@ -46,6 +47,7 @@ docker run --rm \
     -e CATALINA_SERIAL_LIB="${CATALINA_SERIAL_LIB}" \
     -e CATALINA_MLIB="${CATALINA_MLIB}" \
     -e CATALINA_CONFIG_FLAGS="${CATALINA_CONFIG_FLAGS}" \
+    -e P2_PROFILE="${P2_PROFILE}" \
     -v "${WORKDIR}:/work" \
     -w /work \
     "${DOCKER_IMAGE}" \
@@ -60,6 +62,7 @@ docker run --rm \
             "${CATALINA_CLIB#-l}" >/dev/null
         make "${TARGET}" \
             TOOLCHAIN=catalina \
+            P2_PROFILE="${P2_PROFILE}" \
             CATALINA_DIR="${CATALINA_DIR}" \
             FLEXPROP_DIR="${FLEXPROP_DIR}" \
             CATALINA_PLATFORM="${CATALINA_PLATFORM}" \

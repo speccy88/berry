@@ -2,21 +2,24 @@ TOOLCHAIN ?= flexc
 PORT ?=
 FLEXPROP_DIR ?= .third_party_cache/flexprop
 P2_SILICON ?= latest
+P2_PROFILE ?= full
 P2_PORT_ROOT := port/p2
 P2_INCLUDE_DIR := $(P2_PORT_ROOT)/include
 P2_RUNTIME_DIR := $(P2_PORT_ROOT)/runtime
 P2_OVERRIDES_DIR := $(P2_PORT_ROOT)/overrides
 P2_PATCH_DIR := $(P2_PORT_ROOT)/patches/optional
 P2_TEST_DIR := $(P2_PORT_ROOT)/tests
-P2_BUILD_DIR := build/p2/$(TOOLCHAIN)
+P2_BUILD_DIR := build/p2/$(TOOLCHAIN)/$(P2_PROFILE)
 P2_OBJDIR := $(P2_BUILD_DIR)/obj
 P2_BUILD_INFO_HEADER := $(P2_BUILD_DIR)/p2_build_info.h
 P2_BUILD_INFO_LOG := $(P2_BUILD_DIR)/p2_build.log
 P2_BUILD_INFO_SCRIPT := scripts/gen-p2-build-info.py
 P2_IMAGE_SIZE_CHECK := scripts/check-p2-image-size.py
 P2_BUILD_CONFIG_STAMP := $(P2_BUILD_DIR)/p2_build_config.stamp
+P2_GENERATED_CONFIG := $(P2_BUILD_DIR)/berry_conf_p2_profile.h
 P2_HUB_RAM_MAX_BYTES ?= 524288
-P2_CONFIG := $(P2_INCLUDE_DIR)/berry_conf_p2.h
+P2_CONFIG_SOURCE := $(P2_INCLUDE_DIR)/berry_conf_p2.h
+P2_CONFIG := $(P2_GENERATED_CONFIG)
 SPIN2_DIR := spin2
 SPIN2_BUILD_DIR := $(SPIN2_DIR)/build
 SPIN2_ASM_DIR := $(SPIN2_BUILD_DIR)/p2asm
@@ -47,6 +50,18 @@ P2_CONFIG_CATALINA_SERIAL_LIB ?= $(CATALINA_SERIAL_LIB)
 P2_CONFIG_FLEXPROP_DIR ?= $(FLEXPROP_DIR)
 P2_CONFIG_CATALINA_DIR ?= $(CATALINA_DIR)
 P2_CONFIG_LOADP2 ?= $(LOADP2)
+
+ifeq ($(P2_PROFILE),minimal)
+P2_PROFILE_ID := 1
+else ifeq ($(P2_PROFILE),full)
+P2_PROFILE_ID := 2
+else ifeq ($(P2_PROFILE),xmm)
+P2_PROFILE_ID := 3
+else
+$(error Unsupported P2_PROFILE '$(P2_PROFILE)'; use minimal, full, or xmm)
+endif
+
+P2_PROFILE_DEFINE := -DBE_P2_PROFILE=$(P2_PROFILE_ID)
 
 ifeq ($(origin P2_COMPILER),command line)
 TOOLCHAIN := $(P2_COMPILER)
@@ -88,7 +103,7 @@ else
 $(error Unsupported TOOLCHAIN '$(TOOLCHAIN)'; use flexc or catalina)
 endif
 
-P2_CFLAGS ?= $(P2_CODEGEN) -O1 --fcache=0
+P2_CFLAGS ?= $(P2_PROFILE_DEFINE) $(P2_CODEGEN) -O1 --fcache=0
 P2_RUNTIME_SRCS := \
 	$(P2_RUNTIME_DIR)/berry_port.c \
 	$(P2_RUNTIME_DIR)/main_p2.c \
@@ -97,18 +112,20 @@ P2_RUNTIME_SRCS := \
 P2_OVERRIDE_SRCS := \
 	$(P2_OVERRIDES_DIR)/be_modtab_p2.c \
 	$(P2_OVERRIDES_DIR)/be_libs_p2.c \
+	$(P2_OVERRIDES_DIR)/libc_compat.c
+ifneq ($(P2_PROFILE),minimal)
+P2_OVERRIDE_SRCS += \
 	$(P2_OVERRIDES_DIR)/be_i2clib_p2.c \
 	$(P2_OVERRIDES_DIR)/be_p2lib_p2.c \
 	$(P2_OVERRIDES_DIR)/be_prop2lib.c \
 	$(P2_OVERRIDES_DIR)/be_spilib_p2.c \
 	$(P2_OVERRIDES_DIR)/be_spin2lib_p2.c \
 	$(P2_OVERRIDES_DIR)/be_threadslib_p2.c \
-	$(P2_OVERRIDES_DIR)/be_workerlib_p2.c \
-	$(P2_OVERRIDES_DIR)/libc_compat.c
+	$(P2_OVERRIDES_DIR)/be_workerlib_p2.c
+endif
 P2_LIB_SRCS := \
 	src/be_byteslib.c \
 	src/be_debuglib.c \
-	src/be_filelib.c \
 	src/be_gclib.c \
 	src/be_globallib.c \
 	src/be_introspectlib.c \
@@ -123,6 +140,9 @@ P2_LIB_SRCS := \
 	src/be_syslib.c \
 	src/be_timelib.c \
 	src/be_undefinedlib.c
+ifneq ($(P2_PROFILE),minimal)
+P2_LIB_SRCS += src/be_filelib.c
+endif
 P2_FRONT_STANDARD_SRCS := \
 	src/be_api.c \
 	src/be_baselib.c \
@@ -173,9 +193,9 @@ P2_SRCS := $(P2_FRONT_SRCS) $(P2_CORE_SRCS) $(P2_LIB_SRCS) $(P2_OVERRIDE_SRCS) $
 P2_OBJS := $(patsubst %.c,$(P2_OBJDIR)/%.o,$(P2_SRCS))
 P2_SERIAL_PROBE_SRCS := $(P2_TEST_DIR)/serial_probe.c $(P2_RUNTIME_DIR)/berry_port.c $(P2_RUNTIME_DIR)/p2_smartserial.c
 P2_SERIAL_PROBE := $(P2_BUILD_DIR)/serial_probe.binary
-P2_PREBUILD_DEPS := $(COC) $(P2_CONFIG) scripts/prebuild-p2.sh scripts/prebuild-p2.ps1 $(P2_IMAGE_SIZE_CHECK)
+P2_PREBUILD_DEPS := $(COC) $(P2_CONFIG) $(P2_CONFIG_SOURCE) $(P2_INCLUDE_DIR)/berry_p2_config.h scripts/prebuild-p2.sh scripts/prebuild-p2.ps1 $(P2_IMAGE_SIZE_CHECK)
 
-.PHONY: p2 p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run spin2 spin2-clean spin2-sd-loader spin2-sd-loader-host spin2-sd-put spin2-sd-sync spin2-load spin2-load-all run configure configure-reset show-config
+.PHONY: p2 p2-minimal p2-full p2-xmm p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run spin2 spin2-clean spin2-sd-loader spin2-sd-loader-host spin2-sd-put spin2-sd-sync spin2-load spin2-load-all run configure configure-reset show-config
 
 configure:
 	$(MSG) [Configure] $(P2_LOCAL_CONFIG)
@@ -186,6 +206,7 @@ configure:
 		'TOOLCHAIN := $(P2_CONFIG_TOOLCHAIN)', \
 		'PORT := $(P2_CONFIG_PORT)', \
 		'P2_SILICON := $(P2_CONFIG_SILICON)', \
+		'P2_PROFILE := $(P2_PROFILE)', \
 		'CATALINA_PLATFORM := $(P2_CONFIG_CATALINA_PLATFORM)', \
 		'CATALINA_MODEL := $(P2_CONFIG_CATALINA_MODEL)', \
 		'CATALINA_CLIB := $(P2_CONFIG_CATALINA_CLIB)', \
@@ -208,6 +229,7 @@ show-config:
 	@echo "TOOLCHAIN=$(TOOLCHAIN)"
 	@echo "PORT=$(PORT)"
 	@echo "P2_SILICON=$(P2_SILICON)"
+	@echo "P2_PROFILE=$(P2_PROFILE)"
 	@echo "CATALINA_PLATFORM=$(CATALINA_PLATFORM)"
 	@echo "CATALINA_MODEL=$(CATALINA_MODEL)"
 	@echo "CATALINA_CLIB=$(CATALINA_CLIB)"
@@ -216,8 +238,19 @@ show-config:
 	@echo "CATALINA_DIR=$(CATALINA_DIR)"
 	@echo "LOADP2=$(LOADP2)"
 
-p2-prebuild: $(GENERATE)
-	$(MSG) [Prebuild] generate P2 resources
+$(P2_GENERATED_CONFIG): $(P2_CONFIG_SOURCE) $(P2_INCLUDE_DIR)/berry_p2_config.h | $(P2_BUILD_DIR)
+	$(MSG) [Config] P2 profile $(P2_PROFILE)
+	$(Q) { \
+		echo "/* Auto-generated by mk/p2.mk. */"; \
+		echo "#ifndef BERRY_CONF_P2_PROFILE_H"; \
+		echo "#define BERRY_CONF_P2_PROFILE_H"; \
+		echo "#define BE_P2_PROFILE $(P2_PROFILE_ID)"; \
+		echo "#include \"../../../../$(P2_CONFIG_SOURCE)\""; \
+		echo "#endif"; \
+	} > "$@"
+
+p2-prebuild: $(GENERATE) $(P2_CONFIG)
+	$(MSG) [Prebuild] generate P2 resources for $(P2_PROFILE)
 ifeq ($(HOST_OS),windows)
 	$(Q) $(PWSH) scripts/prebuild-p2.ps1 -Python "$(PYTHON)" -Coc "$(COC)" -Output "$(GENERATE)" -Config "$(P2_CONFIG)" -SourcePaths "src;$(P2_PORT_ROOT);$(P2_OVERRIDES_DIR)"
 else
@@ -319,6 +352,8 @@ $(P2_BUILD_CONFIG_STAMP): FORCE | $(P2_BUILD_DIR)
 	$(Q) { \
 		echo "TOOLCHAIN=$(TOOLCHAIN)"; \
 		echo "P2_SILICON=$(P2_SILICON)"; \
+		echo "P2_PROFILE=$(P2_PROFILE)"; \
+		echo "P2_PROFILE_ID=$(P2_PROFILE_ID)"; \
 		echo "P2_CODEGEN=$(P2_CODEGEN)"; \
 		echo "CATALINA_PLATFORM=$(CATALINA_PLATFORM)"; \
 		echo "CATALINA_MODEL=$(CATALINA_MODEL)"; \
@@ -327,6 +362,7 @@ $(P2_BUILD_CONFIG_STAMP): FORCE | $(P2_BUILD_DIR)
 		echo "CATALINA_MLIB=$(CATALINA_MLIB)"; \
 		echo "CATALINA_CONFIG_FLAGS=$(CATALINA_CONFIG_FLAGS)"; \
 		echo "P2_HUB_RAM_MAX_BYTES=$(P2_HUB_RAM_MAX_BYTES)"; \
+		echo "P2_PROFILE_DEFINE=$(P2_PROFILE_DEFINE)"; \
 		echo "P2_CFLAGS=$(P2_CFLAGS)"; \
 	} > "$@.tmp"
 	$(Q) if ! cmp -s "$@.tmp" "$@"; then mv "$@.tmp" "$@"; else rm -f "$@.tmp"; fi
@@ -338,7 +374,7 @@ ifeq ($(TOOLCHAIN),catalina)
 	$(Q) CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" \
 		CATALINA_INCLUDE="$(CATALINA_INCLUDEDIR)" CATALINA_TARGET="$(CATALINA_TARGETDIR)" \
 		CATALINA_LIBRARY="$(CATALINA_DIR)" PATH="$(CATALINA_BINDIR)$(HOST_PATHSEP)$$PATH" \
-		"$(CATALINA)" -C99 -p2 $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) \
+		"$(CATALINA)" -C99 -p2 $(P2_PROFILE_DEFINE) $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) \
 		$(CATALINA_CONFIG_FLAGS) -I src -I $(P2_INCLUDE_DIR) -c $< -o $@
 else
 	$(Q) "$(FLEXCC)" $(P2_CFLAGS) $(P2_TOOLCHAIN_INCFLAGS) $(P2_INCFLAGS) -c $< -o $@
@@ -349,13 +385,13 @@ p2-catalina-host: $(P2_BUILD_DIR) $(P2_BUILD_INFO_HEADER)
 	$(MSG) [Build] $(P2_IMAGE)
 	$(Q) $(call RM_F,$(P2_IMAGE))
 	$(Q) $(call RM_F,$(P2_CATALINA_BASE).bin)
-	$(Q) CMD='CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" CATALINA_INCLUDE="$(CATALINA_INCLUDEDIR)" CATALINA_TARGET="$(CATALINA_TARGETDIR)" CATALINA_LIBRARY="$(CATALINA_DIR)" PATH="$(CATALINA_BINDIR)$(HOST_PATHSEP)$$PATH" "$(CATALINA)" -C99 -p2 $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) $(CATALINA_CONFIG_FLAGS) -I src -I $(P2_BUILD_DIR) -I $(P2_INCLUDE_DIR) -o "$(P2_CATALINA_BASE)" $(P2_SRCS)'; \
+	$(Q) CMD='CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" CATALINA_INCLUDE="$(CATALINA_INCLUDEDIR)" CATALINA_TARGET="$(CATALINA_TARGETDIR)" CATALINA_LIBRARY="$(CATALINA_DIR)" PATH="$(CATALINA_BINDIR)$(HOST_PATHSEP)$$PATH" "$(CATALINA)" -C99 -p2 $(P2_PROFILE_DEFINE) $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) $(CATALINA_CONFIG_FLAGS) -I src -I $(P2_BUILD_DIR) -I $(P2_INCLUDE_DIR) -o "$(P2_CATALINA_BASE)" $(P2_SRCS)'; \
 		bash -lc "set -o pipefail; $$CMD 2>&1 | tee '$(P2_BUILD_INFO_LOG)'"
 	$(Q) "$(PYTHON)" "$(P2_IMAGE_SIZE_CHECK)" --image "$(P2_CATALINA_BASE).bin" --max-bytes "$(P2_HUB_RAM_MAX_BYTES)" --label "Catalina P2 image"
 	$(Q) "$(PYTHON)" "$(P2_BUILD_INFO_SCRIPT)" --log "$(P2_BUILD_INFO_LOG)" --binary "$(P2_CATALINA_BASE).bin" --header "$(P2_BUILD_INFO_HEADER).tmp"
 	$(Q) if ! cmp -s "$(P2_BUILD_INFO_HEADER).tmp" "$(P2_BUILD_INFO_HEADER)"; then \
 		mv "$(P2_BUILD_INFO_HEADER).tmp" "$(P2_BUILD_INFO_HEADER)"; \
-		CMD='CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" CATALINA_INCLUDE="$(CATALINA_INCLUDEDIR)" CATALINA_TARGET="$(CATALINA_TARGETDIR)" CATALINA_LIBRARY="$(CATALINA_DIR)" PATH="$(CATALINA_BINDIR)$(HOST_PATHSEP)$$PATH" "$(CATALINA)" -C99 -p2 $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) $(CATALINA_CONFIG_FLAGS) -I src -I $(P2_BUILD_DIR) -I $(P2_INCLUDE_DIR) -o "$(P2_CATALINA_BASE)" $(P2_SRCS)'; \
+		CMD='CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" CATALINA_INCLUDE="$(CATALINA_INCLUDEDIR)" CATALINA_TARGET="$(CATALINA_TARGETDIR)" CATALINA_LIBRARY="$(CATALINA_DIR)" PATH="$(CATALINA_BINDIR)$(HOST_PATHSEP)$$PATH" "$(CATALINA)" -C99 -p2 $(P2_PROFILE_DEFINE) $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) $(CATALINA_CONFIG_FLAGS) -I src -I $(P2_BUILD_DIR) -I $(P2_INCLUDE_DIR) -o "$(P2_CATALINA_BASE)" $(P2_SRCS)'; \
 		bash -lc "set -o pipefail; $$CMD 2>&1 | tee '$(P2_BUILD_INFO_LOG)'"; \
 	else \
 		rm -f "$(P2_BUILD_INFO_HEADER).tmp"; \
@@ -369,11 +405,12 @@ $(P2_IMAGE): $(P2_SRCS) $(P2_PREBUILD_DEPS) $(P2_CATALINA_DOCKER_SCRIPT) $(P2_BU
 	$(Q) CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" \
 		CATALINA_PLATFORM="$(CATALINA_PLATFORM)" CATALINA_MODEL="$(CATALINA_MODEL)" \
 		CATALINA_CLIB="$(CATALINA_CLIB)" CATALINA_SERIAL_LIB="$(CATALINA_SERIAL_LIB)" CATALINA_MLIB="$(CATALINA_MLIB)" \
+		P2_PROFILE="$(P2_PROFILE)" \
 		CATALINA_CONFIG_FLAGS="$(CATALINA_CONFIG_FLAGS)" \
 		bash "$(P2_CATALINA_DOCKER_SCRIPT)" p2-catalina-host
 else
 $(P2_IMAGE): $(P2_SRCS) $(P2_PREBUILD_DEPS) $(P2_BUILD_INFO_SCRIPT) $(P2_BUILD_CONFIG_STAMP) | $(P2_BUILD_DIR) p2-tools p2-prebuild
-	$(Q) $(MAKE) p2-catalina-host TOOLCHAIN=$(TOOLCHAIN) CATALINA_DIR=$(CATALINA_DIR) FLEXPROP_DIR=$(FLEXPROP_DIR) CATALINA_PLATFORM="$(CATALINA_PLATFORM)" CATALINA_MODEL="$(CATALINA_MODEL)" CATALINA_CLIB="$(CATALINA_CLIB)" CATALINA_SERIAL_LIB="$(CATALINA_SERIAL_LIB)" CATALINA_MLIB="$(CATALINA_MLIB)" CATALINA_CONFIG_FLAGS="$(CATALINA_CONFIG_FLAGS)"
+	$(Q) $(MAKE) p2-catalina-host TOOLCHAIN=$(TOOLCHAIN) P2_PROFILE=$(P2_PROFILE) CATALINA_DIR=$(CATALINA_DIR) FLEXPROP_DIR=$(FLEXPROP_DIR) CATALINA_PLATFORM="$(CATALINA_PLATFORM)" CATALINA_MODEL="$(CATALINA_MODEL)" CATALINA_CLIB="$(CATALINA_CLIB)" CATALINA_SERIAL_LIB="$(CATALINA_SERIAL_LIB)" CATALINA_MLIB="$(CATALINA_MLIB)" CATALINA_CONFIG_FLAGS="$(CATALINA_CONFIG_FLAGS)"
 endif
 p2: $(P2_IMAGE)
 else
@@ -385,6 +422,15 @@ p2: p2-tools p2-prebuild $(P2_BUILD_DIR) $(P2_OBJS)
 	$(Q) "$(PYTHON)" "$(P2_IMAGE_SIZE_CHECK)" --image "$(P2_IMAGE)" --max-bytes "$(P2_HUB_RAM_MAX_BYTES)" --label "FlexC P2 image"
 	$(MSG) done
 endif
+
+p2-minimal:
+	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=minimal CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
+
+p2-full:
+	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=full CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
+
+p2-xmm:
+	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=xmm CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
 
 ifeq ($(TOOLCHAIN),catalina)
 $(P2_CATALINA_FLASH_IMAGE): $(P2_IMAGE) tools/p2/loader/build-catalina-flash-image.sh | $(P2_BUILD_DIR)

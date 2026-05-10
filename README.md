@@ -28,6 +28,8 @@ P2 build with Catalina:
 
 ```sh
 make p2 TOOLCHAIN=catalina
+make p2-minimal
+make p2-full
 make p2-run TOOLCHAIN=catalina PORT=COM5
 ```
 
@@ -44,9 +46,15 @@ make p2-flash
 tio -b 230400 /dev/cu.usbserial-P97cvdxp
 ```
 
-For the verified P2 Edge Rev D path, use boot switches `FLASH=ON, △=OFF, ▽=OFF`. Catalina flash uses a generated `flshload.t` programmer image; do not flash `build/p2/catalina/berry_p2.binary` directly with `loadp2 -SPI`.
+For the verified P2 Edge Rev D path, use boot switches `FLASH=ON, △=OFF, ▽=OFF`. Catalina flash uses a generated `flshload.t` programmer image; do not flash `build/p2/catalina/full/berry_p2.binary` directly with `loadp2 -SPI`.
 
 The default Catalina P2 Edge profile targets the no-PSRAM board, where pins `56` and `57` are LEDs. Do not add `-lpsram` for that board; Catalina's PSRAM profile uses pin `57` as chip-select. Keep `CATALINA_MODEL=COMPACT` for `make p2-ram`; `NATIVE` builds are too large for the Hub RAM load path.
+
+P2 build profiles are selected with `P2_PROFILE` or with convenience targets:
+
+- `make p2-minimal` builds the smallest practical REPL profile: core language, standard classes, and `string`, with filesystem, JSON, math, OS, P2 hardware modules, and `prop2_*` globals disabled. The saved image uses the freed Hub RAM for the main Berry heap.
+- `make p2-full` builds the current no-PSRAM P2 Edge profile with the existing modules enabled.
+- `make p2-xmm` is a PSRAM/XMM placeholder for the future 32 MB P2 Edge module. It currently builds from the full feature set with Catalina `-lpsram`; deeper external-RAM placement and lazy-loading work is intentionally deferred until the board is available.
 
 P2 app images are checked against the 512 KiB Hub RAM limit. Oversized builds fail before `berry_p2.binary` is published.
 
@@ -340,6 +348,7 @@ Path overrides:
 
 ```sh
 make p2 TOOLCHAIN=catalina CATALINA_DIR=/opt/catalina
+make p2 TOOLCHAIN=catalina P2_PROFILE=minimal CATALINA_DIR=/opt/catalina
 make p2-run TOOLCHAIN=catalina LOADP2=/opt/flexprop/bin/loadp2 PORT=/dev/ttyUSB0
 ```
 

@@ -4,16 +4,18 @@
 #include <assert.h>
 #include <stdlib.h>
 
+#include "berry_p2_config.h"
+
 #ifndef BE_DEBUG
-#define BE_DEBUG                        0
+#define BE_DEBUG                        BE_USE_DEBUG
 #endif
 
 #ifndef BE_P2_HEAP_BYTES
-#define BE_P2_HEAP_BYTES                (128 * 1024)
+#define BE_P2_HEAP_BYTES                BE_P2_HEAP_SIZE
 #endif
 
 #ifndef BE_P2_WORKER_HEAP_BYTES
-#define BE_P2_WORKER_HEAP_BYTES         (32 * 1024)
+#define BE_P2_WORKER_HEAP_BYTES         BE_P2_WORKER_HEAP_SIZE
 #endif
 
 #ifndef BE_P2_HUB_RAM_BYTES
@@ -36,7 +38,7 @@
  */
 #define BE_INTGER_TYPE                  1
 #define BE_USE_SINGLE_FLOAT             1
-#define BE_BYTES_MAX_SIZE               (4 * 1024)
+#define BE_BYTES_MAX_SIZE               BE_P2_BYTES_MAX
 #define BE_USE_PRECOMPILED_OBJECT       1
 #define BE_P2_CUSTOM_PRECOMPILED_BUILTINS 1
 #define BE_P2_NO_SMALL_POOLS            0
@@ -50,13 +52,13 @@
 #define BE_USE_PERF_COUNTERS            0
 #define BE_VM_OBSERVABILITY_SAMPLING    18
 
-#define BE_STACK_TOTAL_MAX              1024
+#define BE_STACK_TOTAL_MAX              BE_P2_STACK_SLOTS
 #define BE_STACK_FREE_MIN               8
 #define BE_STACK_START                  32
 #define BE_CONST_SEARCH_SIZE            32
 #define BE_USE_STR_HASH_CACHE           0
 
-#define BE_USE_FILE_SYSTEM              1
+#define BE_USE_FILE_SYSTEM              BE_USE_FILE
 #define BE_USE_SCRIPT_COMPILER          1
 #define BE_USE_BYTECODE_SAVER           0
 #define BE_USE_BYTECODE_LOADER          0
@@ -69,16 +71,16 @@
 #define BE_USE_MEM_ALIGNED              0
 
 #define BE_USE_STRING_MODULE            1
-#define BE_USE_JSON_MODULE              1
-#define BE_USE_MATH_MODULE              1
+#define BE_USE_JSON_MODULE              BE_USE_JSON
+#define BE_USE_MATH_MODULE              BE_USE_MATH
 #define BE_USE_TIME_MODULE              BE_P2_ENABLE_TIME_MODULE
-#define BE_USE_OS_MODULE                1
+#define BE_USE_OS_MODULE                BE_USE_OS
 #define BE_USE_GLOBAL_MODULE            BE_P2_ENABLE_EXTENDED_MODULES
 #define BE_USE_SYS_MODULE               BE_P2_ENABLE_EXTENDED_MODULES
 #define BE_USE_DEBUG_MODULE             BE_P2_ENABLE_EXTENDED_MODULES
 #define BE_USE_GC_MODULE                BE_P2_ENABLE_EXTENDED_MODULES
-#define BE_USE_SOLIDIFY_MODULE          0
-#define BE_USE_INTROSPECT_MODULE        BE_P2_ENABLE_EXTENDED_MODULES
+#define BE_USE_SOLIDIFY_MODULE          BE_USE_SOLIDIFY
+#define BE_USE_INTROSPECT_MODULE        BE_USE_INTROSPECT
 #define BE_USE_STRICT_MODULE            BE_P2_ENABLE_EXTENDED_MODULES
 
 #define BE_EXPLICIT_ABORT               abort

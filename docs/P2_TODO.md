@@ -295,7 +295,7 @@ Status: examples added for the implemented v1 APIs.
 - Verify both RAM and flash-loader binaries:
   ```sh
   make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1
-  make build/p2/catalina/berry_p2_flash_loader.binary TOOLCHAIN=catalina CATALINA_USE_DOCKER=1
+  make build/p2/catalina/full/berry_p2_flash_loader.binary TOOLCHAIN=catalina CATALINA_USE_DOCKER=1
   ```
 - On hardware, test:
   - Pin 56 and 57 high/low/toggle/read on the no-PSRAM Catalina profile (`CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, no `-lpsram`). Pin 57 is PSRAM chip-select on PSRAM builds.
