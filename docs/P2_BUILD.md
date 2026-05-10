@@ -33,7 +33,7 @@ specific task.
 
 ## Build Profiles
 
-The P2 profile layer lives in `port/p2/include/berry_p2_config.h`. It controls
+The P2 profile layer lives in `port/p2/include/berry_conf_p2.h`. It controls
 the Berry module feature macros, P2-native module caching, heap sizes, stack
 slot limit, and maximum `bytes()` size.
 
