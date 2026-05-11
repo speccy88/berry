@@ -110,6 +110,25 @@ static void worker_load_user_source(bvm *vm, berry_worker_mailbox *mailbox)
     mailbox->state = BERRY_WORKER_READY;
 }
 
+static void worker_load_user_file(bvm *vm, berry_worker_mailbox *mailbox)
+{
+    int res;
+
+    mailbox->state = BERRY_WORKER_RUNNING;
+    mailbox->error[0] = '\0';
+    res = be_loadfile(vm, mailbox->source);
+    if (res == BE_OK) {
+        res = be_pcall(vm, 0);
+    }
+    if (res != BE_OK) {
+        worker_capture_exception(vm, mailbox);
+        mailbox->state = BERRY_WORKER_ERROR;
+        return;
+    }
+    be_pop(vm, be_top(vm));
+    mailbox->state = BERRY_WORKER_READY;
+}
+
 static void worker_exec_function(bvm *vm, berry_worker_mailbox *mailbox)
 {
     int i;
@@ -147,8 +166,10 @@ static void worker_dispatch(bvm *vm, berry_worker_mailbox *mailbox)
     int command = mailbox->command;
 
     mailbox->command = BERRY_WORKER_CMD_NONE;
-    if (command == BERRY_WORKER_CMD_LOAD) {
+    if (command == BERRY_WORKER_CMD_LOAD_STR) {
         worker_load_user_source(vm, mailbox);
+    } else if (command == BERRY_WORKER_CMD_LOAD_FILE) {
+        worker_load_user_file(vm, mailbox);
     } else if (command == BERRY_WORKER_CMD_EXEC) {
         worker_exec_function(vm, mailbox);
     } else {
@@ -298,7 +319,7 @@ int berry_worker_exec_ints(const char *name, int argc, const int *argv, const ch
     return 0;
 }
 
-int berry_worker_load_source(const char *source, const char **error)
+static int berry_worker_load_text_command(const char *text, int command, const char *what, const char **error)
 {
     size_t len;
     int waited = 0;
@@ -318,23 +339,23 @@ int berry_worker_load_source(const char *source, const char **error)
         }
         return -1;
     }
-    if (!source) {
+    if (!text) {
         if (error) {
-            *error = "source is required";
+            *error = what;
         }
         return -1;
     }
-    len = strlen(source);
+    len = strlen(text);
     if (len == 0 || len > BERRY_WORKER_SOURCE_MAX) {
         if (error) {
-            *error = "worker source is empty or too long";
+            *error = "worker load text is empty or too long";
         }
         return -1;
     }
 
     memset((void *)&g_worker_mailbox, 0, sizeof(g_worker_mailbox));
-    g_worker_mailbox.command = BERRY_WORKER_CMD_LOAD;
-    memcpy(g_worker_mailbox.source, source, len + 1);
+    g_worker_mailbox.command = command;
+    memcpy(g_worker_mailbox.source, text, len + 1);
     g_worker_mailbox.state = BERRY_WORKER_REQUEST;
 
     while (g_worker_mailbox.state == BERRY_WORKER_REQUEST ||
@@ -355,6 +376,22 @@ int berry_worker_load_source(const char *source, const char **error)
         return -1;
     }
     return 0;
+}
+
+int berry_worker_load_str(const char *source, const char **error)
+{
+    return berry_worker_load_text_command(source,
+        BERRY_WORKER_CMD_LOAD_STR,
+        "source is required",
+        error);
+}
+
+int berry_worker_load_file(const char *path, const char **error)
+{
+    return berry_worker_load_text_command(path,
+        BERRY_WORKER_CMD_LOAD_FILE,
+        "file path is required",
+        error);
 }
 
 void berry_worker_stop_cog(void)

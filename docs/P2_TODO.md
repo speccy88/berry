@@ -156,25 +156,26 @@ Goal: keep the worker backend as an internal implementation detail behind the RT
 - Do not transfer Berry closures or VM-owned object references across cogs.
 - Continue name-based dispatch for v1: function name + integer args.
 - `rtos.cog_start(name, ...int_args)` / `rtos.spawn(...)`: launch work on the worker VM.
-- `rtos.load(source)`: load worker task definitions into the worker VM before spawn.
+- `rtos.load_file(path)`: load worker task definitions from an SD-card `.be` file into the worker VM before spawn.
+- `rtos.load_str(source)`: load generated worker source text. `rtos.load(source)` remains as a compatibility alias.
 - `rtos.stop()`, `rtos.state()`, `rtos.error()`: manage the worker-backed task cog.
 - Ensure worker-side script/function environment is explicit; no hidden built-in task functions.
-- Make worker-task examples define their worker code in the same `.be` file:
+- Keep worker-task examples in normal `.be` files under `examples/rtos/workers/`:
   ```berry
-  worker_source =
-      "import rtos\n" +
-      "def packet_reader(delay_ms)\n" +
-      "    while true\n" +
-      "        rtos.put('rx_packets', 1)\n" +
-      "        rtos.sleep_ms(delay_ms)\n" +
-      "    end\n" +
-      "end\n"
+  import rtos
+
+  def packet_reader(delay_ms)
+      while true
+          rtos.put("rx_packets", 1)
+          rtos.sleep_ms(delay_ms)
+      end
+  end
   ```
 - Test worker-side dispatch from the main VM:
   ```berry
   import rtos
   rtos.channel("rx_packets")
-  rtos.load(worker_source)
+  rtos.load_file("/examples/rtos/workers/packet_reader.be")
   rtos.cog_start("packet_reader", 50)
   ```
 - `p2.cog_stop(cog_id)` remains a low-level direct cog stop helper; prefer `rtos.stop()` for worker-owned cogs.

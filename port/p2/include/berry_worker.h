@@ -11,7 +11,8 @@
 typedef enum berry_worker_command {
     BERRY_WORKER_CMD_NONE = 0,
     BERRY_WORKER_CMD_EXEC = 1,
-    BERRY_WORKER_CMD_LOAD = 2
+    BERRY_WORKER_CMD_LOAD_STR = 2,
+    BERRY_WORKER_CMD_LOAD_FILE = 3
 } berry_worker_command;
 
 typedef enum berry_worker_state {
@@ -41,7 +42,8 @@ typedef struct berry_worker_boot {
 } berry_worker_boot;
 
 int berry_worker_start_cog(const char **error);
-int berry_worker_load_source(const char *source, const char **error);
+int berry_worker_load_str(const char *source, const char **error);
+int berry_worker_load_file(const char *path, const char **error);
 int berry_worker_exec_ints(const char *name, int argc, const int *argv, const char **error);
 void berry_worker_stop_cog(void);
 int berry_worker_cog_id(void);

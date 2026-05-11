@@ -474,6 +474,27 @@ int be_baselib_compile(bvm *vm)
     be_return_nil(vm);
 }
 
+int be_baselib_run_file(bvm *vm)
+{
+#if BE_USE_SCRIPT_COMPILER
+    if (be_top(vm) >= 1 && be_isstring(vm, 1)) {
+        const char *fname = be_tostring(vm, 1);
+        int res = be_loadfile(vm, fname);
+        if (res == BE_OK) {
+            res = be_pcall(vm, 0);
+        } else if (res == BE_IO_ERROR) {
+            be_pushstring(vm, "io_error");
+            be_pushvalue(vm, -2);
+        }
+        if (res == BE_OK) {
+            be_return(vm);
+        }
+        return raise_compile_error(vm);
+    }
+#endif
+    be_return_nil(vm);
+}
+
 static int _issubv(bvm *vm, bbool (*filter)(bvm*, int))
 {
     bbool status = bfalse;
@@ -579,6 +600,8 @@ void be_load_baselib(bvm *vm)
     be_regfunc(vm, "size", be_baselib_size);
     baselib_trace("compile");
     be_regfunc(vm, "compile", be_baselib_compile);
+    baselib_trace("run_file");
+    be_regfunc(vm, "run_file", be_baselib_run_file);
     baselib_trace("issubclass");
     be_regfunc(vm, "issubclass", be_baselib_issubclass);
     baselib_trace("isinstance");
@@ -713,6 +736,7 @@ void be_load_baselib(bvm *vm)
     be_regfunc(vm, "module", be_baselib_module);
     be_regfunc(vm, "size", be_baselib_size);
     be_regfunc(vm, "compile", be_baselib_compile);
+    be_regfunc(vm, "run_file", be_baselib_run_file);
     be_regfunc(vm, "issubclass", be_baselib_issubclass);
     be_regfunc(vm, "isinstance", be_baselib_isinstance);
     be_regfunc(vm, "__iterator__", be_baselib_iterator);
@@ -747,6 +771,7 @@ vartab m_builtin (scope: local) {
     module, func(be_baselib_module)
     size, func(be_baselib_size)
     compile, func(be_baselib_compile)
+    run_file, func(be_baselib_run_file)
     issubclass, func(be_baselib_issubclass)
     isinstance, func(be_baselib_isinstance)
     __iterator__, func(be_baselib_iterator)

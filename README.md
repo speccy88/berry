@@ -134,19 +134,8 @@ The `rtos` module owns P2 concurrency: worker-backed task spawn/cog start, coope
 ```berry
 import rtos
 
-worker_source =
-    "import rtos\n" +
-    "def packet_reader(delay_ms)\n" +
-    "    var seq = 0\n" +
-    "    while true\n" +
-    "        seq += 1\n" +
-    "        rtos.put('sensor', seq)\n" +
-    "        rtos.sleep_ms(delay_ms)\n" +
-    "    end\n" +
-    "end\n"
-
 rtos.channel("sensor")
-rtos.load(worker_source)
+rtos.load_file("/examples/rtos/workers/packet_reader.be")
 rtos.spawn("packet_reader", 100)
 print(rtos.get("sensor", 500))
 rtos.stop()
@@ -155,6 +144,14 @@ lock = rtos.new_lock()
 rtos.lock(lock)
 rtos.unlock(lock)
 rtos.delete_lock(lock)
+```
+
+Use `rtos.load_file(path)` for readable worker code stored on the SD card. `rtos.load_str(source)` is available when generated source is useful, and `rtos.load(source)` remains as the compatibility alias for `rtos.load_str(source)`. Worker code runs in a separate Berry VM on another cog, so functions or closures defined only in the main VM cannot be passed directly to `rtos.spawn()`. Load the worker function into the worker VM first, then spawn it by name.
+
+The global `run_file(path)` helper compiles and runs a `.be` file from the current VM, which makes it useful from the REPL or from another script:
+
+```berry
+run_file("/examples/core/qsort.be")
 ```
 
 #### Native `i2c` Module

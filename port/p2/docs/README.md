@@ -66,28 +66,20 @@ Current hardware verification examples:
 - `print(i2c.writeread(0x77, "\xD0", 1))` -> `U` (`0x55`, BMP180 chip id)
 - `import spi; spi.init(10, 11, 12, 13, 0, 1000)` is live-verified
 - `import rtos; rtos.channel("a"); rtos.put("a",123); print(rtos.get("a", 10))` -> `123`
-- `rtos.load(source); cog=rtos.cog_start("worker_fn",7)` starts an explicitly loaded worker function on the worker cog
+- `rtos.load_file("/examples/rtos/workers/counter_task.be"); cog=rtos.cog_start("counter_task",7)` starts an explicitly loaded worker function on the worker cog
+- `run_file("/examples/core/qsort.be")` runs a `.be` file from the current VM, including from the REPL
 - `import spin2; print(spin2.path()); print(spin2.list())` -> `/spin2` and `[]` on the current SD-visible path
 
 Worker-side methods are loaded explicitly into the worker VM before `rtos.spawn()` or `rtos.cog_start()`:
 
 ```berry
-worker_source =
-    "import rtos\n" +
-    "def packet_reader(delay_ms)\n" +
-    "    var seq = 0\n" +
-    "    while true\n" +
-    "        seq += 1\n" +
-    "        rtos.put('rx_packets', seq)\n" +
-    "        rtos.sleep_ms(delay_ms)\n" +
-    "    end\n" +
-    "end\n"
-
 rtos.channel("rx_packets")
-rtos.load(worker_source)
+rtos.load_file("/examples/rtos/workers/packet_reader.be")
 rtos.spawn("packet_reader", 50)
 print(rtos.get("rx_packets", 250))
 ```
+
+`rtos.load_file(path)` is the recommended form because the worker function stays in a normal `.be` file. `rtos.load_str(source)` is still available for generated source strings, and `rtos.load(source)` remains as the compatibility alias for `rtos.load_str(source)`. Worker code runs in its own Berry VM; do not pass closures or VM-owned objects from the main VM to a worker cog. Load the function into the worker VM, then launch it by name.
 
 Examples:
 
@@ -116,7 +108,8 @@ P2 heap layer grows multiple worker arenas.
 
 Task helpers:
 
-- `rtos.load(source)`: load Berry source into the worker VM. Put worker task functions here; functions defined only in the main VM are not visible to the worker VM.
+- `rtos.load_file(path)`: load and run a Berry source file in the worker VM. Put worker task functions in that file, then spawn them by name.
+- `rtos.load_str(source)`: load Berry source text into the worker VM. `rtos.load(source)` is a compatibility alias.
 - `rtos.spawn(name, ...int_args) -> int`: start the worker cog if needed and run a loaded worker-side function by name with up to eight integer arguments.
 - `rtos.cog_start(name, ...int_args) -> int`: alias for `rtos.spawn()`.
 - `rtos.thread(name, ...int_args)` / `rtos.new(name, ...int_args)`: aliases for `rtos.spawn()` for thread-style code.
@@ -156,6 +149,11 @@ RTOS examples live in `../../../examples/rtos/`:
 - `sleep_ms_worker_blink.be`: worker cog blinks a pin with `rtos.sleep_ms()`.
 - `cog_start_worker_loop.be`: `rtos.cog_start()` launches an explicitly loaded worker function.
 - `debug_tasks.be`: inspect cog/task state while a worker task is running.
+- `load_str_inline.be`: compatibility example for loading generated source strings into the worker VM.
+
+Files under `examples/rtos/workers/` are loaded by the main examples with
+`rtos.load_file()`. They intentionally define one worker-side function each so
+the code remains readable and the cross-cog boundary is explicit.
 
 Reserved-pin note on the current Catalina `P2_EDGE` path:
 

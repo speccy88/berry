@@ -24,6 +24,7 @@ int be_baselib_real(bvm *vm);
 int be_baselib_module(bvm *vm);
 int be_baselib_size(bvm *vm);
 int be_baselib_compile(bvm *vm);
+int be_baselib_run_file(bvm *vm);
 int be_baselib_issubclass(bvm *vm);
 int be_baselib_isinstance(bvm *vm);
 int be_baselib_iterator(bvm *vm);
