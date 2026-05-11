@@ -41,6 +41,9 @@ extern void be_cache_i2cmodule(bvm *vm);
 #if BE_P2_USE_SPI_MODULE
 extern void be_cache_spimodule(bvm *vm);
 #endif
+#if BE_P2_USE_RTOS_MODULE
+extern void be_cache_rtosmodule(bvm *vm);
+#endif
 #if BE_P2_USE_THREADS_MODULE
 extern void be_cache_threadsmodule(bvm *vm);
 #endif
@@ -81,6 +84,9 @@ void be_loadlibs(bvm *vm)
 #endif
 #if BE_P2_USE_SPI_MODULE
     be_cache_spimodule(vm);
+#endif
+#if BE_P2_USE_RTOS_MODULE
+    be_cache_rtosmodule(vm);
 #endif
 #if BE_P2_USE_THREADS_MODULE
     be_cache_threadsmodule(vm);

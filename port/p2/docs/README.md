@@ -27,6 +27,7 @@ hardware modules, and grow the multicog model in small safe layers.
 - `import p2`
 - `import worker`
 - `import threads`
+- `import rtos`
 - `import i2c`
 - `import spi`
 - `import spin2`
@@ -44,6 +45,7 @@ Current Catalina status on P2 Edge / latest silicon:
 - `for i:0..3`, `for e:list`, `for v:map`, and `for k:map.keys()` are live-verified
 - `import string`, `import math`, `import json`, `import bytes`, and `import os` are live-verified
 - `import p2`, `import worker`, `import threads`, `import i2c`, `import spi`, and `import spin2` are now live-verified
+- `import rtos` is live-verified and exposes worker-backed tasks, locks, queues, event flags, timers, deferred callbacks, and debug helpers
 - blank Enter presses no longer leak the REPL into an out-of-memory state
 - Up/Down recall the last three REPL commands and Left/Right/Backspace edit the current line
 - `bytes('1122')`, `bytes().fromstring('AB')`, `tohex()`, `asstring()`, `readbytes()`, and range slicing are live-verified
@@ -55,6 +57,7 @@ Current Catalina status on P2 Edge / latest silicon:
 - native bus helpers are exposed as `i2c.*` and `spi.*`
 - the first worker VM path is exposed as `worker.*` and `p2.cog_start()`
 - fixed v1 channels are exposed as `threads.*`
+- higher-level RTOS helpers are exposed as `rtos.*`
 - Spin2/PASM binary loading scaffolding is exposed as `spin2.*`
 
 Current hardware verification examples:
@@ -69,6 +72,7 @@ Current hardware verification examples:
 - `import worker; print(worker.start())` -> `5`
 - `worker.exec("blink", 56, 50); print(worker.state())` -> `running`
 - `import threads; threads.channel("a"); threads.put("a",123); print(threads.get("a"))` -> `123`
+- `import rtos; rtos.channel("a"); rtos.put("a",123); print(rtos.get("a", 10))` -> `123`
 - `import spin2; print(spin2.path()); print(spin2.list())` -> `/spin2` and `[]` on the current SD-visible path
 
 Worker-side blink method used for mailbox tests:
@@ -98,6 +102,49 @@ Examples:
 - `prop2_smartpin_write_mode(pin, mode)`
 - `prop2_smartpin_query(pin)`
 - `prop2_smartpin_start(pin, mode, x, y)`
+
+## RTOS Module
+
+The `rtos` module is a Berry-friendly concurrency layer over the P2 port's
+verified primitives. It is inspired by small RTOS APIs, but it stays safe for
+the current Catalina COMPACT build: Berry callbacks are dispatched only from
+normal Berry code via `rtos.irq_poll()`, never directly from an interrupt
+service routine.
+
+Task helpers:
+
+- `rtos.spawn(name, ...int_args) -> int`: start the worker cog if needed and run a worker-side function by name with up to eight integer arguments. The current worker VM has its own environment and preloads `noop` and `blink`; it cannot see functions defined in the main VM script.
+- `rtos.yield()` / `rtos.task_yield()`: cooperative yield.
+- `rtos.sleep_ms(ms)`: sleep the current cog, with Ctrl-C checks on the main VM.
+- `rtos.cog_id() -> int`: current cog number.
+
+Locks:
+
+- `rtos.new_lock() -> int`: allocate one of the P2 hardware semaphore bits.
+- `rtos.lock(id)`, `rtos.try_lock(id) -> bool`, `rtos.unlock(id)`, `rtos.delete_lock(id)`.
+
+Queues:
+
+- `rtos.channel(name) -> string`: create or fetch a fixed queue.
+- `rtos.put(name, value)`: enqueue an integer or short string.
+- `rtos.get(name, timeout_ms=nil) -> value or nil`: wait for a message; `timeout_ms=0` polls once.
+
+Events, timers, and callbacks:
+
+- `rtos.event_set(mask)`, `rtos.event_clear(mask)`, `rtos.event_wait(mask, timeout_ms=nil) -> bool`, `rtos.event_flags() -> int`.
+- `rtos.ticks_per_ms() -> int`, `rtos.delay_ms(ms)`, `rtos.timer_start(ms) -> int`, `rtos.timer_expired(id) -> bool`, `rtos.timer_wait(id)`.
+- `rtos.irq_enable(channel, handler_name)`, `rtos.irq_poll() -> int`, `rtos.irq_disable(channel)`. Channels `0..15` are deferred callback slots; setting event bit `1 << channel` marks that callback pending. Channel `rtos.IRQ_ATN` also polls P2 cog-attention.
+
+Debug helpers:
+
+- `rtos.debug_tasks() -> list`: maps with `cog`, `state`, and `stack_free` keys.
+- `rtos.debug_regs(cog) -> map`: counter and selected current-cog P2 registers. Other cogs are reported as not directly readable from C.
+
+RTOS examples live in `../../../examples/rtos/`:
+
+- `rtos_smoke.be`: locks, queues, events, timers, deferred callbacks, and debug maps.
+- `rtos_spawn_blink.be`: worker-backed LED blink through `rtos.spawn()`.
+- `rtos_queue_timer.be`: queue draining and timer polling.
 
 Reserved-pin note on the current Catalina `P2_EDGE` path:
 

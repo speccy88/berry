@@ -185,6 +185,23 @@ threads.update("last", "ok")
 print(threads.value("last"))
 ```
 
+#### `rtos` Module
+
+The `rtos` module is the higher-level P2 concurrency wrapper: worker-backed task spawn, hardware locks, named queues, event flags, counter timers, deferred event callbacks, and debug maps.
+
+```berry
+import rtos
+
+rtos.channel("sensor")
+rtos.put("sensor", 123)
+print(rtos.get("sensor", 10))
+
+lock = rtos.new_lock()
+rtos.lock(lock)
+rtos.unlock(lock)
+rtos.delete_lock(lock)
+```
+
 #### Native `i2c` Module
 
 The P2 port has a native Berry `i2c` module for simple device bring-up, register access, readiness checks, and bus scanning. It uses module-global bus state, so the first version stays easy to use from the REPL and small scripts.

@@ -27,6 +27,7 @@
 #define BE_P2_USE_P2_MODULE             0
 #define BE_P2_USE_I2C_MODULE            0
 #define BE_P2_USE_SPI_MODULE            0
+#define BE_P2_USE_RTOS_MODULE           0
 #define BE_P2_USE_THREADS_MODULE        0
 #define BE_P2_USE_SPIN2_MODULE          0
 #define BE_P2_USE_WORKER_MODULE         0
@@ -52,6 +53,7 @@
 #define BE_P2_USE_P2_MODULE             1
 #define BE_P2_USE_I2C_MODULE            1
 #define BE_P2_USE_SPI_MODULE            1
+#define BE_P2_USE_RTOS_MODULE           1
 #define BE_P2_USE_THREADS_MODULE        1
 #define BE_P2_USE_SPIN2_MODULE          1
 #define BE_P2_USE_WORKER_MODULE         1
@@ -77,6 +79,7 @@
 #define BE_P2_USE_P2_MODULE             1
 #define BE_P2_USE_I2C_MODULE            1
 #define BE_P2_USE_SPI_MODULE            1
+#define BE_P2_USE_RTOS_MODULE           1
 #define BE_P2_USE_THREADS_MODULE        1
 #define BE_P2_USE_SPIN2_MODULE          1
 #define BE_P2_USE_WORKER_MODULE         1

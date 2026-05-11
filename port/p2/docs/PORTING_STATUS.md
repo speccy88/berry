@@ -24,17 +24,18 @@ This note is the handoff for the next P2 porting session.
 On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 
 - `make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds a RAM image with Catalina 8.8.9:
-  - image: `497664` bytes
-  - code: `249864` bytes
-  - const: `17352` bytes
-  - init: `10748` bytes
-  - data: `205128` bytes
+  - image: `513792` bytes
+  - code: `263724` bytes
+  - const: `18952` bytes
+  - init: `9196` bytes
+  - data: `211756` bytes
 - `make p2-run TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build PORT=/dev/cu.usbserial-P97cvdxp` RAM-loads and reaches the Berry prompt
 - P2 cached module loading is live-verified after the Catalina const native function hang fix:
   - `import p2`; `print(p2.cogid())` -> `0`
   - `import i2c`; `i2c.init(25,24,400)` returns to the prompt
   - `import spi`; `spi.init(10,11,12,13,0,1000)` returns to the prompt
   - `import threads`; channel put/get works
+  - `import rtos`; locks, queues, flags, timers, callbacks, debug helpers, and `spawn("noop")` work
   - `import spin2`; `print(spin2.path())` -> `/spin2`
   - `import worker`; `print(worker.start())` -> `5`
 - P2 pins on the no-PSRAM P2 Edge path:
@@ -54,6 +55,13 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - `worker.stop(); print(worker.state())` -> `stopped`
   - `print(p2.cog_start("noop",9))` -> `5`, followed by worker state `ready`
 - `threads.channel("a"); threads.put("a",123); print(threads.get("a"))` -> `123`
+- RTOS path:
+  - `import rtos`; `print(rtos.cog_id())` -> `0`
+  - `rtos.channel("a"); rtos.put("a",123); print(rtos.get("a",10))` -> `123`
+  - `rtos.event_set(1); print(rtos.event_wait(1,10)); rtos.event_clear(1)` -> `true`
+  - `t=rtos.timer_start(10); rtos.timer_wait(t); print(rtos.timer_expired(t))` -> `true`
+  - deferred callback dispatch with `rtos.irq_enable(0,"on_rtos")`, `rtos.event_set(1)`, `print(rtos.irq_poll())` -> `1`
+  - `cog=rtos.spawn("noop",7); rtos.sleep_ms(50); print(worker.state())` -> `ready`
 - `spin2.path()` returns `/spin2`; `spin2.list()` returned `[]` when no compatible binaries were present on the SD-visible path
 - `os.listdir("/")` returned to the prompt and produced `[]` on the current media/session
 - `spi.read(1)` returns a one-byte raw string after `spi.init(10,11,12,13,0,1000)`; full JEDEC validation still needs a known attached SPI target
