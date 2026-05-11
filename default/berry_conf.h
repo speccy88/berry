@@ -82,6 +82,10 @@
  **/
 #define BE_USE_PERF_COUNTERS            1
 
+/* The default host build does not provide Propeller 2 native globals. The P2
+ * port enables these from port/p2/include/berry_conf_p2.h. */
+#define BE_P2_USE_PROP2_GLOBALS         0
+
 /* Macro: BE_VM_OBSERVABILITY_SAMPLING
  * If BE_USE_PERF_COUNTERS == 1
  * then the observability hook is called regularly in the VM loop

@@ -24,10 +24,10 @@ This note is the handoff for the next P2 porting session.
 On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 
 - `make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds a RAM image with Catalina 8.8.9:
-  - image: `513792` bytes
+  - image: `511936` bytes
   - code: `263724` bytes
-  - const: `18952` bytes
-  - init: `9196` bytes
+  - const: `18000` bytes
+  - init: `8276` bytes
   - data: `211756` bytes
 - `make p2-run TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build PORT=/dev/cu.usbserial-P97cvdxp` RAM-loads and reaches the Berry prompt
 - P2 cached module loading is live-verified after the Catalina const native function hang fix:

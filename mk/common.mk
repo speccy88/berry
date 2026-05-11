@@ -26,6 +26,8 @@ endif
 
 .PHONY: all debug test install uninstall prebuild clean clean-host
 
+HOST_PREBUILD_STAMP ?= $(GENERATE)/.host-prebuild
+
 all: $(TARGET)
 
 debug: CFLAGS += $(DEBUG_FLAGS)
@@ -50,11 +52,12 @@ $(OBJS): %.o: %.c
 
 sinclude $(DEPS)
 
-$(OBJS): $(CONST_TAB)
+$(OBJS): $(CONST_TAB) $(HOST_PREBUILD_STAMP)
 
-$(CONST_TAB): $(GENERATE) $(SRCS) $(CONFIG)
+$(CONST_TAB) $(HOST_PREBUILD_STAMP): $(GENERATE) $(SRCS) $(CONFIG)
 	$(MSG) [Prebuild] generate resources
 	$(Q) $(COC_RUN) -o $(GENERATE) $(SRCPATH) -c $(CONFIG)
+	$(Q) touch $(HOST_PREBUILD_STAMP)
 
 $(GENERATE):
 	$(Q) $(MKDIR) $(GENERATE)
@@ -66,9 +69,7 @@ install:
 uninstall:
 	$(RM) $(DESTDIR)$(BINDIR)/$(TARGET)
 
-prebuild: $(GENERATE)
-	$(MSG) [Prebuild] generate resources
-	$(Q) $(COC_RUN) -o $(GENERATE) $(SRCPATH) -c $(CONFIG)
+prebuild: $(CONST_TAB) $(HOST_PREBUILD_STAMP)
 	$(MSG) done
 
 clean-host:

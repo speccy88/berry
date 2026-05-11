@@ -257,6 +257,7 @@ ifeq ($(HOST_OS),windows)
 else
 	$(Q) PYTHON_CMD='$(PYTHON)' bash scripts/prebuild-p2.sh "$(COC)" "$(GENERATE)" "$(P2_CONFIG)" src "$(P2_PORT_ROOT)" "$(P2_OVERRIDES_DIR)"
 endif
+	$(Q) $(RM) $(HOST_PREBUILD_STAMP)
 	$(MSG) done
 
 p2-tools:

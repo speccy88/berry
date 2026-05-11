@@ -218,6 +218,11 @@ int be_unlink(const char *filename)
     return f_unlink(filename);
 }
 
+int be_rename(const char *from, const char *to)
+{
+    return f_rename(from, to);
+}
+
 int be_dirfirst(bdirinfo *info, const char *path)
 {
     info->dir = be_os_malloc(sizeof(DIR));
@@ -294,6 +299,11 @@ int be_mkdir(const char *path)
 int be_unlink(const char *filename)
 {
     return remove(filename);
+}
+
+int be_rename(const char *from, const char *to)
+{
+    return rename(from, to);
 }
 
 int be_dirfirst(bdirinfo *info, const char *path)
@@ -375,6 +385,11 @@ int be_mkdir(const char *path)
 int be_unlink(const char *filename)
 {
     return remove(filename);
+}
+
+int be_rename(const char *from, const char *to)
+{
+    return rename(from, to);
 }
 
 int be_dirfirst(bdirinfo *info, const char *path)
