@@ -38,7 +38,7 @@ the Berry module feature macros, P2-native module caching, heap sizes, stack
 slot limit, and maximum `bytes()` size.
 
 - `minimal`: core language and standard classes plus the `string` module. It disables filesystem, JSON, math, OS, P2 hardware modules, worker/thread/rtos/spin2 helpers, and low-level `prop2_*` globals. Current verified image: `426624` bytes with a `192 KiB` main heap.
-- `full`: the current no-PSRAM P2 Edge build. Current verified image: `517472` bytes with the existing `128 KiB` main heap, `32 KiB` worker heap, and the `rtos` module enabled. Experimental `worker` and `threads` modules are folded under the public `rtos` API.
+- `full`: the current no-PSRAM P2 Edge build. Current verified image: `517504` bytes with the existing `128 KiB` main heap, `32 KiB` worker heap, and the `rtos` module enabled. Experimental `worker` and `threads` modules are folded under the public `rtos` API.
 - `xmm`: placeholder for the future P2 Edge 32 MB RAM module. It currently uses the full feature set and the Catalina PSRAM library path; external-RAM placement and lazy loading are future work.
 
 Convenience targets pin the intended Catalina board profile:

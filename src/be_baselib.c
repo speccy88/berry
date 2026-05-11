@@ -602,6 +602,11 @@ void be_load_baselib(bvm *vm)
     be_regfunc(vm, "compile", be_baselib_compile);
     baselib_trace("run_file");
     be_regfunc(vm, "run_file", be_baselib_run_file);
+#if BE_USE_PRECOMPILED_OBJECT
+    be_pushntvfunction(vm, be_baselib_run_file);
+    be_setglobal(vm, "run_file");
+    be_pop(vm, 1);
+#endif
     baselib_trace("issubclass");
     be_regfunc(vm, "issubclass", be_baselib_issubclass);
     baselib_trace("isinstance");
