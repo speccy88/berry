@@ -29,6 +29,7 @@ static int g_worker_cog = -1;
 
 static const char g_worker_script[] =
     "import p2\n"
+    "import rtos\n"
     "\n"
     "def noop(value)\n"
     "    return value\n"
@@ -39,9 +40,9 @@ static const char g_worker_script[] =
     "    p2.pin_output(pin)\n"
     "    while true\n"
     "        p2.pin_high(pin)\n"
-    "        p2.sleep_ms(delay_ms)\n"
+    "        rtos.sleep_ms(delay_ms)\n"
     "        p2.pin_low(pin)\n"
-    "        p2.sleep_ms(delay_ms)\n"
+    "        rtos.sleep_ms(delay_ms)\n"
     "    end\n"
     "end\n";
 

@@ -168,8 +168,8 @@ static int rtos_require_lock_id(bvm *vm, int index)
 static void rtos_acquire_lock_id(int lock)
 {
     /* LOCKTRY spins on a shared hub resource, so every failed attempt yields
-     * for 1 ms. This mirrors the P2 bring-up rule used by the threads module
-     * and keeps one cog from hammering hub access while another owns a lock. */
+     * for 1 ms and keeps one cog from hammering hub access while another owns
+     * a lock. */
     while (!_locktry(lock)) {
         _waitms(1);
     }
@@ -429,6 +429,31 @@ static int m_rtos_spawn(bvm *vm)
     }
 
     be_pushint(vm, (bint)cog);
+    be_return(vm);
+}
+
+static int m_rtos_stop(bvm *vm)
+{
+    (void)vm;
+    berry_worker_stop_cog();
+    be_return_nil(vm);
+}
+
+static int m_rtos_state(bvm *vm)
+{
+    be_pushstring(vm, berry_worker_state_name(berry_worker_mailbox_state()));
+    be_return(vm);
+}
+
+static int m_rtos_error(bvm *vm)
+{
+    const char *error = berry_worker_last_error();
+
+    if (error) {
+        be_pushstring(vm, error);
+    } else {
+        be_pushnil(vm);
+    }
     be_return(vm);
 }
 
@@ -916,6 +941,12 @@ static int m_rtos_member(bvm *vm)
     const char *name = be_tostring(vm, 1);
 
     if (!strcmp(name, "spawn")) be_pushntvfunction(vm, m_rtos_spawn);
+    else if (!strcmp(name, "cog_start")) be_pushntvfunction(vm, m_rtos_spawn);
+    else if (!strcmp(name, "thread")) be_pushntvfunction(vm, m_rtos_spawn);
+    else if (!strcmp(name, "new")) be_pushntvfunction(vm, m_rtos_spawn);
+    else if (!strcmp(name, "stop")) be_pushntvfunction(vm, m_rtos_stop);
+    else if (!strcmp(name, "state")) be_pushntvfunction(vm, m_rtos_state);
+    else if (!strcmp(name, "error")) be_pushntvfunction(vm, m_rtos_error);
     else if (!strcmp(name, "yield")) be_pushntvfunction(vm, m_rtos_yield);
     else if (!strcmp(name, "task_yield")) be_pushntvfunction(vm, m_rtos_yield);
     else if (!strcmp(name, "sleep_ms")) be_pushntvfunction(vm, m_rtos_sleep_ms);

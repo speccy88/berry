@@ -8,7 +8,6 @@
 #include "be_string.h"
 #include "berry_conf_p2.h"
 #include "berry_port.h"
-#include "berry_worker.h"
 #include "p2_build_info.h"
 #include "p2_heap.h"
 
@@ -30,9 +29,6 @@ extern int m_counter_ticks_high(bvm *vm);
 extern int m_counter_ticks64(bvm *vm);
 extern int m_counter_wait_until(bvm *vm);
 extern int m_counter_wait_ticks(bvm *vm);
-extern int m_counter_sleep_us(bvm *vm);
-extern int m_counter_sleep_ms(bvm *vm);
-extern int m_counter_sleep(bvm *vm);
 extern int m_cog_start_c(bvm *vm);
 extern int m_cog_start_pasm(bvm *vm);
 extern int m_cog_start_hex(bvm *vm);
@@ -41,11 +37,6 @@ extern int m_cog_check(bvm *vm);
 extern int m_cog_id(bvm *vm);
 extern int m_cog_states(bvm *vm);
 extern int m_cog_stack_bytes(bvm *vm);
-extern int m_lock_new(bvm *vm);
-extern int m_lock_return(bvm *vm);
-extern int m_lock_try(bvm *vm);
-extern int m_lock_release(bvm *vm);
-extern int m_lock_check(bvm *vm);
 extern int m_attention_signal(bvm *vm);
 extern int m_attention_poll(bvm *vm);
 extern int m_attention_wait(bvm *vm);
@@ -155,22 +146,6 @@ static int m_p2_pinmode(bvm *vm)
     be_return_nil(vm);
 }
 
-static int m_p2_sleep_ms(bvm *vm)
-{
-    bint ms = p2_require_int_arg(vm, 1, "ms must be an int");
-    if (ms < 0) {
-        be_raise(vm, "value_error", "ms must be >= 0");
-    }
-    while (ms > 0) {
-        uint32_t chunk = ms > 10 ? 10u : (uint32_t)ms;
-        p2_check_interrupt_now(vm);
-        _waitms(chunk);
-        ms -= (bint)chunk;
-    }
-    p2_check_interrupt_now(vm);
-    be_return_nil(vm);
-}
-
 static int m_p2_delay_us(bvm *vm)
 {
     bint us = p2_require_int_arg(vm, 1, "us must be an int");
@@ -203,38 +178,6 @@ static int m_p2_cog_stop(bvm *vm)
     be_return_nil(vm);
 }
 
-static int m_p2_cog_start(bvm *vm)
-{
-    const char *name;
-    int argc = be_top(vm) - 1;
-    int argv[BERRY_WORKER_ARGS_MAX];
-    int i;
-    int cog;
-    const char *error = NULL;
-
-    if (be_top(vm) < 1 || !be_isstring(vm, 1)) {
-        be_raise(vm, "type_error", "function name must be a string");
-    }
-    if (argc > BERRY_WORKER_ARGS_MAX) {
-        be_raise(vm, "value_error", "too many cog_start arguments");
-    }
-    name = be_tostring(vm, 1);
-    for (i = 0; i < argc; ++i) {
-        argv[i] = (int)p2_require_int_arg(vm, i + 2, "cog_start arguments must be ints");
-    }
-
-    cog = berry_worker_start_cog(&error);
-    if (cog < 0) {
-        be_raise(vm, "runtime_error", error ? error : "failed to start worker cog");
-    }
-    if (berry_worker_exec_ints(name, argc, argv, &error) != 0) {
-        be_raise(vm, "runtime_error", error ? error : "failed to start cog job");
-    }
-
-    be_pushint(vm, (bint)cog);
-    be_return(vm);
-}
-
 static int m_p2_cog_states(bvm *vm)
 {
     int cog;
@@ -247,42 +190,6 @@ static int m_p2_cog_states(bvm *vm)
     }
     be_pop(vm, 1);
     be_return(vm);
-}
-
-static int m_p2_locknew(bvm *vm)
-{
-    be_pushint(vm, (bint)_locknew());
-    be_return(vm);
-}
-
-static int m_p2_lockset(bvm *vm)
-{
-    bint lock = p2_require_int_arg(vm, 1, "lock must be an int");
-    if (lock < 0 || lock > 15) {
-        be_raise(vm, "value_error", "lock must be between 0 and 15");
-    }
-    be_pushbool(vm, _locktry((int)lock) != 0);
-    be_return(vm);
-}
-
-static int m_p2_lockclr(bvm *vm)
-{
-    bint lock = p2_require_int_arg(vm, 1, "lock must be an int");
-    if (lock < 0 || lock > 15) {
-        be_raise(vm, "value_error", "lock must be between 0 and 15");
-    }
-    _lockrel((int)lock);
-    be_return_nil(vm);
-}
-
-static int m_p2_lockret(bvm *vm)
-{
-    bint lock = p2_require_int_arg(vm, 1, "lock must be an int");
-    if (lock < 0 || lock > 15) {
-        be_raise(vm, "value_error", "lock must be between 0 and 15");
-    }
-    _lockret((int)lock);
-    be_return_nil(vm);
 }
 
 static int m_p2_sbrk(bvm *vm)
@@ -501,8 +408,6 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "ticks64")) be_pushntvfunction(vm, m_counter_ticks64);
     else if (!strcmp(name, "wait_until")) be_pushntvfunction(vm, m_counter_wait_until);
     else if (!strcmp(name, "wait_ticks")) be_pushntvfunction(vm, m_counter_wait_ticks);
-    else if (!strcmp(name, "sleep_us")) be_pushntvfunction(vm, m_counter_sleep_us);
-    else if (!strcmp(name, "sleep")) be_pushntvfunction(vm, m_counter_sleep);
     else if (!strcmp(name, "high")) be_pushntvfunction(vm, m_p2_high);
     else if (!strcmp(name, "low")) be_pushntvfunction(vm, m_p2_low);
     else if (!strcmp(name, "toggle")) be_pushntvfunction(vm, m_p2_toggle);
@@ -517,11 +422,9 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "pin_randomize")) be_pushntvfunction(vm, m_pin_randomize);
     else if (!strcmp(name, "pin_float")) be_pushntvfunction(vm, m_pin_float);
     else if (!strcmp(name, "pin_read")) be_pushntvfunction(vm, m_pin_read);
-    else if (!strcmp(name, "sleep_ms")) be_pushntvfunction(vm, m_p2_sleep_ms);
     else if (!strcmp(name, "delay_us")) be_pushntvfunction(vm, m_p2_delay_us);
     else if (!strcmp(name, "cogid")) be_pushntvfunction(vm, m_p2_cogid);
     else if (!strcmp(name, "cog_id")) be_pushntvfunction(vm, m_cog_id);
-    else if (!strcmp(name, "cog_start")) be_pushntvfunction(vm, m_p2_cog_start);
     else if (!strcmp(name, "cog_start_c")) be_pushntvfunction(vm, m_cog_start_c);
     else if (!strcmp(name, "cog_start_pasm")) be_pushntvfunction(vm, m_cog_start_pasm);
     else if (!strcmp(name, "cog_start_hex")) be_pushntvfunction(vm, m_cog_start_hex);
@@ -530,15 +433,6 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "cog_check")) be_pushntvfunction(vm, m_cog_check);
     else if (!strcmp(name, "cog_states")) be_pushntvfunction(vm, m_p2_cog_states);
     else if (!strcmp(name, "cog_stack_bytes")) be_pushntvfunction(vm, m_cog_stack_bytes);
-    else if (!strcmp(name, "locknew")) be_pushntvfunction(vm, m_p2_locknew);
-    else if (!strcmp(name, "lock_new")) be_pushntvfunction(vm, m_lock_new);
-    else if (!strcmp(name, "lockset")) be_pushntvfunction(vm, m_p2_lockset);
-    else if (!strcmp(name, "lockclr")) be_pushntvfunction(vm, m_p2_lockclr);
-    else if (!strcmp(name, "lockret")) be_pushntvfunction(vm, m_p2_lockret);
-    else if (!strcmp(name, "lock_return")) be_pushntvfunction(vm, m_lock_return);
-    else if (!strcmp(name, "lock_try")) be_pushntvfunction(vm, m_lock_try);
-    else if (!strcmp(name, "lock_release")) be_pushntvfunction(vm, m_lock_release);
-    else if (!strcmp(name, "lock_check")) be_pushntvfunction(vm, m_lock_check);
     else if (!strcmp(name, "attention_signal")) be_pushntvfunction(vm, m_attention_signal);
     else if (!strcmp(name, "attention_poll")) be_pushntvfunction(vm, m_attention_poll);
     else if (!strcmp(name, "attention_wait")) be_pushntvfunction(vm, m_attention_wait);

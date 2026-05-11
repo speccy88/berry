@@ -25,8 +25,6 @@ hardware modules, and grow the multicog model in small safe layers.
 - `import bytes`
 - `import os`
 - `import p2`
-- `import worker`
-- `import threads`
 - `import rtos`
 - `import i2c`
 - `import spi`
@@ -34,7 +32,7 @@ hardware modules, and grow the multicog model in small safe layers.
 - SD card backed file and directory access through `open()` and `os`
 - reliable serial interaction without prompt drift or blank-line heap loss
 - tiny REPL line editing with three-command history and arrow-key navigation
-- second-cog Berry worker jobs through Hub-RAM mailboxes
+- RTOS-owned second-cog Berry worker jobs through Hub-RAM mailboxes
 
 Current Catalina status on P2 Edge / latest silicon:
 
@@ -44,20 +42,18 @@ Current Catalina status on P2 Edge / latest silicon:
 - `print()`, assignment, and basic arithmetic are live-verified
 - `for i:0..3`, `for e:list`, `for v:map`, and `for k:map.keys()` are live-verified
 - `import string`, `import math`, `import json`, `import bytes`, and `import os` are live-verified
-- `import p2`, `import worker`, `import threads`, `import i2c`, `import spi`, and `import spin2` are now live-verified
-- `import rtos` is live-verified and exposes worker-backed tasks, locks, queues, event flags, timers, deferred callbacks, and debug helpers
+- `import p2`, `import rtos`, `import i2c`, `import spi`, and `import spin2` are now live-verified
+- `import rtos` exposes worker-backed tasks, locks, queues, event flags, timers, deferred callbacks, and debug helpers
 - blank Enter presses no longer leak the REPL into an out-of-memory state
 - Up/Down recall the last three REPL commands and Left/Right/Backspace edit the current line
 - `bytes('1122')`, `bytes().fromstring('AB')`, `tohex()`, `asstring()`, `readbytes()`, and range slicing are live-verified
 - `json.load()` and `json.dump()` are live-verified
 - SD card access through `open('/HELLO.TXT','r')`, `os.listdir('/')`, `os.mkdir()`, `os.rename()`, `os.remove()`, `os.chdir()`, `os.getcwd()`, and `os.path.*` is live-verified
-- P2 helpers are exposed as `p2.*` for clock, counter, pin, smart-pin, CORDIC, lock, attention, and cog operations
+- P2 helpers are exposed as `p2.*` for clock, counter, pin, smart-pin, CORDIC, lock, attention, and cog inspection
 - legacy `prop2_*` globals remain available for compatibility
 - `p2.status()` prints build size, heap usage bars, clock info, and all 8 cog states
 - native bus helpers are exposed as `i2c.*` and `spi.*`
-- the first worker VM path is exposed as `worker.*` and `p2.cog_start()`
-- fixed v1 channels are exposed as `threads.*`
-- higher-level RTOS helpers are exposed as `rtos.*`
+- worker-backed task/cog startup and queues are exposed as `rtos.*`
 - Spin2/PASM binary loading scaffolding is exposed as `spin2.*`
 
 Current hardware verification examples:
@@ -69,13 +65,11 @@ Current hardware verification examples:
 - `import i2c; i2c.init(25, 24, 400); print(i2c.scan())` -> `[119]`
 - `print(i2c.writeread(0x77, "\xD0", 1))` -> `U` (`0x55`, BMP180 chip id)
 - `import spi; spi.init(10, 11, 12, 13, 0, 1000)` is live-verified
-- `import worker; print(worker.start())` -> `5`
-- `worker.exec("blink", 56, 50); print(worker.state())` -> `running`
-- `import threads; threads.channel("a"); threads.put("a",123); print(threads.get("a"))` -> `123`
 - `import rtos; rtos.channel("a"); rtos.put("a",123); print(rtos.get("a", 10))` -> `123`
+- `cog=rtos.cog_start("noop",7); rtos.sleep_ms(50); print(rtos.state())` -> `ready`
 - `import spin2; print(spin2.path()); print(spin2.list())` -> `/spin2` and `[]` on the current SD-visible path
 
-Worker-side blink method used for mailbox tests:
+Worker-side blink method used by `rtos.spawn()` and `rtos.cog_start()`:
 
 ```berry
 def blink(pin, sleep_ms)
@@ -83,10 +77,10 @@ def blink(pin, sleep_ms)
 
     while true
         p2.high(pin)
-        p2.sleep_ms(sleep_ms)
+        rtos.sleep_ms(sleep_ms)
 
         p2.low(pin)
-        p2.sleep_ms(sleep_ms)
+        rtos.sleep_ms(sleep_ms)
     end
 end
 ```
@@ -114,6 +108,9 @@ service routine.
 Task helpers:
 
 - `rtos.spawn(name, ...int_args) -> int`: start the worker cog if needed and run a worker-side function by name with up to eight integer arguments. The current worker VM has its own environment and preloads `noop` and `blink`; it cannot see functions defined in the main VM script.
+- `rtos.cog_start(name, ...int_args) -> int`: alias for `rtos.spawn()`.
+- `rtos.thread(name, ...int_args)` / `rtos.new(name, ...int_args)`: aliases for `rtos.spawn()` for thread-style code.
+- `rtos.stop()`, `rtos.state()`, `rtos.error()`: inspect or stop the worker-backed task cog.
 - `rtos.yield()` / `rtos.task_yield()`: cooperative yield.
 - `rtos.sleep_ms(ms)`: sleep the current cog, with Ctrl-C checks on the main VM.
 - `rtos.cog_id() -> int`: current cog number.

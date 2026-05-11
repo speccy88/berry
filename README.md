@@ -109,88 +109,34 @@ The current release notes live here:
 
 #### `p2` Hardware Module
 
-The `p2` module is the friendly hardware namespace for day-to-day P2 work: GPIO, delays, cog ID/state helpers, hardware locks, heap reporting, and a small tone helper.
+The `p2` module is the friendly hardware namespace for day-to-day P2 work: GPIO, low-level counter/timing helpers, cog ID/state inspection, heap reporting, and a small tone helper.
 The P2 REPL includes a tiny line editor: Up/Down cycles through the last three
 commands, Left/Right moves within the line, and Backspace/Delete edit recalled
 commands before Enter.
 
 ```berry
 import p2
+import rtos
 
 p2.pinmode(56, p2.OUTPUT)
 p2.high(56)
-p2.sleep_ms(250)
+rtos.sleep_ms(250)
 p2.low(56)
 print(p2.cogid())
 print(p2.sbrk())
 p2.status()
 ```
 
-#### Second-Cog Berry Worker
-
-The first worker backend starts a second cog with its own Berry VM and Hub-RAM heap. Jobs are sent through a Hub-RAM mailbox by function name with integer arguments.
-
-The v1 worker preloads a worker-side `blink` method equivalent to this Berry function:
-
-```berry
-def blink(pin, sleep_ms)
-    p2.pinmode(pin, p2.OUTPUT)
-
-    while true
-        p2.high(pin)
-        p2.sleep_ms(sleep_ms)
-
-        p2.low(pin)
-        p2.sleep_ms(sleep_ms)
-    end
-end
-```
-
-Test the worker mailbox dispatch from the main REPL like this:
-
-```berry
-import worker
-
-print(worker.start())
-worker.exec("blink", 56, 250)
-print(worker.state())
-worker.stop()
-```
-
-#### `p2.cog_start()` Convenience
-
-`p2.cog_start()` exposes the same worker backend from the `p2` module. It deliberately uses name-based dispatch instead of moving Berry closures between VMs.
-
-```berry
-import p2
-import worker
-
-cog = p2.cog_start("blink", 56, 250)
-print(cog)
-print(worker.state())
-worker.stop()
-```
-
-#### `threads` Channels
-
-The `threads` module begins the Catalina-Lua-style concurrency layer with named Hub-RAM channels and a tiny shared key/value store. Values are integers or strings in v1.
-
-```berry
-import threads
-
-threads.channel("sensor")
-threads.put("sensor", 123)
-print(threads.get("sensor"))
-threads.update("last", "ok")
-print(threads.value("last"))
-```
-
 #### `rtos` Module
 
-The `rtos` module is the higher-level P2 concurrency wrapper: worker-backed task spawn, hardware locks, named queues, event flags, counter timers, deferred event callbacks, and debug maps.
+The `rtos` module owns P2 concurrency: worker-backed task spawn/cog start, cooperative sleep/yield, hardware locks, named queues, event flags, counter timers, deferred event callbacks, and debug maps. The older experimental `worker` and `threads` modules are no longer exported in the normal P2 profile; their backend pieces are folded under `rtos`.
 
 ```berry
 import rtos
+
+cog = rtos.cog_start("blink", 56, 250)
+print(rtos.state())
+rtos.stop()
 
 rtos.channel("sensor")
 rtos.put("sensor", 123)
@@ -327,7 +273,7 @@ print(open("/TMPD/TEST.TXT", "r").read())
 
 #### Propeller 2 Hardware Helpers
 
-Propeller 2 hardware helpers are exposed through the `p2` module for clocks, counters, pins, smartpins, CORDIC, locks, attention, and cog control. The older `prop2_*` globals remain available for compatibility, but new examples should use `p2`.
+Propeller 2 hardware helpers are exposed through the `p2` module for clocks, counters, pins, smartpins, CORDIC, locks, attention, and cog inspection. Task sleep and worker-backed cog startup live in `rtos` so those concepts have one public home. The older `prop2_*` globals remain available for compatibility, but new examples should use `p2` and `rtos`.
 
 ```berry
 import p2
@@ -340,7 +286,7 @@ p2.pin_write(56, 0) # active-low LED on the tested no-PSRAM board
 print(p2.pin_read(56))
 ```
 
-P2 module examples live under `examples/p2/`; other modules use their own directories such as `examples/i2c/`, `examples/spi/`, `examples/worker/`, `examples/threads/`, `examples/rtos/`, and `examples/spin2/`. General Berry examples such as quicksort, REPL, and string handling live under `examples/core/`.
+P2 module examples live under `examples/p2/`; other modules use their own directories such as `examples/i2c/`, `examples/spi/`, `examples/rtos/`, and `examples/spin2/`. General Berry examples such as quicksort, REPL, and string handling live under `examples/core/`.
 
 On the tested no-PSRAM P2 Edge setup, keep Berry GPIO and bus examples off the SD pins `58..61` and serial pins `62..63`. Pins `56` and `57` are left available because they are exposed as LEDs on that board.
 

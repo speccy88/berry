@@ -35,9 +35,7 @@ This document started as the implementation backlog for matching and then surpas
 - REPL: added 3-command history, cursor editing, and cooperative Ctrl-C/Ctrl-D interrupts for the main Berry VM.
 - `i2c`: implemented module-global init/write/read/writeread/scan/present/wait/start/stop.
 - `spi`: implemented module-global init/select/deselect/write/read/transfer/stop.
-- `worker`: implemented a second-cog Berry VM with Hub-RAM mailbox and integer name-based dispatch.
-- `p2.cog_start`: implemented as a safe name-based convenience wrapper over the worker backend.
-- `threads`: implemented fixed named channels, integer/string messages, shared update/value storage, and worker-backed `new`.
+- `rtos`: owns the public concurrency API: worker-backed task/cog start, stop/state/error, queues, events, timers, and locks.
 - `spin2`: implemented SD binary listing, Hub-RAM load/start, integer mailbox call, stop, info, and `make spin2` tooling.
 - Build/release: Catalina 8.8.9 Docker build path works, FlexC is documented as non-preferred for Berry P2 builds, RAM image size is guarded against the 512 KiB Hub RAM limit, no-PSRAM P2 Edge pins 56/57 are usable as LEDs, and flash-loader binary generation remains available.
 
@@ -75,12 +73,12 @@ Goal: make the P2 module comparable to Catalina Lua's `propeller` basics.
 - `p2.toggle(pin)`: toggle pin state.
 - `p2.read(pin)`: return current pin state as integer/bool.
 - `p2.pinmode(pin, mode)`: configure input, output, or open-drain.
-- `p2.sleep_ms(ms)`: millisecond delay.
+- `rtos.sleep_ms(ms)`: millisecond task delay.
 - `p2.delay_us(us)`: microsecond delay.
 - `p2.cogid()`: return current cog ID.
-- `p2.locknew()`: allocate a hardware lock.
-- `p2.lockset(lock)`: set/acquire hardware lock.
-- `p2.lockclr(lock)`: clear/release hardware lock.
+- `rtos.new_lock()`: allocate a hardware lock.
+- `rtos.lock(lock)`, `rtos.try_lock(lock)`, `rtos.unlock(lock)`: acquire/release hardware locks.
+- `rtos.delete_lock(lock)`: return a hardware lock.
 - `p2.sbrk()`: report available heap or closest meaningful heap-space estimate.
 - `p2.status()`: print build image size, heap bars, clock info, and all 8 cog states.
 - Ensure pins 56 and 57 are accessible on P2 Edge boards without PSRAM.
@@ -89,9 +87,9 @@ Goal: make the P2 module comparable to Catalina Lua's `propeller` basics.
   import p2
   while true
       p2.high(56)
-      p2.sleep_ms(250)
+      rtos.sleep_ms(250)
       p2.low(56)
-      p2.sleep_ms(250)
+      rtos.sleep_ms(250)
   end
   ```
 
@@ -148,17 +146,17 @@ Goal: full-duplex byte transfer with simple module-global state.
 
 ## Phase 4: Worker And Cog Management
 
-Status: first working worker VM and name-based dispatch implemented in `v0.9.3`.
+Status: first working worker VM and name-based dispatch implemented in `v0.9.3`; public API consolidated under `rtos`.
 
-Goal: evolve the current `worker` prototype into a clean P2 cog/concurrency layer.
+Goal: keep the worker backend as an internal implementation detail behind the RTOS API.
 
 - Keep rule: one Berry VM must never be used concurrently by more than one cog.
 - Worker VM heap/state must live in Hub RAM.
 - Use Hub RAM mailboxes for cross-cog requests.
 - Do not transfer Berry closures or VM-owned object references across cogs.
 - Continue name-based dispatch for v1: function name + integer args.
-- `worker.start()`: launch a second cog with its own Berry VM.
-- `worker.exec(name, ...int_args)`: send integer-only job to worker VM.
+- `rtos.cog_start(name, ...int_args)` / `rtos.spawn(...)`: launch work on the worker VM.
+- `rtos.stop()`, `rtos.state()`, `rtos.error()`: manage the worker-backed task cog.
 - Ensure worker-side script/function environment is explicit.
 - Make `blink(pin, delay_ms)` demo reliable:
   ```berry
@@ -167,37 +165,32 @@ Goal: evolve the current `worker` prototype into a clean P2 cog/concurrency laye
 
       while true
           p2.high(pin)
-          p2.sleep_ms(sleep_ms)
+          rtos.sleep_ms(sleep_ms)
 
           p2.low(pin)
-          p2.sleep_ms(sleep_ms)
+          rtos.sleep_ms(sleep_ms)
       end
   end
   ```
 - Test the worker-side `blink` dispatch from the main VM:
   ```berry
-  import worker
-  worker.start()
-  worker.exec("blink", 56, 250)
+  import rtos
+  rtos.cog_start("blink", 56, 250)
   ```
-- `p2.cog_start(name, args...)` is implemented as a name-based worker wrapper.
-- `p2.cog_stop(cog_id)` is implemented as a direct cog stop helper; prefer `worker.stop()` for worker-owned cogs.
+- `p2.cog_stop(cog_id)` remains a low-level direct cog stop helper; prefer `rtos.stop()` for worker-owned cogs.
 
 ## Phase 5: Threads And Channels
 
-Status: simplified fixed-channel layer implemented in `v0.9.3`.
+Status: simplified fixed-channel layer implemented in `v0.9.3`; public API consolidated under `rtos`.
 
 Goal: a simplified Berry equivalent inspired by Catalina Lua threads, not a full scheduler.
 
 - Start small with a fixed number of worker/mailbox slots.
-- `threads.workers(n)`: configure worker pool if feasible.
-- `threads.new(fn)`: launch work on an available worker/cog.
-- `threads.channel(name)`: create or fetch a named channel.
-- `threads.put(name, value)`: send integer/string value initially.
-- `threads.get(name)`: receive value, blocking or timeout-based.
-- `threads.output(str)`: safe shared serial output.
-- `threads.msleep(ms)`: sleep helper for worker code.
-- `threads.update(key, value)`: shared data update, initially integer/string only.
+- `rtos.thread(name, ...args)` / `rtos.new(name, ...args)`: launch work on the worker cog.
+- `rtos.channel(name)`: create or fetch a named channel.
+- `rtos.put(name, value)`: send integer/string value initially.
+- `rtos.get(name, timeout_ms=nil)`: receive value, blocking or timeout-based.
+- `rtos.sleep_ms(ms)`: task sleep helper.
 - Use P2 locks or atomic mailbox state for synchronization.
 - Document limitations: no object serialization, no closure transfer between VMs, limited value types at first.
 
@@ -285,12 +278,9 @@ Status: examples added for the implemented v1 APIs and organized by module.
 - `examples/p2/hardware_helpers.be`: clocks, counters, CORDIC, locks, attention, and cog status through `p2`.
 - `examples/p2/pin_helpers.be`: raw pin helpers through `p2`.
 - `examples/p2/smartpin_helpers.be`: smart-pin helper calls through `p2`.
-- `examples/p2/timing_helpers.be`: wait and sleep helpers through `p2`.
+- `examples/p2/timing_helpers.be`: low-level P2 timing plus `rtos.sleep_ms()`.
 - `examples/i2c/scan.be`: BMP180/I2C scan on SDA 24, SCL 25.
 - `examples/spi/jedec.be`: SPI flash JEDEC ID read.
-- `examples/worker/blink.be`: second-cog worker blink.
-- `examples/p2/cog_start.be`: `p2.cog_start()` worker wrapper.
-- `examples/threads/channel.be`: simple channel put/get.
 - `examples/rtos/`: RTOS smoke, spawn, queue, and timer examples.
 - `examples/spin2/`: list Spin2 binaries and run mailbox/standalone suites from SD.
 

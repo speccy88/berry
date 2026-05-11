@@ -34,10 +34,8 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - `import p2`; `print(p2.cogid())` -> `0`
   - `import i2c`; `i2c.init(25,24,400)` returns to the prompt
   - `import spi`; `spi.init(10,11,12,13,0,1000)` returns to the prompt
-  - `import threads`; channel put/get works
   - `import rtos`; locks, queues, flags, timers, callbacks, debug helpers, and `spawn("noop")` work
   - `import spin2`; `print(spin2.path())` -> `/spin2`
-  - `import worker`; `print(worker.start())` -> `5`
 - P2 pins on the no-PSRAM P2 Edge path:
   - `p2.pinmode(56,p2.OUTPUT); p2.low(56); print(p2.read(56))` -> `0`
   - `p2.high(56); print(p2.read(56))` -> `1`
@@ -47,21 +45,13 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - `print(i2c.scan())` -> `[119]`
   - `print(i2c.present(0x77))` -> `true`
   - `print(i2c.writeread(0x77,"\xD0",1))` -> `U` (`0x55`, BMP180 chip id)
-- Worker/cog path:
-  - `print(worker.start())` -> `5`
-  - `worker.exec("noop",7); p2.sleep_ms(50); print(worker.state())` -> `ready`
-  - `print(worker.error())` -> `nil`
-  - `worker.exec("blink",56,50); p2.sleep_ms(200); print(worker.state())` -> `running`
-  - `worker.stop(); print(worker.state())` -> `stopped`
-  - `print(p2.cog_start("noop",9))` -> `5`, followed by worker state `ready`
-- `threads.channel("a"); threads.put("a",123); print(threads.get("a"))` -> `123`
 - RTOS path:
   - `import rtos`; `print(rtos.cog_id())` -> `0`
   - `rtos.channel("a"); rtos.put("a",123); print(rtos.get("a",10))` -> `123`
   - `rtos.event_set(1); print(rtos.event_wait(1,10)); rtos.event_clear(1)` -> `true`
   - `t=rtos.timer_start(10); rtos.timer_wait(t); print(rtos.timer_expired(t))` -> `true`
   - deferred callback dispatch with `rtos.irq_enable(0,"on_rtos")`, `rtos.event_set(1)`, `print(rtos.irq_poll())` -> `1`
-  - `cog=rtos.spawn("noop",7); rtos.sleep_ms(50); print(worker.state())` -> `ready`
+  - `cog=rtos.cog_start("noop",7); rtos.sleep_ms(50); print(rtos.state())` -> `ready`
 - `spin2.path()` returns `/spin2`; `spin2.list()` returned `[]` when no compatible binaries were present on the SD-visible path
 - `os.listdir("/")` returned to the prompt and produced `[]` on the current media/session
 - `spi.read(1)` returns a one-byte raw string after `spi.init(10,11,12,13,0,1000)`; full JEDEC validation still needs a known attached SPI target
@@ -119,10 +109,10 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - `spi.init(10, 11, 12, 13, 0, 1000)` is live-verified
 - the current exposed P2 helpers are available through `p2.*`, including:
   - clock and counter helpers such as `p2.clock_freq()`, `p2.ticks()`, `p2.ticks64()`
-  - wait/sleep helpers such as `p2.wait_ticks()` and `p2.sleep_ms()`
+  - wait helpers such as `p2.wait_ticks()`; millisecond task sleep is `rtos.sleep_ms()`
   - cog helpers such as `p2.cog_states()`, `p2.cog_check()`, `p2.cog_stop()`
   - raw cog program startup via `p2.cog_start_hex()`
-  - lock helpers such as `p2.lock_new()`, `p2.lock_try()`, `p2.lock_check()`
+  - hardware lock helpers live under `rtos`, such as `rtos.new_lock()` and `rtos.try_lock()`
   - CORDIC helpers such as `p2.rotxy()`, `p2.xypol()`, `p2.polxy()`
   - pin helpers such as `p2.pin_output()`, `p2.pin_write()`, `p2.pin_read()`
   - smart-pin helpers such as `p2.smartpin_write_mode()`, `p2.smartpin_query()`, `p2.smartpin_start()`
