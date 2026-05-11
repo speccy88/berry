@@ -1,9 +1,10 @@
 # Spin2 Binary Test Report
 
-Date: 2026-05-08
+Date: 2026-05-11
 Board: Propeller 2 Edge, no PSRAM
-Berry image: `Berry 1.1.0 (build May 08 2026 10:47:13)`
-Runtime SD test path: `/SPT0` through `/SPT3`
+Berry image: `Berry 1.1.0 (build May 11 2026 00:09:36)`
+Runtime SD test path: `/spin2`; earlier batch-transfer notes used `/SPT0`
+through `/SPT3`
 
 ## Fixes Applied Before This Run
 
@@ -16,6 +17,14 @@ Runtime SD test path: `/SPT0` through `/SPT3`
 - The mailbox service no longer checks stale Z/C flags after returning from a
   test method. This fixed `MB_04CMP.BIN`, which previously raised
   `runtime_error: spin2 method failed`.
+- Follow-up loader fix: binaries without a Berry mailbox method table no longer
+  receive the Berry mailbox pointer. Raw standalone PASM images start with
+  `PTRA == nil`. High-level FlexSpin images are detected and rejected because
+  their standalone `.BIN` payloads contain absolute Hub-address references and
+  are not relocatable from Berry's heap loader. The bundled high-level
+  `S2_*.BIN` examples are rejected before file load so a stale or awkward SD
+  copy cannot hang during compatibility probing; `S2_27DIT.BIN` remains the raw
+  PASM exception.
 
 ## SD Loader Notes
 
@@ -39,7 +48,7 @@ not an 8.3 naming problem. The runtime tests below use only the freshly written
 | Source | Binary | Runtime test | Result | Status | Notes |
 |---|---|---:|---:|---|---|
 | `berry_mailbox_demo.spin2` | `MBOXDEMO.BIN` | `call(1,123,0,0)` | `123` | PASS | Echo mailbox demo. |
-| `blink.spin2` | `BLINK.BIN` | `start/stop` | handle `0` | PASS | Launches and can be stopped. |
+| `blink.spin2` | `BLINK.BIN` | `safe rejection` | `value_error` | PASS | High-level FlexSpin image is non-relocatable; loader refuses it. |
 | `mb_01alu.spin2` | `MB_01ALU.BIN` | `call(1,10,4,0)` | `31` | PASS | Arithmetic PASM2 smoke. |
 | `mb_02log.spin2` | `MB_02LOG.BIN` | `call(1,90,15,0)` | `-1` | PASS | Logical/bitwise smoke. |
 | `mb_03shf.spin2` | `MB_03SHF.BIN` | `call(1,0,0,0)` | `0` | PASS | Shift/rotate/sign-extension smoke. |
@@ -61,42 +70,43 @@ not an 8.3 naming problem. The runtime tests below use only the freshly written
 | `mb_19lock.spin2` | `MB_19LOC.BIN` | `call(1,0,0,0)` | `0` | PASS | Hardware lock smoke. |
 | `mb_20pat.spin2` | `MB_20PAT.BIN` | `call(1,0,0,0)` | `20` | PASS | Event/pattern syntax smoke. |
 | `p2instmx.spin2` | `P2INSTMX.BIN` | `start/stop` | handle `0` | PASS | Compile matrix also launches/stops. |
-| `s2_01con.spin2` | `S2_01CON.BIN` | `start/stop` | handle returned | PARTIAL | High-level FlexSpin binary is not mailbox-callable. |
-| `s2_02enum.spin2` | `S2_02ENU.BIN` | `start/stop` | handle returned | PARTIAL | High-level FlexSpin binary is not mailbox-callable. |
-| `s2_03str.spin2` | `S2_03STR.BIN` | `spin2.start` | hang, rebooted | FAIL | High-level Spin2 image is not a Berry mailbox/PASM service. |
-| `s2_04var.spin2` | `S2_04VAR.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_05bits.spin2` | `S2_05BIT.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_06expr.spin2` | `S2_06EXP.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_07flow.spin2` | `S2_07FLO.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_08case.spin2` | `S2_08CAS.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_09loop.spin2` | `S2_09LOO.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_10meth.spin2` | `S2_10MET.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_11multi.spin2` | `S2_11MUL.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_12send.spin2` | `S2_12SEN.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_13recv.spin2` | `S2_13REC.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_14obj.spin2` | `S2_14OBJ.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_15stru.spin2` | `S2_15STR.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_16nest.spin2` | `S2_16NES.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_17fld.spin2` | `S2_17FLD.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_18mem.spin2` | `S2_18MEM.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_19fpm.spin2` | `S2_19FPM.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_20task.spin2` | `S2_20TAS.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_21prep.spin2` | `S2_21PRE.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_22dbg.spin2` | `S2_22DBG.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_23pin.spin2` | `S2_23PIN.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_24clk.spin2` | `S2_24CLK.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_25pasm.spin2` | `S2_25PAS.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_26dat.spin2` | `S2_26DAT.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_27dit.spin2` | `S2_27DIT.BIN` | `spin2.start` | hang, rebooted | FAIL | Same high-level image incompatibility. |
-| `s2_chld.spin2` | `S2_CHLD.BIN` | `spin2.start` | hang, rebooted | FAIL | Child object compile artifact, not a mailbox service. |
+| `s2_01con.spin2` | `S2_01CON.BIN` | `safe rejection` | `value_error` | PASS | High-level FlexSpin image is non-relocatable; loader refuses it. |
+| `s2_02enum.spin2` | `S2_02ENU.BIN` | `safe rejection` | `value_error` | PASS | High-level FlexSpin image is non-relocatable; loader refuses it. |
+| `s2_03str.spin2` | `S2_03STR.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_04var.spin2` | `S2_04VAR.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_05bits.spin2` | `S2_05BIT.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_06expr.spin2` | `S2_06EXP.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_07flow.spin2` | `S2_07FLO.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_08case.spin2` | `S2_08CAS.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_09loop.spin2` | `S2_09LOO.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_10meth.spin2` | `S2_10MET.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_11multi.spin2` | `S2_11MUL.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_12send.spin2` | `S2_12SEN.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_13recv.spin2` | `S2_13REC.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_14obj.spin2` | `S2_14OBJ.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_15stru.spin2` | `S2_15STR.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_16nest.spin2` | `S2_16NES.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_17fld.spin2` | `S2_17FLD.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_18mem.spin2` | `S2_18MEM.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_19fpm.spin2` | `S2_19FPM.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_20task.spin2` | `S2_20TAS.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_21prep.spin2` | `S2_21PRE.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_22dbg.spin2` | `S2_22DBG.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_23pin.spin2` | `S2_23PIN.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_24clk.spin2` | `S2_24CLK.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_25pasm.spin2` | `S2_25PAS.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_26dat.spin2` | `S2_26DAT.BIN` | `safe rejection` | `value_error` | PASS | Previously hung; now rejected before cog start. |
+| `s2_27dit.spin2` | `S2_27DIT.BIN` | `start/info/stop` | `abi=standalone` | PASS | Raw standalone PASM image; not mailbox-callable. |
+| `s2_chld.spin2` | `S2_CHLD.BIN` | `safe rejection` | `value_error` | PASS | High-level child-object image is non-relocatable; loader refuses it. |
 
 ## Follow-Up From Failures
 
-The `mb_*.BIN` runtime suite is now the hardware-validated test suite for
+The `mb_*.BIN` runtime suite remains the hardware-validated test suite for
 `spin2.start()` and `spin2.call()`.
 
-The `s2_*.spin2` files remain valuable language feature examples, but their
-FlexSpin-generated high-level binaries should be treated as compile artifacts
-until the `spin2` module grows support for FlexSpin's full high-level program
-startup ABI. Running those images as raw PASM/mailbox services is the wrong
-entry convention and can hang the board.
+The `s2_*.spin2` files are compile-coverage examples, not callable Berry
+services. The high-level FlexSpin artifacts are absolute Hub-address images, so
+the dynamic heap loader rejects them with `value_error`. This is the supported
+high-level image incompatibility behavior until a future fixed-address or
+relocating loader exists. `s2_27dit.spin2` remains a raw standalone PASM
+start/info/stop test.

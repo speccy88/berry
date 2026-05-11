@@ -235,13 +235,14 @@ Supported API:
 
 #### `spin2` Loader Prototype
 
-The `spin2` module is the first path for running compatible Spin2/PASM binaries from Berry. Binaries live on the SD card under `/spin2` by default and use the documented integer mailbox convention.
+The `spin2` module is the first path for running Spin2/PASM binaries from Berry. Binaries live on the SD card under `/spin2` by default. Berry-callable binaries use the documented integer mailbox convention. Raw standalone PASM images can be started with `PTRA == nil`; high-level FlexSpin images are detected and rejected with `value_error` because their `.BIN` payloads contain absolute Hub addresses and are not relocatable from Berry's heap loader.
 
 ```berry
 import spin2
 
 print(spin2.list())
 handle = spin2.start("MBOXDEMO.BIN")
+print(spin2.info(handle))
 print(spin2.call(handle, 1, 123))
 spin2.stop(handle)
 ```

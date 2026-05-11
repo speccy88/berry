@@ -57,9 +57,16 @@ the source-to-binary mapping in `spin2/build/MANIFEST.TXT`, and moves FlexSpin
 ## Spin2 Feature Examples
 
 The `s2_*.spin2` files are intentionally small and heavily commented. They are
-compiled to prove FlexSpin coverage, but their high-level FlexSpin binaries are
-not Berry mailbox services and should not be treated as `spin2.call()` runtime
-tests.
+compiled to prove FlexSpin coverage. Their high-level FlexSpin binaries are not
+Berry mailbox services and are not relocatable when loaded from Berry's heap,
+because FlexSpin emits absolute Hub-address references for standalone images.
+The runtime guard test expects `spin2.start()` to raise `value_error` for those
+images instead of launching a cog that can hang the board. The bundled
+high-level `S2_*.BIN` examples are refused before file load; the loader also
+detects the normal FlexSpin high-level boot layout for other binaries. Raw
+standalone PASM images without that boot layout may still run as
+`abi == "standalone"` with `PTRA == nil`. These files should not be treated as
+`spin2.call()` tests.
 
 ```text
 s2_01con  CON numeric, binary, character, float constants
@@ -134,6 +141,10 @@ mb_20pat   event/interrupt syntax matrix, runtime-safe return
 `examples/p2_spin2_mailbox_suite.be` starts each `MB_*.BIN`, calls method 1 with
 sample integer arguments, prints the result, and stops the cog. Hardware results
 for the generated binaries are recorded in `spin2/SPIN2_BINARY_TEST_REPORT.md`.
+
+`examples/p2_spin2_standalone_suite.be` checks that high-level `S2_*.BIN`
+images are rejected safely with `value_error`, then starts and stops the raw
+standalone PASM image without invoking the mailbox call path.
 
 ## Compile-Only PASM2 Matrix
 

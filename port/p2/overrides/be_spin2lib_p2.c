@@ -19,6 +19,7 @@ enum {
     SPIN2_ARGS_MAX = 8,
     SPIN2_METHOD_MAX = 64,
     SPIN2_ERROR_MAX = 96,
+    SPIN2_FLEXSPIN_ENTRY_OFFSET = 0x404,
     SPIN2_DEFAULT_CALL_TIMEOUT_MS = 1000
 };
 
@@ -50,6 +51,7 @@ typedef struct spin2_handle {
     uint32_t method_count;
     uint32_t *method_table;
     spin2_mailbox *mailbox;
+    int mailbox_abi;
     char filename[SPIN2_PATH_MAX];
 } spin2_handle;
 
@@ -109,12 +111,58 @@ static int spin2_ext_eq(const char *name, const char *ext)
     return 1;
 }
 
+static int spin2_name_eq(const char *name, const char *expected)
+{
+    size_t i;
+
+    if (!name || !expected) {
+        return 0;
+    }
+    for (i = 0; name[i] && expected[i]; ++i) {
+        if (spin2_ascii_lower((unsigned char)name[i]) != spin2_ascii_lower((unsigned char)expected[i])) {
+            return 0;
+        }
+    }
+    return name[i] == '\0' && expected[i] == '\0';
+}
+
+static int spin2_name_starts_with(const char *name, const char *prefix)
+{
+    size_t i;
+
+    if (!name || !prefix) {
+        return 0;
+    }
+    for (i = 0; prefix[i]; ++i) {
+        if (!name[i] || spin2_ascii_lower((unsigned char)name[i]) != spin2_ascii_lower((unsigned char)prefix[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int spin2_is_binary_name(const char *name)
 {
     return name &&
         (spin2_ext_eq(name, ".bin") ||
          spin2_ext_eq(name, ".binary") ||
          spin2_ext_eq(name, ".p2"));
+}
+
+static const char *spin2_basename(const char *path)
+{
+    const char *base = path;
+
+    if (!path) {
+        return "";
+    }
+    while (*path) {
+        if (*path == '/' || *path == '\\') {
+            base = path + 1;
+        }
+        ++path;
+    }
+    return base;
 }
 
 static int spin2_join_path(const char *dir, const char *file, char *out, size_t out_size)
@@ -202,6 +250,7 @@ static void spin2_parse_method_table(spin2_handle *handle)
 
     handle->method_count = 0;
     handle->method_table = NULL;
+    handle->mailbox_abi = 0;
     if (!handle->program || handle->program_size < sizeof(uint32_t)) {
         return;
     }
@@ -214,6 +263,7 @@ static void spin2_parse_method_table(spin2_handle *handle)
     }
     handle->method_count = count;
     handle->method_table = (uint32_t *)(void *)(handle->program + sizeof(uint32_t));
+    handle->mailbox_abi = 1;
 }
 
 static uintptr_t spin2_resolve_method_address(spin2_handle *handle, uint32_t raw)
@@ -231,6 +281,32 @@ static uintptr_t spin2_resolve_method_address(spin2_handle *handle, uint32_t raw
         return (uintptr_t)(handle->program + raw);
     }
     return (uintptr_t)raw;
+}
+
+static int spin2_is_flexspin_standalone(const spin2_handle *handle)
+{
+    uint32_t first;
+    uint32_t entry;
+
+    if (!handle || !handle->program || handle->program_size <= SPIN2_FLEXSPIN_ENTRY_OFFSET + sizeof(uint32_t)) {
+        return 0;
+    }
+    memcpy(&first, handle->program, sizeof(first));
+    memcpy(&entry, handle->program + SPIN2_FLEXSPIN_ENTRY_OFFSET, sizeof(entry));
+
+    /*
+     * FlexSpin high-level .BIN files include a hub boot area at 0x400 and a
+     * COGINIT launcher at 0x404. Older copies on SD may have non-zero clock
+     * header words at the start, so do not depend only on long 0 being zero.
+     */
+    return (first == 0u && entry != 0u) || entry == 0xf20ff000u;
+}
+
+static int spin2_is_known_highlevel_image(const char *file)
+{
+    const char *name = spin2_basename(file);
+
+    return spin2_name_starts_with(name, "S2_") && !spin2_name_eq(name, "S2_27DIT.BIN");
 }
 
 static int spin2_load_file(const char *path, unsigned char **data, size_t *size)
@@ -324,6 +400,7 @@ static int m_spin2_start(bvm *vm)
     spin2_handle *handle;
     size_t entry_offset = 0;
     void *entry;
+    void *start_par;
     int cog;
 
     if (be_top(vm) < 1 || !be_isstring(vm, 1)) {
@@ -333,6 +410,9 @@ static int m_spin2_start(bvm *vm)
     par = spin2_optional_pointer(vm, 2);
     if (spin2_join_path(g_spin2_path, file, path, sizeof(path)) != 0) {
         be_raise(vm, "value_error", "spin2 path is too long");
+    }
+    if (spin2_is_known_highlevel_image(file)) {
+        be_raise(vm, "value_error", "high-level FlexSpin image is not relocatable; use a mailbox binary");
     }
 
     slot = spin2_alloc_handle();
@@ -344,23 +424,28 @@ static int m_spin2_start(bvm *vm)
         spin2_free_handle(handle);
         be_raise(vm, "io_error", "failed to load spin2 binary");
     }
-    handle->mailbox = (spin2_mailbox *)calloc(1u, sizeof(spin2_mailbox));
-    if (!handle->mailbox) {
+    if (spin2_is_flexspin_standalone(handle)) {
         spin2_free_handle(handle);
-        be_raise(vm, "memory_error", "failed to allocate spin2 mailbox");
+        be_raise(vm, "value_error", "high-level FlexSpin image is not relocatable; use a mailbox binary");
     }
-    handle->mailbox->state = SPIN2_MBOX_IDLE;
-    handle->mailbox->par = par;
     spin2_parse_method_table(handle);
     if (handle->method_count > 0u) {
         entry_offset = (size_t)(handle->method_count + 1u) * sizeof(uint32_t);
+        handle->mailbox = (spin2_mailbox *)calloc(1u, sizeof(spin2_mailbox));
+        if (!handle->mailbox) {
+            spin2_free_handle(handle);
+            be_raise(vm, "memory_error", "failed to allocate spin2 mailbox");
+        }
+        handle->mailbox->state = SPIN2_MBOX_IDLE;
+        handle->mailbox->par = par;
     }
     if (entry_offset >= handle->program_size) {
         entry_offset = 0;
     }
     entry = handle->program + entry_offset;
+    start_par = handle->mailbox_abi ? (void *)handle->mailbox : NULL;
 
-    cog = _cogstart_PASM(ANY_COG, entry, handle->mailbox);
+    cog = _cogstart_PASM(ANY_COG, entry, start_par);
     if (cog < 0) {
         spin2_free_handle(handle);
         be_raise(vm, "runtime_error", "no free cog for spin2 binary");
@@ -382,7 +467,7 @@ static int m_spin2_call(bvm *vm)
     bint waited = 0;
     bint timeout_ms = SPIN2_DEFAULT_CALL_TIMEOUT_MS;
 
-    if (!handle->mailbox || handle->cog < 0) {
+    if (!handle->mailbox_abi || !handle->mailbox || handle->cog < 0) {
         be_raise(vm, "runtime_error", "spin2 object is not running");
     }
     if (method_id < 0 || (uint32_t)method_id >= handle->method_count || !handle->method_table) {
@@ -454,6 +539,11 @@ static int m_spin2_info(bvm *vm)
 
     be_pushstring(vm, "methods");
     be_pushint(vm, (bint)handle->method_count);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+
+    be_pushstring(vm, "abi");
+    be_pushstring(vm, handle->mailbox_abi ? "mailbox" : "standalone");
     be_setindex(vm, -3);
     be_pop(vm, 2);
 

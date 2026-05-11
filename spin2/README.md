@@ -13,7 +13,7 @@ filename. FlexSpin `.p2asm` listings are kept separately in
 
 ## Example Suite
 
-- `s2_01con.spin2` through `s2_27dit.spin2`: compile-time Spin2 language feature examples from the v54 documentation, limited to the subset FlexSpin 7.6.6 can compile. Their high-level FlexSpin binaries are not mailbox-callable with `spin2.call()`.
+- `s2_01con.spin2` through `s2_27dit.spin2`: Spin2 language feature examples from the v54 documentation, limited to the subset FlexSpin 7.6.6 can compile. The high-level FlexSpin binaries are compile-coverage artifacts; Berry rejects them at runtime because they are not relocatable from the heap loader. The raw PASM `s2_27dit.spin2` binary remains a standalone start/stop test.
 - `mb_01alu.spin2` through `mb_20pat.spin2`: Berry-callable PASM2 mailbox binaries. Start them with `spin2.start()` and call method `1`.
 - `p2instmx.spin2`: compile-only PASM2 instruction matrix for broad mnemonic coverage.
 - `common/berry_mbox_service.spin2h`: shared PASM2 mailbox service used by the callable examples.
@@ -62,10 +62,10 @@ The broader Berry-side smoke script can be run from the repo examples folder:
 
 ```sh
 berry examples/p2_spin2_mailbox_suite.be
+berry examples/p2_spin2_standalone_suite.be
 ```
 
-or paste/run the file contents from `examples/p2_spin2_mailbox_suite.be` at the
-P2 Berry prompt.
+or paste/run the file contents from the examples at the P2 Berry prompt.
 
 ## v1 Mailbox Convention
 
@@ -99,3 +99,13 @@ long method_1_entry
 Berry starts the PASM service after the table, so callable PASM binaries in this
 tree assemble their actual service code at `ORG 0` and treat the table as Berry
 metadata rather than executable cog code.
+
+High-level FlexSpin images do not have the mailbox table, and their `.BIN`
+payloads contain absolute Hub-address references. Berry loads Spin2 payloads
+from heap memory, so those images are not relocatable. The loader rejects the
+bundled high-level `S2_*.BIN` examples before file load and detects the normal
+FlexSpin high-level boot layout for other binaries, raising `value_error`
+rather than starting a cog that can hang the board. Raw standalone PASM images
+that do not use that boot layout start with `PTRA == nil`;
+`spin2.info(handle)["abi"]` returns
+`standalone` for those images and `mailbox` for Berry-callable binaries.
