@@ -34,7 +34,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - `import p2`; `print(p2.cogid())` -> `0`
   - `import i2c`; `i2c.init(25,24,400)` returns to the prompt
   - `import spi`; `spi.init(10,11,12,13,0,1000)` returns to the prompt
-  - `import rtos`; locks, queues, flags, timers, callbacks, debug helpers, and `spawn("noop")` work
+  - `import rtos`; locks, queues, flags, timers, callbacks, debug helpers, and worker-backed spawn work
   - `import spin2`; `print(spin2.path())` -> `/spin2`
 - P2 pins on the no-PSRAM P2 Edge path:
   - `p2.pinmode(56,p2.OUTPUT); p2.low(56); print(p2.read(56))` -> `0`
@@ -51,7 +51,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - `rtos.event_set(1); print(rtos.event_wait(1,10)); rtos.event_clear(1)` -> `true`
   - `t=rtos.timer_start(10); rtos.timer_wait(t); print(rtos.timer_expired(t))` -> `true`
   - deferred callback dispatch with `rtos.irq_enable(0,"on_rtos")`, `rtos.event_set(1)`, `print(rtos.irq_poll())` -> `1`
-  - `cog=rtos.cog_start("noop",7); rtos.sleep_ms(50); print(rtos.state())` -> `ready`
+  - `rtos.load(source); cog=rtos.cog_start("worker_fn",7)` starts explicitly loaded worker code on the worker cog
 - `spin2.path()` returns `/spin2`; `spin2.list()` returned `[]` when no compatible binaries were present on the SD-visible path
 - `os.listdir("/")` returned to the prompt and produced `[]` on the current media/session
 - `spi.read(1)` returns a one-byte raw string after `spi.init(10,11,12,13,0,1000)`; full JEDEC validation still needs a known attached SPI target

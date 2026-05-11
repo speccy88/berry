@@ -156,26 +156,26 @@ Goal: keep the worker backend as an internal implementation detail behind the RT
 - Do not transfer Berry closures or VM-owned object references across cogs.
 - Continue name-based dispatch for v1: function name + integer args.
 - `rtos.cog_start(name, ...int_args)` / `rtos.spawn(...)`: launch work on the worker VM.
+- `rtos.load(source)`: load worker task definitions into the worker VM before spawn.
 - `rtos.stop()`, `rtos.state()`, `rtos.error()`: manage the worker-backed task cog.
-- Ensure worker-side script/function environment is explicit.
-- Make `blink(pin, delay_ms)` demo reliable:
+- Ensure worker-side script/function environment is explicit; no hidden built-in task functions.
+- Make worker-task examples define their worker code in the same `.be` file:
   ```berry
-  def blink(pin, sleep_ms)
-      p2.pinmode(pin, p2.OUTPUT)
-
-      while true
-          p2.high(pin)
-          rtos.sleep_ms(sleep_ms)
-
-          p2.low(pin)
-          rtos.sleep_ms(sleep_ms)
-      end
-  end
+  worker_source =
+      "import rtos\n" +
+      "def packet_reader(delay_ms)\n" +
+      "    while true\n" +
+      "        rtos.put('rx_packets', 1)\n" +
+      "        rtos.sleep_ms(delay_ms)\n" +
+      "    end\n" +
+      "end\n"
   ```
-- Test the worker-side `blink` dispatch from the main VM:
+- Test worker-side dispatch from the main VM:
   ```berry
   import rtos
-  rtos.cog_start("blink", 56, 250)
+  rtos.channel("rx_packets")
+  rtos.load(worker_source)
+  rtos.cog_start("packet_reader", 50)
   ```
 - `p2.cog_stop(cog_id)` remains a low-level direct cog stop helper; prefer `rtos.stop()` for worker-owned cogs.
 
@@ -281,7 +281,7 @@ Status: examples added for the implemented v1 APIs and organized by module.
 - `examples/p2/timing_helpers.be`: low-level P2 timing plus `rtos.sleep_ms()`.
 - `examples/i2c/scan.be`: BMP180/I2C scan on SDA 24, SCL 25.
 - `examples/spi/jedec.be`: SPI flash JEDEC ID read.
-- `examples/rtos/`: RTOS smoke, spawn, queue, and timer examples.
+- `examples/rtos/`: one-feature-at-a-time cross-cog RTOS examples.
 - `examples/spin2/`: list Spin2 binaries and run mailbox/standalone suites from SD.
 
 ## Phase 11: Tests And Hardware Verification

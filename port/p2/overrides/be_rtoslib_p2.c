@@ -432,6 +432,24 @@ static int m_rtos_spawn(bvm *vm)
     be_return(vm);
 }
 
+static int m_rtos_load(bvm *vm)
+{
+    const char *source;
+    const char *error = NULL;
+
+    if (be_top(vm) < 1 || !be_isstring(vm, 1)) {
+        be_raise(vm, "type_error", "source must be a string");
+    }
+    source = be_tostring(vm, 1);
+    if (berry_worker_start_cog(&error) < 0) {
+        be_raise(vm, "runtime_error", error ? error : "failed to start worker cog");
+    }
+    if (berry_worker_load_source(source, &error) != 0) {
+        be_raise(vm, "runtime_error", error ? error : "failed to load worker source");
+    }
+    be_return_nil(vm);
+}
+
 static int m_rtos_stop(bvm *vm)
 {
     (void)vm;
@@ -940,7 +958,8 @@ static int m_rtos_member(bvm *vm)
 {
     const char *name = be_tostring(vm, 1);
 
-    if (!strcmp(name, "spawn")) be_pushntvfunction(vm, m_rtos_spawn);
+    if (!strcmp(name, "load")) be_pushntvfunction(vm, m_rtos_load);
+    else if (!strcmp(name, "spawn")) be_pushntvfunction(vm, m_rtos_spawn);
     else if (!strcmp(name, "cog_start")) be_pushntvfunction(vm, m_rtos_spawn);
     else if (!strcmp(name, "thread")) be_pushntvfunction(vm, m_rtos_spawn);
     else if (!strcmp(name, "new")) be_pushntvfunction(vm, m_rtos_spawn);

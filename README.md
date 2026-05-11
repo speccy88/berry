@@ -129,18 +129,27 @@ p2.status()
 
 #### `rtos` Module
 
-The `rtos` module owns P2 concurrency: worker-backed task spawn/cog start, cooperative sleep/yield, hardware locks, named queues, event flags, counter timers, deferred event callbacks, and debug maps. The older experimental `worker` and `threads` modules are no longer exported in the normal P2 profile; their backend pieces are folded under `rtos`.
+The `rtos` module owns P2 concurrency: worker-backed task spawn/cog start, cooperative sleep/yield, hardware locks, named queues, event flags, counter timers, deferred event callbacks, and debug maps. The older experimental `worker` and `threads` modules are no longer exported in the normal P2 profile; their backend pieces are folded under `rtos`. The current implementation supports the main VM plus one worker VM/cog, with shared Hub-RAM queues/events/locks shaped for a later multi-worker heap expansion.
 
 ```berry
 import rtos
 
-cog = rtos.cog_start("blink", 56, 250)
-print(rtos.state())
-rtos.stop()
+worker_source =
+    "import rtos\n" +
+    "def packet_reader(delay_ms)\n" +
+    "    var seq = 0\n" +
+    "    while true\n" +
+    "        seq += 1\n" +
+    "        rtos.put('sensor', seq)\n" +
+    "        rtos.sleep_ms(delay_ms)\n" +
+    "    end\n" +
+    "end\n"
 
 rtos.channel("sensor")
-rtos.put("sensor", 123)
-print(rtos.get("sensor", 10))
+rtos.load(worker_source)
+rtos.spawn("packet_reader", 100)
+print(rtos.get("sensor", 500))
+rtos.stop()
 
 lock = rtos.new_lock()
 rtos.lock(lock)

@@ -66,23 +66,27 @@ Current hardware verification examples:
 - `print(i2c.writeread(0x77, "\xD0", 1))` -> `U` (`0x55`, BMP180 chip id)
 - `import spi; spi.init(10, 11, 12, 13, 0, 1000)` is live-verified
 - `import rtos; rtos.channel("a"); rtos.put("a",123); print(rtos.get("a", 10))` -> `123`
-- `cog=rtos.cog_start("noop",7); rtos.sleep_ms(50); print(rtos.state())` -> `ready`
+- `rtos.load(source); cog=rtos.cog_start("worker_fn",7)` starts an explicitly loaded worker function on the worker cog
 - `import spin2; print(spin2.path()); print(spin2.list())` -> `/spin2` and `[]` on the current SD-visible path
 
-Worker-side blink method used by `rtos.spawn()` and `rtos.cog_start()`:
+Worker-side methods are loaded explicitly into the worker VM before `rtos.spawn()` or `rtos.cog_start()`:
 
 ```berry
-def blink(pin, sleep_ms)
-    p2.pinmode(pin, p2.OUTPUT)
+worker_source =
+    "import rtos\n" +
+    "def packet_reader(delay_ms)\n" +
+    "    var seq = 0\n" +
+    "    while true\n" +
+    "        seq += 1\n" +
+    "        rtos.put('rx_packets', seq)\n" +
+    "        rtos.sleep_ms(delay_ms)\n" +
+    "    end\n" +
+    "end\n"
 
-    while true
-        p2.high(pin)
-        rtos.sleep_ms(sleep_ms)
-
-        p2.low(pin)
-        rtos.sleep_ms(sleep_ms)
-    end
-end
+rtos.channel("rx_packets")
+rtos.load(worker_source)
+rtos.spawn("packet_reader", 50)
+print(rtos.get("rx_packets", 250))
 ```
 
 Examples:
@@ -105,9 +109,15 @@ the current Catalina COMPACT build: Berry callbacks are dispatched only from
 normal Berry code via `rtos.irq_poll()`, never directly from an interrupt
 service routine.
 
+Current limitation: this implementation supports the main VM plus one
+worker VM/cog. The queue, event, timer, and lock objects are shared Hub-RAM
+state and are written so additional worker VMs can use the same API once the
+P2 heap layer grows multiple worker arenas.
+
 Task helpers:
 
-- `rtos.spawn(name, ...int_args) -> int`: start the worker cog if needed and run a worker-side function by name with up to eight integer arguments. The current worker VM has its own environment and preloads `noop` and `blink`; it cannot see functions defined in the main VM script.
+- `rtos.load(source)`: load Berry source into the worker VM. Put worker task functions here; functions defined only in the main VM are not visible to the worker VM.
+- `rtos.spawn(name, ...int_args) -> int`: start the worker cog if needed and run a loaded worker-side function by name with up to eight integer arguments.
 - `rtos.cog_start(name, ...int_args) -> int`: alias for `rtos.spawn()`.
 - `rtos.thread(name, ...int_args)` / `rtos.new(name, ...int_args)`: aliases for `rtos.spawn()` for thread-style code.
 - `rtos.stop()`, `rtos.state()`, `rtos.error()`: inspect or stop the worker-backed task cog.
@@ -139,9 +149,13 @@ Debug helpers:
 
 RTOS examples live in `../../../examples/rtos/`:
 
-- `smoke.be`: locks, queues, events, timers, deferred callbacks, and debug maps.
-- `spawn_blink.be`: worker-backed LED blink through `rtos.spawn()`.
-- `queue_timer.be`: queue draining and timer polling.
+- `queue_worker_producer.be`: worker cog produces packet IDs into a queue consumed by the main VM.
+- `event_worker_signal.be`: worker cog signals the main VM with an event bit after queueing data.
+- `lock_serial_request.be`: worker cog requests main-cog serial output through a queue guarded by a lock.
+- `timer_worker_heartbeat.be`: worker cog uses RTOS timers to send heartbeat messages.
+- `sleep_ms_worker_blink.be`: worker cog blinks a pin with `rtos.sleep_ms()`.
+- `cog_start_worker_loop.be`: `rtos.cog_start()` launches an explicitly loaded worker function.
+- `debug_tasks.be`: inspect cog/task state while a worker task is running.
 
 Reserved-pin note on the current Catalina `P2_EDGE` path:
 

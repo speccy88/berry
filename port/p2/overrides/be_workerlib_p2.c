@@ -30,21 +30,7 @@ static int g_worker_cog = -1;
 static const char g_worker_script[] =
     "import p2\n"
     "import rtos\n"
-    "\n"
-    "def noop(value)\n"
-    "    return value\n"
-    "end\n"
-    "\n"
-    "def blink(pin, delay_ms)\n"
-    "    p2.smartpin_clear(pin)\n"
-    "    p2.pin_output(pin)\n"
-    "    while true\n"
-    "        p2.pin_high(pin)\n"
-    "        rtos.sleep_ms(delay_ms)\n"
-    "        p2.pin_low(pin)\n"
-    "        rtos.sleep_ms(delay_ms)\n"
-    "    end\n"
-    "end\n";
+    "\n";
 
 static void worker_set_error(berry_worker_mailbox *mailbox, const char *message)
 {
@@ -108,7 +94,23 @@ static int worker_load_script(bvm *vm, berry_worker_mailbox *mailbox)
     return BE_OK;
 }
 
-static void worker_dispatch(bvm *vm, berry_worker_mailbox *mailbox)
+static void worker_load_user_source(bvm *vm, berry_worker_mailbox *mailbox)
+{
+    int res;
+
+    mailbox->state = BERRY_WORKER_RUNNING;
+    mailbox->error[0] = '\0';
+    res = be_dostring(vm, mailbox->source);
+    if (res != BE_OK) {
+        worker_capture_exception(vm, mailbox);
+        mailbox->state = BERRY_WORKER_ERROR;
+        return;
+    }
+    be_pop(vm, be_top(vm));
+    mailbox->state = BERRY_WORKER_READY;
+}
+
+static void worker_exec_function(bvm *vm, berry_worker_mailbox *mailbox)
 {
     int i;
     int res;
@@ -138,6 +140,21 @@ static void worker_dispatch(bvm *vm, berry_worker_mailbox *mailbox)
         be_pop(vm, 1);
     }
     mailbox->state = BERRY_WORKER_READY;
+}
+
+static void worker_dispatch(bvm *vm, berry_worker_mailbox *mailbox)
+{
+    int command = mailbox->command;
+
+    mailbox->command = BERRY_WORKER_CMD_NONE;
+    if (command == BERRY_WORKER_CMD_LOAD) {
+        worker_load_user_source(vm, mailbox);
+    } else if (command == BERRY_WORKER_CMD_EXEC) {
+        worker_exec_function(vm, mailbox);
+    } else {
+        worker_set_error(mailbox, "unknown worker command");
+        mailbox->state = BERRY_WORKER_ERROR;
+    }
 }
 
 static void worker_entry(void *arg)
@@ -271,12 +288,72 @@ int berry_worker_exec_ints(const char *name, int argc, const int *argv, const ch
     }
 
     memset((void *)&g_worker_mailbox, 0, sizeof(g_worker_mailbox));
+    g_worker_mailbox.command = BERRY_WORKER_CMD_EXEC;
     memcpy(g_worker_mailbox.name, name, len + 1);
     g_worker_mailbox.argc = argc;
     for (i = 0; i < argc; ++i) {
         g_worker_mailbox.argv[i] = argv ? argv[i] : 0;
     }
     g_worker_mailbox.state = BERRY_WORKER_REQUEST;
+    return 0;
+}
+
+int berry_worker_load_source(const char *source, const char **error)
+{
+    size_t len;
+    int waited = 0;
+
+    if (error) {
+        *error = NULL;
+    }
+    if (!g_worker_started || g_worker_cog < 0) {
+        if (error) {
+            *error = "worker has not been started";
+        }
+        return -1;
+    }
+    if (g_worker_mailbox.state != BERRY_WORKER_READY) {
+        if (error) {
+            *error = "worker is not ready";
+        }
+        return -1;
+    }
+    if (!source) {
+        if (error) {
+            *error = "source is required";
+        }
+        return -1;
+    }
+    len = strlen(source);
+    if (len == 0 || len > BERRY_WORKER_SOURCE_MAX) {
+        if (error) {
+            *error = "worker source is empty or too long";
+        }
+        return -1;
+    }
+
+    memset((void *)&g_worker_mailbox, 0, sizeof(g_worker_mailbox));
+    g_worker_mailbox.command = BERRY_WORKER_CMD_LOAD;
+    memcpy(g_worker_mailbox.source, source, len + 1);
+    g_worker_mailbox.state = BERRY_WORKER_REQUEST;
+
+    while (g_worker_mailbox.state == BERRY_WORKER_REQUEST ||
+           g_worker_mailbox.state == BERRY_WORKER_RUNNING) {
+        if (waited >= BERRY_WORKER_START_TIMEOUT_MS) {
+            if (error) {
+                *error = "worker source load timed out";
+            }
+            return -1;
+        }
+        _waitms(1);
+        ++waited;
+    }
+    if (g_worker_mailbox.state == BERRY_WORKER_ERROR) {
+        if (error) {
+            *error = g_worker_mailbox.error;
+        }
+        return -1;
+    }
     return 0;
 }
 
