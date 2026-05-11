@@ -327,16 +327,20 @@ print(open("/TMPD/TEST.TXT", "r").read())
 
 #### Propeller 2 Hardware Helpers
 
-Low-level P2 helpers are still exposed as `prop2_*` globals for clocks, counters, pins, smartpins, CORDIC, locks, and cog control. These are useful when you want board access without writing C first or when a helper has not yet moved into a friendlier module.
+Propeller 2 hardware helpers are exposed through the `p2` module for clocks, counters, pins, smartpins, CORDIC, locks, attention, and cog control. The older `prop2_*` globals remain available for compatibility, but new examples should use `p2`.
 
 ```berry
-print(prop2_clock_freq())
-print(prop2_ticks())
-prop2_smartpin_clear(56)
-prop2_pin_output(56)
-prop2_pin_write(56, 0) # active-low LED on the tested no-PSRAM board
-print(prop2_pin_read(56))
+import p2
+
+print(p2.clock_freq())
+print(p2.ticks())
+p2.smartpin_clear(56)
+p2.pin_output(56)
+p2.pin_write(56, 0) # active-low LED on the tested no-PSRAM board
+print(p2.pin_read(56))
 ```
+
+P2 module examples live under `examples/p2/`; other modules use their own directories such as `examples/i2c/`, `examples/spi/`, `examples/worker/`, `examples/threads/`, `examples/rtos/`, and `examples/spin2/`. General Berry examples such as quicksort, REPL, and string handling live under `examples/core/`.
 
 On the tested no-PSRAM P2 Edge setup, keep Berry GPIO and bus examples off the SD pins `58..61` and serial pins `62..63`. Pins `56` and `57` are left available because they are exposed as LEDs on that board.
 

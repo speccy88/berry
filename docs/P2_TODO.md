@@ -267,27 +267,32 @@ Goal: define a simple ABI we can implement and document.
 
 ## Phase 9: Smart Pin And Optional P2 Features
 
-Status: low-level `prop2_*` smart-pin helpers exist; friendly `p2` wrappers are future work except for `p2.beep`.
+Status: low-level helper coverage is now integrated into `p2.*`, including smart-pin, counter, CORDIC, lock, attention, and raw cog helpers. Legacy `prop2_*` globals remain available for compatibility.
 
-- Smart pin helpers for PWM.
-- Smart pin helpers for ADC/DAC.
+- Friendly PWM examples on top of the smart-pin helpers.
+- Friendly ADC/DAC examples on top of the smart-pin helpers.
 - Frequency measurement.
-- Counter/timestamp functions.
-- `p2.beep(pin, freq, ms)` or `p2.beep(freq, ms)` once pin ownership is settled.
+- Additional counter/timestamp examples.
+- `p2.beep(pin, freq, ms)` tuning once pin ownership is settled.
 - Keep these behind small, focused APIs rather than a giant hardware abstraction layer.
 
 ## Phase 10: Examples And Mini Tutorials
 
-Status: examples added for the implemented v1 APIs.
+Status: examples added for the implemented v1 APIs and organized by module.
 
-- `examples/p2_blink.be`: LED blink on pins 56/57.
-- `examples/p2_i2c_scan.be`: BMP180/I2C scan on SDA 24, SCL 25.
-- `examples/p2_spi_jedec.be`: SPI flash JEDEC ID read.
-- `examples/p2_worker_blink.be`: second-cog worker blink.
-- `examples/p2_cog_start.be`: `p2.cog_start()` worker wrapper.
-- `examples/p2_threads_channel.be`: simple channel put/get.
-- `examples/p2_spin2_list.be`: list Spin2 binaries on SD.
-- `examples/p2_spin2_mailbox_demo.be`: start/call/stop the bundled mailbox demo.
+- `examples/core/`: general Berry examples such as quicksort, REPL, and string handling.
+- `examples/p2/blink.be`: LED blink on pins 56/57.
+- `examples/p2/hardware_helpers.be`: clocks, counters, CORDIC, locks, attention, and cog status through `p2`.
+- `examples/p2/pin_helpers.be`: raw pin helpers through `p2`.
+- `examples/p2/smartpin_helpers.be`: smart-pin helper calls through `p2`.
+- `examples/p2/timing_helpers.be`: wait and sleep helpers through `p2`.
+- `examples/i2c/scan.be`: BMP180/I2C scan on SDA 24, SCL 25.
+- `examples/spi/jedec.be`: SPI flash JEDEC ID read.
+- `examples/worker/blink.be`: second-cog worker blink.
+- `examples/p2/cog_start.be`: `p2.cog_start()` worker wrapper.
+- `examples/threads/channel.be`: simple channel put/get.
+- `examples/rtos/`: RTOS smoke, spawn, queue, and timer examples.
+- `examples/spin2/`: list Spin2 binaries and run mailbox/standalone suites from SD.
 
 ## Phase 11: Tests And Hardware Verification
 

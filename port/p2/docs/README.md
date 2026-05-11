@@ -51,8 +51,8 @@ Current Catalina status on P2 Edge / latest silicon:
 - `bytes('1122')`, `bytes().fromstring('AB')`, `tohex()`, `asstring()`, `readbytes()`, and range slicing are live-verified
 - `json.load()` and `json.dump()` are live-verified
 - SD card access through `open('/HELLO.TXT','r')`, `os.listdir('/')`, `os.mkdir()`, `os.rename()`, `os.remove()`, `os.chdir()`, `os.getcwd()`, and `os.path.*` is live-verified
-- P2 helpers are exposed as `prop2_*` globals for clock, counter, pin, and smart-pin operations
-- friendlier P2 helpers are exposed as `p2.*`
+- P2 helpers are exposed as `p2.*` for clock, counter, pin, smart-pin, CORDIC, lock, attention, and cog operations
+- legacy `prop2_*` globals remain available for compatibility
 - `p2.status()` prints build size, heap usage bars, clock info, and all 8 cog states
 - native bus helpers are exposed as `i2c.*` and `spi.*`
 - the first worker VM path is exposed as `worker.*` and `p2.cog_start()`
@@ -93,15 +93,15 @@ end
 
 Examples:
 
-- `prop2_clock_freq()`
-- `prop2_ticks()`
-- `prop2_ticks64()`
-- `prop2_pin_output(pin)`
-- `prop2_pin_write(pin, value)`
-- `prop2_pin_read(pin)`
-- `prop2_smartpin_write_mode(pin, mode)`
-- `prop2_smartpin_query(pin)`
-- `prop2_smartpin_start(pin, mode, x, y)`
+- `p2.clock_freq()`
+- `p2.ticks()`
+- `p2.ticks64()`
+- `p2.pin_output(pin)`
+- `p2.pin_write(pin, value)`
+- `p2.pin_read(pin)`
+- `p2.smartpin_write_mode(pin, mode)`
+- `p2.smartpin_query(pin)`
+- `p2.smartpin_start(pin, mode, x, y)`
 
 ## RTOS Module
 
@@ -142,9 +142,9 @@ Debug helpers:
 
 RTOS examples live in `../../../examples/rtos/`:
 
-- `rtos_smoke.be`: locks, queues, events, timers, deferred callbacks, and debug maps.
-- `rtos_spawn_blink.be`: worker-backed LED blink through `rtos.spawn()`.
-- `rtos_queue_timer.be`: queue draining and timer polling.
+- `smoke.be`: locks, queues, events, timers, deferred callbacks, and debug maps.
+- `spawn_blink.be`: worker-backed LED blink through `rtos.spawn()`.
+- `queue_timer.be`: queue draining and timer polling.
 
 Reserved-pin note on the current Catalina `P2_EDGE` path:
 

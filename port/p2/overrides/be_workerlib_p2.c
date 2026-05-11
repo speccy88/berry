@@ -28,18 +28,20 @@ static int g_worker_started;
 static int g_worker_cog = -1;
 
 static const char g_worker_script[] =
+    "import p2\n"
+    "\n"
     "def noop(value)\n"
     "    return value\n"
     "end\n"
     "\n"
     "def blink(pin, delay_ms)\n"
-    "    prop2_smartpin_clear(pin)\n"
-    "    prop2_pin_output(pin)\n"
+    "    p2.smartpin_clear(pin)\n"
+    "    p2.pin_output(pin)\n"
     "    while true\n"
-    "        prop2_pin_high(pin)\n"
-    "        prop2_sleep_ms(delay_ms)\n"
-    "        prop2_pin_low(pin)\n"
-    "        prop2_sleep_ms(delay_ms)\n"
+    "        p2.pin_high(pin)\n"
+    "        p2.sleep_ms(delay_ms)\n"
+    "        p2.pin_low(pin)\n"
+    "        p2.sleep_ms(delay_ms)\n"
     "    end\n"
     "end\n";
 

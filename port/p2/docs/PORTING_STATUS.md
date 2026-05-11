@@ -117,15 +117,15 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - `i2c.init(25, 24, 100); print(i2c.scan())` -> `[119]`
   - `print(i2c.writeread(0x77, "\xD0", 1))` -> `U` (`0x55`, BMP180 chip id)
   - `spi.init(10, 11, 12, 13, 0, 1000)` is live-verified
-- the current exposed P2 helpers are live-verified through `prop2_*` globals, including:
-  - clock and counter helpers such as `prop2_clock_freq()`, `prop2_ticks()`, `prop2_ticks64()`
-  - wait/sleep helpers such as `prop2_wait_ticks()` and `prop2_sleep_ms()`
-  - cog helpers such as `prop2_cog_states()`, `prop2_cog_check()`, `prop2_cog_stop()`
-  - raw cog program startup via `prop2_cog_start_hex()`
-  - lock helpers such as `prop2_lock_new()`, `prop2_lock_try()`, `prop2_lock_check()`
-  - CORDIC helpers such as `prop2_rotxy()`, `prop2_xypol()`, `prop2_polxy()`
-  - pin helpers such as `prop2_pin_output()`, `prop2_pin_write()`, `prop2_pin_read()`
-  - smart-pin helpers such as `prop2_smartpin_write_mode()`, `prop2_smartpin_query()`, `prop2_smartpin_start()`
+- the current exposed P2 helpers are available through `p2.*`, including:
+  - clock and counter helpers such as `p2.clock_freq()`, `p2.ticks()`, `p2.ticks64()`
+  - wait/sleep helpers such as `p2.wait_ticks()` and `p2.sleep_ms()`
+  - cog helpers such as `p2.cog_states()`, `p2.cog_check()`, `p2.cog_stop()`
+  - raw cog program startup via `p2.cog_start_hex()`
+  - lock helpers such as `p2.lock_new()`, `p2.lock_try()`, `p2.lock_check()`
+  - CORDIC helpers such as `p2.rotxy()`, `p2.xypol()`, `p2.polxy()`
+  - pin helpers such as `p2.pin_output()`, `p2.pin_write()`, `p2.pin_read()`
+  - smart-pin helpers such as `p2.smartpin_write_mode()`, `p2.smartpin_query()`, `p2.smartpin_start()`
 - reserved pin map on the tested no-PSRAM P2 Edge path is now treated more narrowly:
   - pins `58..61` are the SD card interface
   - pins `62..63` are the serial console
@@ -161,7 +161,7 @@ Current machine focus to preserve:
 Known limitation:
 
 - not every standard library module has been re-verified interactively yet on the cached-runtime-module path; `string`, `math`, `json`, `bytes`, `os`, and the P2 hardware modules have current or prior hardware coverage, but longer mixed-module sessions still need stress testing
-- `prop2_cog_start_c()` now builds but still needs a focused Berry FFI validation pass on hardware
+- `p2.cog_start_c()` now builds but still needs a focused Berry FFI validation pass on hardware
 - `spin2.call()` needs an SD-card run with a copied compatible `berry_mailbox_demo.bin`; `make spin2` is build-verified, but the current live SD-visible `/spin2` path had no binaries
 - pin 57 must be tested with the no-PSRAM Catalina profile (`CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, no `-lpsram`); PSRAM builds use pin 57 as chip-select and will hold it under the memory interface
 - `../tests/fs_probe.c` is intentionally destructive and mutates the SD card; keep it for Catalina DOSFS debugging only
@@ -189,8 +189,8 @@ Known limitation:
    - `print(1+2)`
    - `a=6`
    - `print(a*7)`
-   - `print(prop2_clock_freq())`
-   - `print(prop2_pin_read(38))`
+   - `import p2; print(p2.clock_freq())`
+   - `print(p2.pin_read(38))`
    - `Ctrl-C` at an empty prompt should print `bye` and return cleanly to the shell
 5. Keep the secondary paths buildable:
    - FlexC
@@ -199,7 +199,7 @@ Known limitation:
 6. Next engineering focus:
    - keep checking for heap regressions under longer REPL sessions now that blank-line OOM is fixed
    - decide whether to add a non-destructive automated P2 smoke test for the verified `string` / `math` / `json` / `bytes` / `os` path
-   - decide whether `prop2_*` should remain prefixed globals or move into a proper Berry-side namespace/module wrapper
+   - decide when to retire or hide compatibility `prop2_*` globals from full profiles
    - continue Windows validation on `COM6` after the macOS Catalina path is stable enough
 
 ## What to Say Next Time

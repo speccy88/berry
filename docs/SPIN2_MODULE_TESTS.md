@@ -138,11 +138,11 @@ mb_19lock  LOCKNEW, LOCKTRY, LOCKREL, LOCKRET
 mb_20pat   event/interrupt syntax matrix, runtime-safe return
 ```
 
-`examples/p2_spin2_mailbox_suite.be` starts each `MB_*.BIN`, calls method 1 with
+`examples/spin2/mailbox_suite.be` starts each `MB_*.BIN`, calls method 1 with
 sample integer arguments, prints the result, and stops the cog. Hardware results
 for the generated binaries are recorded in `spin2/SPIN2_BINARY_TEST_REPORT.md`.
 
-`examples/p2_spin2_standalone_suite.be` checks that high-level `S2_*.BIN`
+`examples/spin2/standalone_suite.be` checks that high-level `S2_*.BIN`
 images are rejected safely with `value_error`, then starts and stops the raw
 standalone PASM image without invoking the mailbox call path.
 
