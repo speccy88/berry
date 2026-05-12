@@ -38,7 +38,7 @@ the Berry module feature macros, P2-native module caching, heap sizes, stack
 slot limit, and maximum `bytes()` size.
 
 - `minimal`: core language and standard classes plus the `string` module. It disables filesystem, JSON, math, OS, P2 hardware modules, worker/thread/rtos/spin2 helpers, and low-level `prop2_*` globals. Current verified image: `426624` bytes with a `192 KiB` main heap.
-- `full`: the current no-PSRAM P2 Edge build. Current verified image: `517504` bytes with the existing `128 KiB` main heap, `32 KiB` worker heap, and the `rtos` module enabled. Experimental `worker` and `threads` modules are folded under the public `rtos` API.
+- `full`: the current no-PSRAM P2 Edge build. Current verified image: `521376` bytes with the existing `128 KiB` main heap, `32 KiB` worker heap, SD-backed `open()`/`os`, P2 hardware modules, `rtos`, `spin2`, and the WiFiNINA Berry skeleton available as source. Experimental `worker` and `threads` modules are folded under the public `rtos` API.
 - `xmm`: placeholder for the future P2 Edge 32 MB RAM module. It currently uses the full feature set and the Catalina PSRAM library path; external-RAM placement and lazy loading are future work.
 
 Convenience targets pin the intended Catalina board profile:
@@ -98,6 +98,7 @@ Current macOS Catalina notes:
 - on that no-PSRAM board, pins `56` and `57` are LEDs and are available for Berry GPIO
 - keep `COMPACT` for `make p2-ram`; `NATIVE` builds are larger than the Hub RAM load path can reliably start
 - `berry_p2.binary` is checked against the P2 Hub RAM limit of `524288` bytes; oversized builds fail before the target image is published
+- SD file and directory handles use small fixed pools in the P2 runtime (`4` files and `2` directory iterators). Avoiding Catalina libc heap allocation here is required for the full image near the Hub RAM limit.
 - for the PSRAM P2 Edge, build explicitly with `CATALINA_MODEL=COMPACT CATALINA_SERIAL_LIB=-lpsram`; that profile reserves pins `40..57` for memory, including pin `57` as PSRAM chip-select
 - `make p2-ram` is the normal interactive RAM-load command
 - `make p2-flash` now builds Catalina's `flshload.t` flash-programmer image, loads that to RAM, and waits until Berry boots back from SPI flash

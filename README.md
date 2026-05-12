@@ -202,6 +202,27 @@ Supported API:
 - `spi.transfer(data)`
 - `spi.stop()`
 
+#### WiFiNINA / AirLift Skeleton
+
+`modules/wifi.be` is the first Berry-side WiFiNINA/AirLift transport layer for
+ESP32 coprocessors flashed with Adafruit's firmware. It handles the configured
+P2 pins, reset pulse, SPI framing, firmware-version request, and connection
+status request. It is intentionally documented as bring-up work: the current
+ESP32-C6 board still needs hardware READY/BUSY detection before higher-level
+network APIs are added.
+
+```berry
+import wifi
+
+wifi.init({
+    "sck": 16, "mosi": 17, "miso": 18, "cs": 19,
+    "busy": 20, "reset": 21, "irq": 22
+})
+
+print(wifi.firmware_version())
+print(wifi.status())
+```
+
 #### `spin2` Loader Prototype
 
 The `spin2` module is the first path for running Spin2/PASM binaries from Berry. Binaries live on the SD card under `/spin2` by default. Berry-callable binaries use the documented integer mailbox convention. Raw standalone PASM images can be started with `PTRA == nil`; high-level FlexSpin images are detected and rejected with `value_error` because their `.BIN` payloads contain absolute Hub addresses and are not relocatable from Berry's heap loader.
@@ -294,6 +315,8 @@ print(p2.pin_read(56))
 
 P2 module examples live under `examples/p2/`; other modules use their own directories such as `examples/i2c/`, `examples/spi/`, `examples/rtos/`, and `examples/spin2/`. General Berry examples such as quicksort, REPL, and string handling live under `examples/core/`.
 
+The fuller P2 module API reference lives in [`docs/P2_MODULES.md`](./docs/P2_MODULES.md).
+
 On the tested no-PSRAM P2 Edge setup, keep Berry GPIO and bus examples off the SD pins `58..61` and serial pins `62..63`. Pins `56` and `57` are left available because they are exposed as LEDs on that board.
 
 #### Reliable Catalina RAM and Flash Flow
@@ -355,6 +378,7 @@ The main P2 areas are:
 - [`port/p2/`](./port/p2)
 - [`tools/p2/`](./tools/p2)
 - [`docs/P2_BUILD.md`](./docs/P2_BUILD.md)
+- [`docs/P2_MODULES.md`](./docs/P2_MODULES.md)
 - [`docs/P2_LAYOUT.md`](./docs/P2_LAYOUT.md)
 - [`docs/UPSTREAM_SYNC.md`](./docs/UPSTREAM_SYNC.md)
 

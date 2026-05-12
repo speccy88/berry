@@ -29,6 +29,7 @@ hardware modules, and grow the multicog model in small safe layers.
 - `import i2c`
 - `import spi`
 - `import spin2`
+- `import wifi` when `modules/wifi.be` is available on the SD card or module path
 - SD card backed file and directory access through `open()` and `os`
 - reliable serial interaction without prompt drift or blank-line heap loss
 - tiny REPL line editing with three-command history and arrow-key navigation
@@ -38,7 +39,7 @@ Current Catalina status on P2 Edge / latest silicon:
 
 - the default build targets the no-PSRAM P2 Edge: `CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, with no `-lpsram`
 - the default feature profile is `P2_PROFILE=full`; `make p2-minimal` builds the core-language/string-only footprint profile
-- `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` reaches a working REPL
+- `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` reaches a working REPL with a `521376` byte full-profile image
 - `print()`, assignment, and basic arithmetic are live-verified
 - `for i:0..3`, `for e:list`, `for v:map`, and `for k:map.keys()` are live-verified
 - `import string`, `import math`, `import json`, `import bytes`, and `import os` are live-verified
@@ -48,13 +49,14 @@ Current Catalina status on P2 Edge / latest silicon:
 - Up/Down recall the last three REPL commands and Left/Right/Backspace edit the current line
 - `bytes('1122')`, `bytes().fromstring('AB')`, `tohex()`, `asstring()`, `readbytes()`, and range slicing are live-verified
 - `json.load()` and `json.dump()` are live-verified
-- SD card access through `open('/HELLO.TXT','r')`, `os.listdir('/')`, `os.mkdir()`, `os.rename()`, `os.remove()`, `os.chdir()`, `os.getcwd()`, and `os.path.*` is live-verified
+- SD card access through `open('/HELLO.TXT','r')`, `os.listdir('/')`, `os.mkdir()`, `os.rename()`, `os.remove()`, `os.chdir()`, `os.getcwd()`, and `os.path.*` is live-verified; file/directory handles now use fixed pools instead of Catalina libc heap allocation
 - P2 helpers are exposed as `p2.*` for clock, counter, pin, smart-pin, CORDIC, lock, attention, and cog inspection
 - legacy `prop2_*` globals remain available for compatibility
 - `p2.status()` prints build size, heap usage bars, clock info, and all 8 cog states
 - native bus helpers are exposed as `i2c.*` and `spi.*`
 - worker-backed task/cog startup and queues are exposed as `rtos.*`
 - Spin2/PASM binary loading scaffolding is exposed as `spin2.*`
+- WiFiNINA/AirLift SPI framing scaffolding is available in `modules/wifi.be`; ESP32-C6 firmware detection still needs hardware READY/BUSY bring-up
 
 Current hardware verification examples:
 
@@ -65,6 +67,8 @@ Current hardware verification examples:
 - `import i2c; i2c.init(25, 24, 400); print(i2c.scan())` -> `[119]`
 - `print(i2c.writeread(0x77, "\xD0", 1))` -> `U` (`0x55`, BMP180 chip id)
 - `import spi; spi.init(10, 11, 12, 13, 0, 1000)` is live-verified
+- `import os; print(os.listdir('/'))` lists the current SD root after filtering stale/non-printable DOSFS entries
+- `f=open('/BERRYTMP.TXT','w'); f.write('sd ok'); f.close(); print(open('/BERRYTMP.TXT','r').read()); os.remove('/BERRYTMP.TXT')` is live-verified
 - `import rtos; rtos.channel("a"); rtos.put("a",123); print(rtos.get("a", 10))` -> `123`
 - `rtos.load_file("/examples/rtos/workers/counter_task.be"); cog=rtos.cog_start("counter_task",7)` starts an explicitly loaded worker function on the worker cog
 - `run_file("/examples/core/qsort.be")` runs a `.be` file from the current VM, including from the REPL
@@ -187,4 +191,5 @@ Filesystem probe note:
 
 - [`PORTING_STATUS.md`](./PORTING_STATUS.md)
 - [`../../../docs/P2_BUILD.md`](../../../docs/P2_BUILD.md)
+- [`../../../docs/P2_MODULES.md`](../../../docs/P2_MODULES.md)
 - [`../../../docs/P2_LAYOUT.md`](../../../docs/P2_LAYOUT.md)

@@ -39,6 +39,22 @@ This document started as the implementation backlog for matching and then surpas
 - `spin2`: implemented SD binary listing, Hub-RAM load/start, integer mailbox call, stop, info, and `make spin2` tooling.
 - Build/release: Catalina 8.8.9 Docker build path works, FlexC is documented as non-preferred for Berry P2 builds, RAM image size is guarded against the 512 KiB Hub RAM limit, no-PSRAM P2 Edge pins 56/57 are usable as LEDs, and flash-loader binary generation remains available.
 
+## Current Maintenance Notes
+
+- SD card support is live-verified again on hardware. The failure mode was not
+  the card: the full P2 image was relying on Catalina libc `malloc` for file and
+  directory handles while running close to the Hub RAM limit. The runtime now
+  uses fixed pools for `open()` and `os.listdir()`.
+- Directory listing filters raw DOSFS entries so stale, erased, hidden, volume,
+  reserved, and non-printable 8.3 names do not leak into Berry lists.
+- `i2c` and `spi` transfer helpers avoid Catalina libc heap allocation for their
+  bounded read/transfer buffers.
+- P2 module APIs are documented in [`P2_MODULES.md`](./P2_MODULES.md). Keep that
+  reference updated whenever a P2-facing function or method changes.
+- `modules/wifi.be` and `examples/wifi/detect.be` contain the first
+  WiFiNINA/AirLift SPI transport skeleton. ESP32-C6 READY/BUSY detection is
+  still the next hardware step before higher-level WiFi APIs are added.
+
 ## Reference Sources
 
 - Catalina repo/tag to compare against: `rosshigson/Catalina` around commit `a6f714c5` / tag `v8.8.9`.

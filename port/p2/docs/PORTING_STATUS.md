@@ -24,11 +24,11 @@ This note is the handoff for the next P2 porting session.
 On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 
 - `make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds a RAM image with Catalina 8.8.9:
-  - image: `511936` bytes
-  - code: `263724` bytes
-  - const: `18000` bytes
-  - init: `8276` bytes
-  - data: `211756` bytes
+  - image: `521376` bytes
+  - code: `267440` bytes
+  - const: `18552` bytes
+  - init: `8052` bytes
+  - data: `217144` bytes
 - `make p2-run TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build PORT=/dev/cu.usbserial-P97cvdxp` RAM-loads and reaches the Berry prompt
 - P2 cached module loading is live-verified after the Catalina const native function hang fix:
   - `import p2`; `print(p2.cogid())` -> `0`
@@ -36,6 +36,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - `import spi`; `spi.init(10,11,12,13,0,1000)` returns to the prompt
   - `import rtos`; locks, queues, flags, timers, callbacks, debug helpers, and worker-backed spawn work
   - `import spin2`; `print(spin2.path())` -> `/spin2`
+  - `import wifi` compiles and imports when `modules/wifi.be` is present on SD/module path; hardware detection on the ESP32-C6 AirLift board is still pending READY/BUSY troubleshooting
 - P2 pins on the no-PSRAM P2 Edge path:
   - `p2.pinmode(56,p2.OUTPUT); p2.low(56); print(p2.read(56))` -> `0`
   - `p2.high(56); print(p2.read(56))` -> `1`
@@ -53,7 +54,8 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - deferred callback dispatch with `rtos.irq_enable(0,"on_rtos")`, `rtos.event_set(1)`, `print(rtos.irq_poll())` -> `1`
   - `rtos.load(source); cog=rtos.cog_start("worker_fn",7)` starts explicitly loaded worker code on the worker cog
 - `spin2.path()` returns `/spin2`; `spin2.list()` returned `[]` when no compatible binaries were present on the SD-visible path
-- `os.listdir("/")` returned to the prompt and produced `[]` on the current media/session
+- `os.listdir("/")` returns the current SD root after filtering stale/non-printable DOSFS entries; the latest card listed `SPIN2`, `HELLO.TXT`, `NEWTEST.BIN`, `INDEX.TXT`, `SPN2`, `SPN3`, `SPN4`, `SPT0`, `SPT1`, `SPT2`, `SPT3`, `EXAMPLES`, `WIFI.BE`, and `DETECT.BE`
+- SD write/read/remove was live-verified with `/BERRYTMP.TXT`; the file and directory handles now use fixed P2 pools instead of Catalina libc `malloc`
 - `spi.read(1)` returns a one-byte raw string after `spi.init(10,11,12,13,0,1000)`; full JEDEC validation still needs a known attached SPI target
 - `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` loads and reaches the Berry prompt
 - startup banner is now a single Berry-style banner instead of the old duplicated `Berry on Propeller 2` / `Berry on P2`
@@ -107,6 +109,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - `i2c.init(25, 24, 100); print(i2c.scan())` -> `[119]`
   - `print(i2c.writeread(0x77, "\xD0", 1))` -> `U` (`0x55`, BMP180 chip id)
   - `spi.init(10, 11, 12, 13, 0, 1000)` is live-verified
+- `i2c.read()`, `i2c.writeread()`, `spi.read()`, and `spi.transfer()` use bounded stack buffers instead of Catalina libc heap allocation
 - the current exposed P2 helpers are available through `p2.*`, including:
   - clock and counter helpers such as `p2.clock_freq()`, `p2.ticks()`, `p2.ticks64()`
   - wait helpers such as `p2.wait_ticks()`; millisecond task sleep is `rtos.sleep_ms()`
@@ -153,6 +156,7 @@ Known limitation:
 - not every standard library module has been re-verified interactively yet on the cached-runtime-module path; `string`, `math`, `json`, `bytes`, `os`, and the P2 hardware modules have current or prior hardware coverage, but longer mixed-module sessions still need stress testing
 - `p2.cog_start_c()` now builds but still needs a focused Berry FFI validation pass on hardware
 - `spin2.call()` needs an SD-card run with a copied compatible `berry_mailbox_demo.bin`; `make spin2` is build-verified, but the current live SD-visible `/spin2` path had no binaries
+- WiFiNINA/AirLift support is a Berry SPI transport skeleton. The ESP32-C6 board flashed with firmware `3.3.0` did not assert READY/BUSY during the last probe, so `wifi.firmware_version()` is not live-verified yet.
 - pin 57 must be tested with the no-PSRAM Catalina profile (`CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, no `-lpsram`); PSRAM builds use pin 57 as chip-select and will hold it under the memory interface
 - `../tests/fs_probe.c` is intentionally destructive and mutates the SD card; keep it for Catalina DOSFS debugging only
 

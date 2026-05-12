@@ -12,28 +12,81 @@ extern VOLINFO __vi;
 #else
 #include <propeller2.h>
 #endif
-#include <stdlib.h>
 #include <string.h>
 
 #if defined(__CATALINA__)
 #define P2_FS_PATH_MAX 256
+#define P2_FS_FILE_SLOTS 4
+#define P2_FS_DIR_SLOTS 2
 
 static int p2_fs_mounted;
 static char p2_cwd[P2_FS_PATH_MAX] = "/";
 
 typedef struct {
+    int used;
     FILEINFO info;
     uint8_t scratch[SECTOR_SIZE];
 } p2_file_handle;
 
 typedef struct {
+    int used;
     DIRINFO di;
     DIRENT entry;
     uint8_t scratch[SECTOR_SIZE];
     char name[13];
 } p2_dir_handle;
 
+static p2_file_handle p2_file_slots[P2_FS_FILE_SLOTS];
+static p2_dir_handle p2_dir_slots[P2_FS_DIR_SLOTS];
+
 static int p2_resolve_path(const char *path, char *out, size_t size);
+
+static p2_file_handle *p2_file_alloc(void)
+{
+    int i;
+
+    /*
+     * The Catalina P2 image runs very close to the 512 KiB hub limit, and the
+     * C library heap is not dependable there.  File handles therefore live in
+     * a tiny fixed pool while Berry-owned objects still use Berry's allocator.
+     */
+    for (i = 0; i < P2_FS_FILE_SLOTS; ++i) {
+        if (!p2_file_slots[i].used) {
+            memset(&p2_file_slots[i], 0, sizeof(p2_file_slots[i]));
+            p2_file_slots[i].used = 1;
+            return &p2_file_slots[i];
+        }
+    }
+    return NULL;
+}
+
+static void p2_file_free(p2_file_handle *handle)
+{
+    if (handle) {
+        memset(handle, 0, sizeof(*handle));
+    }
+}
+
+static p2_dir_handle *p2_dir_alloc(void)
+{
+    int i;
+
+    for (i = 0; i < P2_FS_DIR_SLOTS; ++i) {
+        if (!p2_dir_slots[i].used) {
+            memset(&p2_dir_slots[i], 0, sizeof(p2_dir_slots[i]));
+            p2_dir_slots[i].used = 1;
+            return &p2_dir_slots[i];
+        }
+    }
+    return NULL;
+}
+
+static void p2_dir_free(p2_dir_handle *dir)
+{
+    if (dir) {
+        memset(dir, 0, sizeof(*dir));
+    }
+}
 
 static int p2_fs_ensure_mounted(void)
 {
@@ -57,6 +110,23 @@ static const char *p2_catalina_fs_path(const char *path)
     return path;
 }
 
+static int p2_dir_char_valid(uint8_t ch)
+{
+    /*
+     * Catalina DOSFS exposes raw 8.3 directory entries.  If the root has stale
+     * or partially erased entries, their bytes can be non-printable even though
+     * DFS_GetNext() reports success.  Keep listing conservative: Berry scripts
+     * need ordinary DOS names, not every possible legacy codepage byte.
+     */
+    return (ch >= 'A' && ch <= 'Z')
+        || (ch >= 'a' && ch <= 'z')
+        || (ch >= '0' && ch <= '9')
+        || ch == '$' || ch == '%' || ch == '\'' || ch == '-' || ch == '_'
+        || ch == '@' || ch == '~' || ch == '`' || ch == '!' || ch == '('
+        || ch == ')' || ch == '{' || ch == '}' || ch == '^' || ch == '#'
+        || ch == '&';
+}
+
 static int p2_dir_decode_name(const DIRENT *entry, char *name, size_t size)
 {
     int i;
@@ -72,12 +142,21 @@ static int p2_dir_decode_name(const DIRENT *entry, char *name, size_t size)
         if (!ch || ch == ' ') {
             break;
         }
+        if (!p2_dir_char_valid(ch)) {
+            return -1;
+        }
         name[j++] = (char)ch;
+    }
+    if (j == 0) {
+        return -1;
     }
     for (i = 8; i < 11 && j + 1 < (int)size; ++i) {
         uint8_t ch = entry->name[i];
         if (!ch || ch == ' ') {
             break;
+        }
+        if (!p2_dir_char_valid(ch)) {
+            return -1;
         }
         if (i == 8 && j + 2 < (int)size) {
             name[j++] = '.';
@@ -91,7 +170,12 @@ static int p2_dir_decode_name(const DIRENT *entry, char *name, size_t size)
 static int p2_dir_load_next(p2_dir_handle *dir)
 {
     while (DFS_GetNext(&__vi, &dir->di, &dir->entry) == DFS_OK) {
-        if (dir->entry.name[0] == 0) {
+        uint8_t first = (uint8_t)dir->entry.name[0];
+        if (first == 0) {
+            /* Catalina can surface cleared entries before later valid entries. */
+            continue;
+        }
+        if (first == 0xE5 || (dir->entry.attr & 0xC0) != 0) {
             continue;
         }
         if (dir->entry.attr & ATTR_VOLUME_ID) {
@@ -678,11 +762,10 @@ void *be_fopen(const char *filename, const char *modes)
     fs_path = p2_catalina_fs_path(path);
     allow_write = p2_mode_allows_write(modes);
 
-    handle = malloc(sizeof(*handle));
+    handle = p2_file_alloc();
     if (!handle) {
         return NULL;
     }
-    memset(handle, 0, sizeof(*handle));
     if (truncate_existing) {
         DFS_UnlinkFile(&__vi, (uint8_t *)fs_path, handle->scratch);
     }
@@ -690,7 +773,7 @@ void *be_fopen(const char *filename, const char *modes)
         if (allow_write && DFS_OpenFile(&__vi, (uint8_t *)fs_path, DFS_READ, handle->scratch, &handle->info) == DFS_OK) {
             /* accept the create as successful and reuse the handle */
         } else {
-            free(handle);
+            p2_file_free(handle);
             return NULL;
         }
     }
@@ -720,7 +803,7 @@ int be_fclose(void *hfile)
     if (!handle) {
         return -1;
     }
-    free(handle);
+    p2_file_free(handle);
     return 0;
 #else
     (void)hfile;
@@ -1066,18 +1149,17 @@ int be_dirfirst(bdirinfo *info, const char *path)
     if (!be_isdir(fullpath)) {
         return -1;
     }
-    dir = malloc(sizeof(*dir));
+    dir = p2_dir_alloc();
     if (!dir) {
         return -1;
     }
-    memset(dir, 0, sizeof(*dir));
     dir->di.scratch = dir->scratch;
     if (DFS_OpenDir(&__vi, (uint8_t *)p2_catalina_fs_path(fullpath), &dir->di) != DFS_OK) {
-        free(dir);
+        p2_dir_free(dir);
         return -1;
     }
     if (p2_dir_load_next(dir) != 0) {
-        free(dir);
+        p2_dir_free(dir);
         return -1;
     }
     info->dir = dir;
@@ -1118,7 +1200,7 @@ int be_dirclose(bdirinfo *info)
 {
 #if defined(__CATALINA__)
     if (info && info->dir) {
-        free(info->dir);
+        p2_dir_free((p2_dir_handle *)info->dir);
         info->dir = NULL;
         info->file = NULL;
         info->name = NULL;

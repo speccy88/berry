@@ -9,7 +9,6 @@
 #include "be_string.h"
 #include <propeller2.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
 
 typedef struct berry_p2_spi_state {
@@ -160,7 +159,9 @@ static int m_spi_read(bvm *vm)
 {
     size_t count = berry_p2_bus_require_count(vm, 1, "count must be an int");
     uint8_t filler = 0xFFu;
-    uint8_t *rx;
+    /* The P2 Catalina full image leaves little room for the C heap, so SPI
+     * uses the common v1 transfer cap as a bounded stack buffer. */
+    uint8_t rx[BE_P2_BUS_MAX_XFER];
     size_t i;
 
     berry_p2_bus_require_init(vm, g_spi.initialized, "spi.init() must be called first");
@@ -174,24 +175,20 @@ static int m_spi_read(bvm *vm)
         be_return(vm);
     }
 
-    rx = (uint8_t *)malloc(count);
-    if (!rx) {
-        be_raise(vm, "memory_error", "failed to allocate read buffer");
-    }
-
     for (i = 0; i < count; ++i) {
         rx[i] = spi_transfer_byte(filler);
     }
 
     be_pushnstring(vm, (const char *)rx, count);
-    free(rx);
     be_return(vm);
 }
 
 static int m_spi_transfer(bvm *vm)
 {
     berry_p2_bus_buffer tx = berry_p2_bus_get_buffer(vm, 1, "data must be a string, bytes, or list");
-    uint8_t *rx;
+    /* Full-duplex transfers are capped by BE_P2_BUS_MAX_XFER in
+     * berry_p2_bus_get_buffer(), so this stack receive buffer is bounded. */
+    uint8_t rx[BE_P2_BUS_MAX_XFER];
     size_t i;
 
     berry_p2_bus_require_init(vm, g_spi.initialized, "spi.init() must be called first");
@@ -202,18 +199,11 @@ static int m_spi_transfer(bvm *vm)
         be_return(vm);
     }
 
-    rx = (uint8_t *)malloc(tx.length);
-    if (!rx) {
-        berry_p2_bus_release_buffer(&tx);
-        be_raise(vm, "memory_error", "failed to allocate transfer buffer");
-    }
-
     for (i = 0; i < tx.length; ++i) {
         rx[i] = spi_transfer_byte(tx.data[i]);
     }
 
     be_pushnstring(vm, (const char *)rx, tx.length);
-    free(rx);
     berry_p2_bus_release_buffer(&tx);
     be_return(vm);
 }

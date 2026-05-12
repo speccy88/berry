@@ -6,8 +6,11 @@ This fork keeps Berry itself as close to upstream layout as practical, while iso
 
 - `src/`, `default/`, `modules/`, `examples/`, and `tests/` remain the upstream-facing Berry areas.
 - `port/p2/` contains the P2 runtime, configuration, probe programs, overrides, and port-specific status notes.
+- P2 native modules live in `port/p2/overrides/`; Berry-script modules that are still portable source, such as `modules/wifi.be`, stay in `modules/`.
+- P2 examples live under the matching `examples/<module>/` directory, for example `examples/wifi/`.
 - `mk/` contains the P2 build fragments so the root `Makefile` stays thin.
 - `tools/p2/` contains bootstrap and loader helpers instead of checked-in compiler distributions.
+- `docs/P2_MODULES.md` is the API reference for P2-facing modules and should be updated with module changes.
 
 That structure keeps upstream merges easier to review because P2 changes are concentrated instead of scattered.
 
@@ -23,6 +26,10 @@ berry/
 │   ├── patches/
 │   ├── docs/
 │   └── tests/
+├── modules/
+│   └── wifi.be
+├── examples/
+│   └── wifi/
 ├── tools/p2/
 │   ├── bootstrap/
 │   └── loader/

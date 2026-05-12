@@ -8,7 +8,6 @@
 #include "be_string.h"
 #include <propeller2.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
 
 enum {
@@ -306,7 +305,9 @@ static int m_i2c_read(bvm *vm)
 {
     int addr = berry_p2_bus_require_address7(vm, 1);
     size_t count = berry_p2_bus_require_count(vm, 2, "count must be an int");
-    uint8_t *rx;
+    /* Avoid Catalina libc malloc in the P2 full image; the shared bus limit
+     * keeps this stack buffer bounded. */
+    uint8_t rx[BE_P2_BUS_MAX_XFER];
     int ok;
 
     berry_p2_bus_require_init(vm, g_i2c.initialized, "i2c.init() must be called first");
@@ -316,19 +317,12 @@ static int m_i2c_read(bvm *vm)
         be_return(vm);
     }
 
-    rx = (uint8_t *)malloc(count);
-    if (!rx) {
-        be_raise(vm, "memory_error", "failed to allocate read buffer");
-    }
-
     ok = i2c_transaction_read(addr, rx, count);
     if (!ok) {
-        free(rx);
         be_raise(vm, "runtime_error", "i2c read failed");
     }
 
     be_pushnstring(vm, (const char *)rx, count);
-    free(rx);
     be_return(vm);
 }
 
@@ -337,24 +331,16 @@ static int m_i2c_writeread(bvm *vm)
     int addr = berry_p2_bus_require_address7(vm, 1);
     berry_p2_bus_buffer tx = berry_p2_bus_get_buffer(vm, 2, "txdata must be a string, bytes, or list");
     size_t rxcount = berry_p2_bus_require_count(vm, 3, "rxcount must be an int");
-    uint8_t *rx = NULL;
+    /* Same allocation rule as read(): fixed transfer budget, no libc heap. */
+    uint8_t rx[BE_P2_BUS_MAX_XFER];
     int ok;
 
     berry_p2_bus_require_init(vm, g_i2c.initialized, "i2c.init() must be called first");
-
-    if (rxcount > 0u) {
-        rx = (uint8_t *)malloc(rxcount);
-        if (!rx) {
-            berry_p2_bus_release_buffer(&tx);
-            be_raise(vm, "memory_error", "failed to allocate read buffer");
-        }
-    }
 
     ok = i2c_transaction_writeread(addr, tx.data, tx.length, rx, rxcount);
     berry_p2_bus_release_buffer(&tx);
 
     if (!ok) {
-        free(rx);
         be_raise(vm, "runtime_error", "i2c writeread failed");
     }
 
@@ -363,7 +349,6 @@ static int m_i2c_writeread(bvm *vm)
     } else {
         be_pushnstring(vm, (const char *)rx, rxcount);
     }
-    free(rx);
     be_return(vm);
 }
 
