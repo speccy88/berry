@@ -10,6 +10,7 @@
 #include "be_string.h"
 #include <math.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #if BE_USE_MATH_MODULE
@@ -42,6 +43,36 @@
   #define mathfunc(func)        func##f
 #else
   #define mathfunc(func)        func
+#endif
+
+#if BE_USE_SINGLE_FLOAT && defined(__CATALINA__)
+static breal m_sqrt_impl(breal x)
+{
+    union {
+        breal f;
+        uint32_t u;
+    } y;
+    int i;
+
+    if (x != x || x == (breal)0.0) {
+        return x;
+    }
+    if (x < (breal)0.0) {
+        y.u = 0x7FC00000UL;
+        return y.f;
+    }
+    y.f = x;
+    if ((y.u & 0x7FFFFFFFUL) == 0x7F800000UL) {
+        return x;
+    }
+    y.u = (y.u >> 1) + 0x1FC00000UL;
+    for (i = 0; i < 5; ++i) {
+        y.f = (breal)0.5 * (y.f + x / y.f);
+    }
+    return y.f;
+}
+#else
+#define m_sqrt_impl(x)          mathfunc(sqrt)(x)
 #endif
 
 static int m_isnan(bvm *vm)
@@ -235,7 +266,7 @@ static int m_sqrt(bvm *vm)
 {
     if (be_top(vm) >= 1 && be_isnumber(vm, 1)) {
         breal x = be_toreal(vm, 1);
-        be_pushreal(vm, mathfunc(sqrt)(x));
+        be_pushreal(vm, m_sqrt_impl(x));
     } else {
         be_pushreal(vm, (breal)0.0);
     }
