@@ -108,6 +108,9 @@ both mount the card and load `/modules/math.be`.
 - Berry's mount path now validates FAT boot signatures and falls back to common
   volume starts (`2048`, `8192`, `32768`, `63`, `1`) when sector 0 is not a
   valid MBR/superfloppy boot sector.
+- The flash deep-power-down call before SD activity is intentional. P2 Edge boot
+  flash and microSD share pins `58..61`; putting flash to sleep before SD
+  transfers prevents the flash chip from driving the shared MISO line.
 - `p2.fs_info()` exposes SD service, raw sector, partition, and volume
   diagnostics without printing trace noise during normal use.
 
@@ -126,7 +129,7 @@ both mount the card and load `/modules/math.be`.
 - `tools/p2/bootstrap/patch-catalina-p2.sh`
 - `docs/P2_BUILD.md`
 - `port/p2/docs/PORTING_STATUS.md`
-- `gpt5.3.md`
+- `port/p2/docs/P2_EDGE32_SD_XMM_HANDOFF.md`
 
 ## Important Cautions
 
