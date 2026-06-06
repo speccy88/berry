@@ -54,7 +54,9 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 - Non-destructive SD smoke tests now live under `tests/p2/` and can be driven
   from the host with `make p2-smoke`, `make p2-smoke-quick`, and
   `make p2-smoke-edge32` once that directory and `modules/` have been copied to
-  the SD card.
+  the SD card. Use `make p2-sd-sync PORT=/dev/cu.usbserial-P97cvdxp` at a
+  running Berry prompt to copy repo `modules/` to `/modules` and `tests/p2/` to
+  `/tests/p2` through the REPL uploader.
 - P2 VMs add `/modules` as a default lazy import root, so optional `.be`
   libraries can live on SD. `modules/libstore.be` reports the SD-first model,
   scans available `.be` modules, mirrors source text into the safe PSRAM
@@ -218,9 +220,11 @@ Known limitation:
   `32 MiB + 512 KiB` Berry heap would need a future VM object/handle/cache
   representation rather than ordinary C pointers alone.
 - `make p2-smoke-edge32` still depends on `/tests/p2` being present on the SD
-  card. The quick REPL smoke passes, but the temporary serial SD loader wedged
-  while creating or writing the nested `/tests/p2` tree; direct REPL checks were
-  used instead for the edge32 PSRAM/libstore path.
+  card. `make p2-sd-sync` now uploads repo `modules/` and `tests/p2/` through
+  the Berry REPL, but the current live card presented an empty root and rejected
+  both `os.mkdir("/MODULES")` and `open("/ROOT.TXT", "w")`, so SD-backed
+  `import math` still needs a writable-card/provisioning pass before it can be
+  claimed live-verified again.
 - The new `scripts/p2/repl_smoke.py` runner uses direct PySerial access with
   selectable line endings. Use `--no-wait-start` after `p2-edge32-flash`, because
   the flash helper has usually already consumed the boot prompt.

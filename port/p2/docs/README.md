@@ -246,6 +246,7 @@ P2 Edge 32 MB RAM notes:
 - build with `make p2-edge32` or flash with `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp`
 - the profile uses `CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, and `CATALINA_SERIAL_LIB=-lpsram`
 - Catalina's COMPACT PSRAM support is a block-transfer API (`psram_read()` / `psram_write()`), so Berry's pointer-following GC/object heap remains in Hub RAM for now
+- use `make p2-sd-sync PORT=/dev/cu.usbserial-P97cvdxp` at a running Berry prompt to copy repo `modules/` to `/modules` and `tests/p2/` to `/tests/p2` through the REPL uploader
 - use `import p2; print(p2.psram_info()); print(p2.psram_test())` as the quick runtime PSRAM smoke check; `make p2-smoke-edge32` also checks raw `p2.psram_read()` / `p2.psram_write()`, chunked `libstore` PSRAM source caching, and loading `math` from the PSRAM source cache
 - build the experimental unified-memory image with `make p2-xmm`; it uses
   Catalina `LARGE` plus `-lpsram` and `-C PSRAM`, reports the Berry heap as

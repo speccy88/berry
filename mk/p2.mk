@@ -15,6 +15,7 @@ P2_BUILD_INFO_HEADER := $(P2_BUILD_DIR)/p2_build_info.h
 P2_BUILD_INFO_LOG := $(P2_BUILD_DIR)/p2_build.log
 P2_BUILD_INFO_SCRIPT := scripts/gen-p2-build-info.py
 P2_IMAGE_SIZE_CHECK := scripts/check-p2-image-size.py
+P2_REPL_UPLOAD := scripts/p2/repl_upload.py
 P2_BUILD_CONFIG_STAMP := $(P2_BUILD_DIR)/p2_build_config.stamp
 P2_GENERATED_CONFIG := $(P2_BUILD_DIR)/berry_conf_p2_profile.h
 P2_HUB_RAM_MAX_BYTES ?= 524288
@@ -220,7 +221,7 @@ P2_SERIAL_PROBE_SRCS := $(P2_TEST_DIR)/serial_probe.c $(P2_RUNTIME_DIR)/berry_po
 P2_SERIAL_PROBE := $(P2_BUILD_DIR)/serial_probe.binary
 P2_PREBUILD_DEPS := $(COC) $(P2_CONFIG) $(P2_CONFIG_SOURCE) scripts/prebuild-p2.sh scripts/prebuild-p2.ps1 $(P2_IMAGE_SIZE_CHECK)
 
-.PHONY: p2 p2-minimal p2-full p2-edge32 p2-edge32-ram p2-edge32-flash p2-edge32-xmm p2-xmm p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-smoke p2-smoke-quick p2-smoke-edge32 p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run spin2 spin2-clean spin2-sd-loader spin2-sd-loader-host spin2-sd-put spin2-sd-sync spin2-load spin2-load-all run configure configure-reset show-config
+.PHONY: p2 p2-minimal p2-full p2-edge32 p2-edge32-ram p2-edge32-flash p2-edge32-xmm p2-xmm p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-smoke p2-smoke-quick p2-smoke-edge32 p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run p2-sd-modules p2-sd-tests p2-sd-sync spin2 spin2-clean spin2-sd-loader spin2-sd-loader-host spin2-sd-put spin2-sd-sync spin2-load spin2-load-all run configure configure-reset show-config
 
 configure:
 	$(MSG) [Configure] $(P2_LOCAL_CONFIG)
@@ -365,6 +366,28 @@ spin2-sd-sync: spin2 spin2-sd-loader
 spin2-load: spin2-sd-put
 
 spin2-load-all: spin2-sd-sync
+
+p2-sd-modules:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-sd-modules TOOLCHAIN=catalina PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" "$(P2_REPL_UPLOAD)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--target-dir "/modules" --recursive-directory "modules"
+
+p2-sd-tests:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-sd-tests TOOLCHAIN=catalina PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" "$(P2_REPL_UPLOAD)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--target-dir "/tests/p2" --recursive-directory "tests/p2"
+
+p2-sd-sync:
+	$(Q) $(MAKE) p2-sd-modules TOOLCHAIN=catalina PORT="$(PORT)" P2_BAUD="$(P2_BAUD)"
+	$(Q) $(MAKE) p2-sd-tests TOOLCHAIN=catalina PORT="$(PORT)" P2_BAUD="$(P2_BAUD)"
 
 $(P2_BUILD_INFO_HEADER): $(P2_BUILD_INFO_SCRIPT) | $(P2_BUILD_DIR)
 	$(Q) "$(PYTHON)" "$(P2_BUILD_INFO_SCRIPT)" --log "$(P2_BUILD_INFO_LOG)" --binary "$(P2_IMAGE)" --header "$@"

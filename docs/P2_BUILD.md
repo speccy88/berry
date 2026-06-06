@@ -155,6 +155,16 @@ directory and `modules/` to the SD card root so the target sees paths such as
 `/tests/p2/smoke_all.be`, `/tests/p2/workers/smoke_counter.be`, and
 `/modules/math.be`, `/modules/libstore.be`, and `/modules/taskspin.be`.
 
+To provision those Berry libraries and tests through a running Berry REPL:
+
+```sh
+make p2-sd-sync PORT=/dev/cu.usbserial-P97cvdxp
+```
+
+Use `make p2-sd-modules ...` when you only need to refresh `/modules`, or
+`make p2-sd-tests ...` when you only need to refresh `/tests/p2`. These targets
+expect Berry to be at the REPL prompt and the SD card to be mounted writable.
+
 After Berry is running at the `berry>` prompt, the host can drive the suite over
 serial with:
 
