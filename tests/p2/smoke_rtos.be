@@ -67,6 +67,25 @@ assert(rtos.get("p2_smoke_funcobj", 500) == 1)
 assert(rtos.get("p2_smoke_funcobj", 500) == 2)
 rtos.stop()
 
+def p2_smoke_run(delay_ms)
+end
+
+rtos.channel("p2_smoke_run")
+var run_cog = rtos.run("import rtos\n"
+    "def p2_smoke_run(delay_ms)\n"
+    "    var n = 0\n"
+    "    while true\n"
+    "        n += 1\n"
+    "        rtos.put(\"p2_smoke_run\", n)\n"
+    "        rtos.sleep_ms(delay_ms)\n"
+    "    end\n"
+    "end\n",
+    p2_smoke_run, 10)
+assert(run_cog >= 0)
+assert(rtos.get("p2_smoke_run", 500) == 1)
+assert(rtos.get("p2_smoke_run", 500) == 2)
+rtos.stop()
+
 rtos.channel("p2_smoke_worker")
 rtos.load_file("/tests/p2/workers/smoke_counter.be")
 var cog = rtos.newcog("p2_smoke_counter", 10)

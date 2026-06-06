@@ -81,7 +81,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
     `libstore.cached_source(...)` round-trip `1565` bytes
   - `import i2c`; `i2c.init(25,24,400)` returns to the prompt
   - `import spi`; `spi.init(10,11,12,13,0,1000)` returns to the prompt
-  - `import rtos`; locks, queues, flags, timers, callbacks, debug helpers, and process-style `rtos.newcog("name", ...int_args)` launch work through the current child VM backend
+  - `import rtos`; locks, queues, flags, timers, callbacks, debug helpers, and process-style `rtos.newcog("name", ...int_args)` launch work through the current child VM backend; source-backed `rtos.run(source, task, ...int_args)` is added to the target smoke suite and awaits live board verification
   - `import spin2`; `print(spin2.path())` -> `/spin2`
   - `import wifi` compiles and imports when `modules/wifi.be` is present on SD/module path; hardware detection on the ESP32-C6 AirLift board is still pending READY/BUSY troubleshooting
 - P2 pins on the no-PSRAM P2 Edge path:
@@ -99,7 +99,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - `rtos.event_set(1); print(rtos.event_wait(1,10)); rtos.event_clear(1)` -> `true`
   - `t=rtos.timer_start(10); rtos.timer_wait(t); print(rtos.timer_expired(t))` -> `true`
   - deferred callback dispatch with `rtos.irq_enable(0,"on_rtos")`, `rtos.event_set(1)`, `print(rtos.irq_poll())` -> `1`
-  - `rtos.load(source); cog=rtos.newcog("worker_fn",7)` starts explicitly loaded child-VM code on the process cog; direct `rtos.newcog(function, ...)` is intentionally guarded until safe closure transfer exists
+  - `rtos.load(source); cog=rtos.newcog("worker_fn",7)` starts loaded child-VM code on the process cog; the target smoke suite also covers `rtos.run(source, worker_fn,7)` for the same child-VM launch path; captured closures are intentionally guarded until safe closure transfer exists
 - `spin2.path()` returns `/spin2`; `spin2.list()` returned `[]` when no compatible binaries were present on the SD-visible path
 - `os.listdir("/")` returns the current SD root after filtering stale/non-printable DOSFS entries; the latest card listed `SPIN2`, `HELLO.TXT`, `NEWTEST.BIN`, `INDEX.TXT`, `SPN2`, `SPN3`, `SPN4`, `SPT0`, `SPT1`, `SPT2`, `SPT3`, `EXAMPLES`, `WIFI.BE`, and `DETECT.BE`
 - SD write/read/remove was live-verified with `/BERRYTMP.TXT`; the file and directory handles now use fixed P2 pools instead of Catalina libc `malloc`

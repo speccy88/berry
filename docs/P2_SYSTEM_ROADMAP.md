@@ -134,8 +134,17 @@ def blink(pin)
   end
 end
 
-cog = rtos.newcog(blink, 56)      # target shape
-cog = rtos.newcog("blink", 56)    # current safe named-child-VM shape
+source = "import p2\nimport rtos\n" +
+         "def blink(pin)\n" +
+         "  while true\n" +
+         "    p2.pin_toggle(pin)\n" +
+         "    rtos.sleep_ms(250)\n" +
+         "  end\n" +
+         "end\n"
+
+cog = rtos.run(source, blink, 56) # current safe source-backed function shape
+cog = rtos.newcog(blink, 56)      # loaded child-VM function-object shape
+cog = rtos.newcog("blink", 56)    # explicit loaded child-VM name shape
 ```
 
 Design constraints:
@@ -152,6 +161,9 @@ Current implementation:
 
 - `rtos.newcog("name", ...int_args)` is the preferred process-facing API and is
   backed by the existing second Berry VM/cog.
+- `rtos.run(source, task, ...int_args)` loads source into the process VM and
+  launches a named task in one step. `task` may be a string name or a named
+  zero-upvalue function object.
 - `rtos.newcog(function, ...)` now supports named zero-upvalue Berry functions
   by launching the same function name in the child VM after that source is
   loaded there. This is the first safe function-object launch path; it does not

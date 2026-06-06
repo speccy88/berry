@@ -214,10 +214,13 @@ spi.deselect()
 ## `rtos`
 
 `rtos` owns the public concurrency and synchronization API. The current full
-profile supports the main VM plus one process VM/cog. Task source must be
-loaded into the child VM before launch. `rtos.newcog("name", ...int_args)` is
-the most explicit spelling for new code. `rtos.newcog(function, ...int_args)`
-also works for named zero-upvalue Berry functions: the parent VM extracts the
+profile supports the main VM plus one process VM/cog. Task source can be loaded
+explicitly with `rtos.load_file()` / `rtos.load_str()` and then launched with
+`rtos.newcog()`, or loaded and launched in one step with
+`rtos.run(source, task, ...int_args)`. `rtos.newcog("name", ...int_args)` is the
+most explicit spelling when the child VM is already loaded.
+`rtos.newcog(function, ...int_args)` and `rtos.run(source, function, ...int_args)`
+also work for named zero-upvalue Berry functions: the parent VM extracts the
 function name and asks the child VM to run its own loaded copy. Captured
 closures are still guarded until Berry functions can be serialized or
 recompiled safely inside the target VM.
@@ -227,6 +230,10 @@ Process/cog task control:
 - `rtos.load_file(path)`: load Berry source into the process VM from the SD card.
 - `rtos.load_str(source)`: load Berry source text into the process VM.
 - `rtos.load(source)`: compatibility alias for `rtos.load_str()`.
+- `rtos.run(source, task, ...int_args) -> int`: load Berry source text into the
+  process VM and launch `task`. `task` may be a function name string or a named
+  zero-upvalue function object.
+- `rtos.run_source(source, task, ...int_args) -> int`: alias for `rtos.run()`.
 - `rtos.newcog(name, ...int_args) -> int`: run a loaded child-VM function by
   name on the process cog.
 - `rtos.newcog(function, ...int_args) -> int`: run a named zero-upvalue Berry
@@ -307,6 +314,23 @@ def packet_reader(period_ms) end       # parent-side launch handle
 rtos.channel("rx_packets")
 rtos.load_file("/examples/rtos/workers/packet_reader.be")
 rtos.newcog(packet_reader, 50)         # launches child VM's packet_reader()
+print(rtos.get("rx_packets", 250))
+rtos.stop()
+```
+
+Inline source launch:
+
+```berry
+import rtos
+
+def packet_reader(period_ms) end       # parent-side launch handle
+
+rtos.channel("rx_packets")
+rtos.run("import rtos\n"
+         "def packet_reader(period_ms)\n"
+         "  rtos.put(\"rx_packets\", period_ms)\n"
+         "end\n",
+         packet_reader, 50)
 print(rtos.get("rx_packets", 250))
 rtos.stop()
 ```

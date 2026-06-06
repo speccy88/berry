@@ -172,7 +172,8 @@ The smoke suite covers:
 - SD-loaded cooperative `taskspin` tasks using a Spin2-shaped `TASK*` API
 - SD create/read/readbytes/remove using only `/P2SMOKE.TXT`
 - `rtos` channels, events, timers, `process_info()`, guarded closure launch,
-  and SD-loaded `rtos.newcog("name", ...)`
+  source-backed `rtos.run(source, task, ...)`, and SD-loaded
+  `rtos.newcog("name", ...)`
 
 For the original short REPL check set:
 

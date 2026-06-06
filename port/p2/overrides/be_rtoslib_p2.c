@@ -412,6 +412,18 @@ static int rtos_launch_named_task(bvm *vm, const char *name, int first_arg)
     return cog;
 }
 
+static void rtos_load_source_or_raise(bvm *vm, const char *source)
+{
+    const char *error = NULL;
+
+    if (berry_worker_start_cog(&error) < 0) {
+        be_raise(vm, "runtime_error", error ? error : "failed to start worker cog");
+    }
+    if (berry_worker_load_str(source, &error) != 0) {
+        be_raise(vm, "runtime_error", error ? error : "failed to load worker source");
+    }
+}
+
 static const char *rtos_closure_launch_name(bvm *vm, int index)
 {
     bvalue *value = be_indexof(vm, index);
@@ -430,6 +442,21 @@ static const char *rtos_closure_launch_name(bvm *vm, int index)
         be_raise(vm, "runtime_error", "bad task name");
     }
     return name;
+}
+
+static const char *rtos_launch_name_from_value(bvm *vm, int index)
+{
+    if (be_isstring(vm, index)) {
+        return rtos_require_name(vm, index, "function name must be a string");
+    }
+    if (be_isclosure(vm, index)) {
+        return rtos_closure_launch_name(vm, index);
+    }
+    if (be_isfunction(vm, index)) {
+        be_raise(vm, "runtime_error", "function cannot launch in child VM");
+    }
+    be_raise(vm, "type_error", "task must be a function or function name string");
+    return NULL;
 }
 
 static void rtos_push_process_info(bvm *vm)
@@ -480,44 +507,43 @@ static int m_rtos_spawn(bvm *vm)
 static int m_rtos_newcog(bvm *vm)
 {
     int cog;
+    const char *name;
 
     if (be_top(vm) < 1) {
         be_raise(vm, "type_error", "task function or function name is required");
     }
-    if (be_isstring(vm, 1)) {
-        const char *name = rtos_require_name(vm, 1, "function name must be a string");
-        cog = rtos_launch_named_task(vm, name, 2);
-        be_pushint(vm, (bint)cog);
-        be_return(vm);
+    name = rtos_launch_name_from_value(vm, 1);
+    cog = rtos_launch_named_task(vm, name, 2);
+    be_pushint(vm, (bint)cog);
+    be_return(vm);
+}
+
+static int m_rtos_run_source(bvm *vm)
+{
+    const char *source;
+    const char *name;
+    int cog;
+
+    if (be_top(vm) < 2 || !be_isstring(vm, 1)) {
+        be_raise(vm, "type_error", "source string and task are required");
     }
-    if (be_isclosure(vm, 1)) {
-        const char *name = rtos_closure_launch_name(vm, 1);
-        cog = rtos_launch_named_task(vm, name, 2);
-        be_pushint(vm, (bint)cog);
-        be_return(vm);
-    }
-    if (be_isfunction(vm, 1)) {
-        be_raise(vm, "runtime_error", "function cannot launch in child VM");
-    }
-    be_raise(vm, "type_error", "task must be a function or function name string");
-    be_return_nil(vm);
+    source = be_tostring(vm, 1);
+    name = rtos_launch_name_from_value(vm, 2);
+    rtos_load_source_or_raise(vm, source);
+    cog = rtos_launch_named_task(vm, name, 3);
+    be_pushint(vm, (bint)cog);
+    be_return(vm);
 }
 
 static int m_rtos_load_str(bvm *vm)
 {
     const char *source;
-    const char *error = NULL;
 
     if (be_top(vm) < 1 || !be_isstring(vm, 1)) {
         be_raise(vm, "type_error", "source must be a string");
     }
     source = be_tostring(vm, 1);
-    if (berry_worker_start_cog(&error) < 0) {
-        be_raise(vm, "runtime_error", error ? error : "failed to start worker cog");
-    }
-    if (berry_worker_load_str(source, &error) != 0) {
-        be_raise(vm, "runtime_error", error ? error : "failed to load worker source");
-    }
+    rtos_load_source_or_raise(vm, source);
     be_return_nil(vm);
 }
 
@@ -1060,6 +1086,8 @@ static int m_rtos_member(bvm *vm)
     else if (!strcmp(name, "spawn")) be_pushntvfunction(vm, m_rtos_spawn);
     else if (!strcmp(name, "cog_start")) be_pushntvfunction(vm, m_rtos_spawn);
     else if (!strcmp(name, "newcog")) be_pushntvfunction(vm, m_rtos_newcog);
+    else if (!strcmp(name, "run")) be_pushntvfunction(vm, m_rtos_run_source);
+    else if (!strcmp(name, "run_source")) be_pushntvfunction(vm, m_rtos_run_source);
     else if (!strcmp(name, "process")) be_pushntvfunction(vm, m_rtos_newcog);
     else if (!strcmp(name, "thread")) be_pushntvfunction(vm, m_rtos_newcog);
     else if (!strcmp(name, "new")) be_pushntvfunction(vm, m_rtos_newcog);
