@@ -40,8 +40,8 @@ the Berry module feature macros, P2-native module caching, heap sizes, stack
 slot limit, and maximum `bytes()` size.
 
 - `minimal`: core language and standard classes plus the `string` module. It disables filesystem, JSON, math, OS, P2 hardware modules, worker/thread/rtos/spin2 helpers, and low-level `prop2_*` globals. Current verified image: `426624` bytes with a `192 KiB` main heap.
-- `full`: the current no-PSRAM P2 Edge build. Current verified image: `505888` bytes with the existing `128 KiB` main heap, `32 KiB` worker heap, SD-backed `open()`/`os`, P2 hardware modules, `rtos`, `spin2`, and the WiFiNINA Berry skeleton available as source. Experimental `worker` and `threads` module APIs are folded under the public `rtos` API, and new cooperative task experiments such as `taskspin.be` live on SD.
-- `edge32`: P2 Edge 32 MB RAM profile for the P2-EC32MB-style board. It enables Catalina `-lpsram`, reserves pins `40..57` for the memory interface, keeps Berry's object heap in Hub RAM, and exposes PSRAM through Catalina's block-transfer API for runtime smoke testing. Current verified image: `496256` bytes with a `128 KiB` main heap and `16 KiB` worker heap, leaving Hub RAM room for the PSRAM plugin.
+- `full`: the current no-PSRAM P2 Edge build. Current verified image: `507072` bytes with the existing `128 KiB` main heap, `32 KiB` worker heap, SD-backed `open()`/`os`, P2 hardware modules, `rtos`, `spin2`, and the WiFiNINA Berry skeleton available as source. Experimental `worker` and `threads` module APIs are folded under the public `rtos` API, and new cooperative task experiments such as `taskspin.be` live on SD.
+- `edge32`: P2 Edge 32 MB RAM profile for the P2-EC32MB-style board. It enables Catalina `-lpsram`, reserves pins `40..57` for the memory interface, keeps Berry's object heap in Hub RAM, and exposes bounded PSRAM block transfers plus an SD-library source cache for runtime smoke testing. Current verified image: `497760` bytes with a `128 KiB` main heap and `16 KiB` worker heap, leaving Hub RAM room for the PSRAM plugin.
 
 Convenience targets pin the intended Catalina board profile:
 
@@ -109,7 +109,7 @@ Current macOS Catalina notes:
 - `berry_p2.binary` is checked against the P2 Hub RAM limit of `524288` bytes; oversized builds fail before the target image is published
 - SD file and directory handles use small fixed pools in the P2 runtime (`4` files and `2` directory iterators). Avoiding Catalina libc heap allocation here is required for the full image near the Hub RAM limit.
 - for the PSRAM P2 Edge, use `make p2-edge32` or build explicitly with `P2_PROFILE=edge32 CATALINA_MODEL=COMPACT CATALINA_SERIAL_LIB=-lpsram`; that profile reserves pins `40..57` for memory, including pin `57` as PSRAM chip-select
-- Catalina's COMPACT `-lpsram` path gives Berry block access to the 32 MB PSRAM through `psram_read()` and `psram_write()`. It does not make PSRAM ordinary C pointer-addressable storage, so Berry's GC/object heap remains in Hub RAM on this profile.
+- Catalina's COMPACT `-lpsram` path gives Berry bounded block access to the 32 MB PSRAM through `p2.psram_read()` and `p2.psram_write()`, backed by Catalina's `psram_read()` and `psram_write()`. It does not make PSRAM ordinary C pointer-addressable storage, so Berry's GC/object heap remains in Hub RAM on this profile.
 - `make p2-ram` is the normal interactive RAM-load command
 - `make p2-flash` now builds Catalina's `flshload.t` flash-programmer image, loads that to RAM, and waits until Berry boots back from SPI flash
 - `make p2-flash-run` uses the same Catalina flash-programmer image but keeps the terminal attached
@@ -159,7 +159,8 @@ The smoke suite covers:
 - core arithmetic, strings, maps, lists, ranges, and closures
 - `string`, `math`, `json`, `bytes`, and `p2` module basics
 - lazy SD library import from `/modules`, including `binary_heap` and
-  `libstore`
+  `libstore`; on edge32, `libstore` also smoke-tests a PSRAM source-cache round
+  trip for module text
 - SD-loaded cooperative `taskspin` tasks using a Spin2-shaped `TASK*` API
 - SD create/read/readbytes/remove using only `/P2SMOKE.TXT`
 - `rtos` channels, events, timers, `process_info()`, guarded closure launch,
@@ -178,7 +179,8 @@ make p2-smoke-edge32 PORT=/dev/cu.usbserial-P97cvdxp
 ```
 
 That target runs `/tests/p2/smoke_edge32_all.be`, which includes the general
-suite plus `p2.psram_info()` and `p2.psram_test()` assertions.
+suite plus `p2.psram_info()`, `p2.psram_test()`, raw `p2.psram_read()` /
+`p2.psram_write()`, and `libstore.cache_source()` assertions.
 
 Current flash note:
 

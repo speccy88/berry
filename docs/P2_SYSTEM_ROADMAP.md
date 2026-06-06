@@ -44,6 +44,8 @@ Runtime probes:
 import p2
 print(p2.psram_info())
 print(p2.psram_test())
+p2.psram_write(29 * 1024 * 1024, "cache")
+print(p2.psram_read(29 * 1024 * 1024, 5))
 ```
 
 ## Memory Strategy
@@ -56,7 +58,7 @@ Short term:
 - add lazy source/module loading so rarely used libraries do not permanently
   occupy Hub RAM
 - default P2 imports now search `/modules` lazily, with `libstore.be` reporting
-  the SD-first model and the future PSRAM cache hook
+  the SD-first model and exposing a PSRAM source-cache hook on edge32
 - `taskspin.be` is the first Spin2-shaped concurrency library kept entirely on
   SD: it adds cooperative `TASKSPIN`/`TASKNEXT`/`TASKSTOP`/`TASKHALT`/
   `TASKCONT`/`TASKCHK`/`TASKID` behavior without increasing the firmware image

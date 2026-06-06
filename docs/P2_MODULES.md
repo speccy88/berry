@@ -142,7 +142,14 @@ Runtime status:
   Berry heap is external-RAM backed.
 - `p2.psram_info() -> map`: report whether the image was built with Catalina
   PSRAM support, the expected external RAM size, the access mode, and the
-  reserved pin range.
+  reserved pin range. On PSRAM builds the map includes `max_transfer`, the
+  largest single bounded transfer exposed through the Berry wrapper.
+- `p2.psram_write(address, data) -> map`: copy a Berry string or `bytes()` value
+  from Hub RAM to PSRAM. This is available only on Catalina `-lpsram` builds.
+- `p2.psram_read(address, size) -> string`: copy up to
+  `p2.psram_info()["max_transfer"]` bytes from PSRAM into a Berry string in Hub
+  RAM. PSRAM is not directly pointer-addressable by the Berry VM in the COMPACT
+  profile.
 - `p2.psram_test(address=nil) -> map`: on PSRAM builds, write and read a short
   pattern through Catalina's PSRAM block API. The default address is near the
   top of the 32 MB range.
@@ -386,10 +393,23 @@ and probes the current SD-first library store:
 - `libstore.paths`: current SD library roots. The firmware adds `/modules` to
   Berry's import path at VM startup.
 - `libstore.status() -> map`: reports lazy SD loading, Hub-heap execution, and
-  whether PSRAM is available as a future cache backend.
+  whether PSRAM is available as a source-cache backend.
+- `libstore.strategy() -> map`: reports the storage model: SD is the canonical
+  library home, PSRAM is a transfer/cache backend when available, and live Berry
+  objects still use the Hub heap.
+- `libstore.modules() -> list`: return the known SD module names.
 - `libstore.psram() -> map`: returns `p2.psram_info()`.
 - `libstore.exists(name) -> bool`: true when `/modules/<name>.be` exists.
 - `libstore.source_path(name) -> string or nil`: returns the SD source path.
+- `libstore.info(name) -> map`: return SD path/cache metadata for one module.
+- `libstore.cache_source(name) -> map or nil`: copy one module's source text
+  from SD into the reserved PSRAM cache area when PSRAM is available.
+- `libstore.cached_source(name) -> string or nil`: read cached source text back
+  from PSRAM into a temporary Hub string.
+- `libstore.cache_reset()`: clear the in-memory cache directory and reset the
+  PSRAM allocation pointer.
+- `libstore.run_cached(name)`: compile and call a cached source module. This is
+  mainly a diagnostic path; normal `import` still loads lazily from SD.
 - `libstore.run(path)`: calls `run_file(path)`.
 
 Example:
@@ -397,7 +417,9 @@ Example:
 ```berry
 import libstore
 print(libstore.status())
+print(libstore.strategy())
 print(libstore.exists("binary_heap"))
+print(libstore.info("binary_heap"))
 ```
 
 ## `taskspin`

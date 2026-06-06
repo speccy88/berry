@@ -26,15 +26,15 @@ This note is the handoff for the next P2 porting session.
 On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 
 - `make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds a RAM image with Catalina 8.8.9:
-  - image: `505888` bytes
-  - code: `258772` bytes
-  - const: `18476` bytes
+  - image: `507072` bytes
+  - code: `259648` bytes
+  - const: `18776` bytes
   - init: `8048` bytes
   - data: `210420` bytes
 - `make p2-edge32 CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds the P2 Edge 32 MB RAM profile:
-  - image: `496256` bytes
-  - code: `260844` bytes
-  - const: `18680` bytes
+  - image: `497760` bytes
+  - code: `261984` bytes
+  - const: `19064` bytes
   - init: `8128` bytes
   - data: `194036` bytes
 - `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` flashed and booted from flash on the P2 Edge 32 MB RAM board. The boot banner reported `P2_EDGE, PSRAM`, `[edge32 profile]`, `131072 B` heap, and `33554432 B` PSRAM block API.
@@ -45,12 +45,15 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   the SD card.
 - P2 VMs add `/modules` as a default lazy import root, so optional `.be`
   libraries can live on SD. `modules/libstore.be` reports the SD-first model and
-  the current non-active PSRAM cache status.
+  can mirror source text into PSRAM on edge32 while keeping live Berry objects in
+  Hub RAM.
 - `modules/taskspin.be` provides a 32-slot Spin2-shaped cooperative task API
   from SD, keeping this experiment out of the Hub firmware image.
 - P2 cached module loading is live-verified after the Catalina const native function hang fix:
   - `import p2`; `print(p2.cogid())` -> `0`
-  - `p2.psram_info()` and `p2.psram_test()` are now exposed for the P2 Edge 32 MB RAM profile; interactive PSRAM smoke verification is still pending
+  - `p2.psram_info()`, `p2.psram_test()`, bounded `p2.psram_read()` /
+    `p2.psram_write()`, and `libstore.cache_source()` are now exposed for the P2
+    Edge 32 MB RAM profile; interactive PSRAM smoke verification is still pending
   - `import i2c`; `i2c.init(25,24,400)` returns to the prompt
   - `import spi`; `spi.init(10,11,12,13,0,1000)` returns to the prompt
   - `import rtos`; locks, queues, flags, timers, callbacks, debug helpers, and process-style `rtos.newcog("name", ...int_args)` launch work through the current child VM backend
@@ -173,7 +176,7 @@ Current machine focus to preserve:
 Known limitation:
 
 - not every standard library module has been re-verified interactively yet on the cached-runtime-module path; `string`, `math`, `json`, `bytes`, `os`, and the P2 hardware modules have current or prior hardware coverage, but longer mixed-module sessions still need stress testing
-- `P2_PROFILE=edge32` enables Catalina `-lpsram` and PSRAM block access, but Berry's object heap remains in Hub RAM. Catalina's COMPACT PSRAM API is transfer-based, not ordinary C pointer-addressable memory; moving the GC/object heap to external RAM would require an XMM/large-memory object representation or a handle/cache layer.
+- `P2_PROFILE=edge32` enables Catalina `-lpsram` and PSRAM block access. Berry exposes bounded `p2.psram_read()` / `p2.psram_write()` wrappers and `libstore` can use them as a source-cache backend, but Berry's object heap remains in Hub RAM. Catalina's COMPACT PSRAM API is transfer-based, not ordinary C pointer-addressable memory; moving the GC/object heap to external RAM would require an XMM/large-memory object representation or a handle/cache layer.
 - Automated serial smoke after the edge32 flash boot reached the prompt but did not reliably deliver Enter through the Python/pty harness; manual `tio -b 230400 /dev/cu.usbserial-P97cvdxp` verification should be run next for `print(6*7)`, string concat, map lookup, `math.sqrt(81)`, and `p2.psram_test()`.
 - The new `scripts/p2/repl_smoke.py` runner uses direct PySerial access with
   selectable line endings. It still needs a live hardware run on the current
@@ -209,7 +212,7 @@ Known limitation:
    - `a=6`
    - `print(a*7)`
    - `import p2; print(p2.clock_freq())`
-   - on the 32 MB RAM board: `import p2; print(p2.psram_info()); print(p2.psram_test())`
+   - on the 32 MB RAM board: `import p2; print(p2.psram_info()); print(p2.psram_test()); p2.psram_write(29*1024*1024, "ok"); print(p2.psram_read(29*1024*1024, 2))`
    - `print(p2.pin_read(38))`
    - `Ctrl-C` at an empty prompt should print `bye` and return cleanly to the shell
 5. Keep the secondary paths buildable:

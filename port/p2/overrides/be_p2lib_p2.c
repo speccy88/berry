@@ -4,6 +4,7 @@
 ********************************************************************/
 #include "berry.h"
 #include "be_bus_common_p2.h"
+#include "be_mem.h"
 #include "be_module.h"
 #include "be_string.h"
 #include "berry_conf_p2.h"
@@ -23,6 +24,10 @@
 #else
 #define P2_HAS_CATALINA_PSRAM 0
 #endif
+
+enum {
+    P2_PSRAM_TRANSFER_MAX = 8192
+};
 
 extern int m_clock_freq(bvm *vm);
 extern int m_clock_mode(bvm *vm);
@@ -249,10 +254,105 @@ static int m_p2_psram_info(bvm *vm)
     p2_map_set_bool(vm, "available", P2_HAS_CATALINA_PSRAM);
     p2_map_set_int(vm, "bytes", (bint)BE_P2_EXTERNAL_RAM_BYTES);
     p2_map_set_string(vm, "access", P2_HAS_CATALINA_PSRAM ? "block" : "none");
+    p2_map_set_int(vm, "max_transfer", P2_HAS_CATALINA_PSRAM ? P2_PSRAM_TRANSFER_MAX : 0);
     p2_map_set_bool(vm, "heap", BE_P2_HEAP_USES_EXTERNAL_RAM);
     p2_map_set_int(vm, "reserved_pin_first", P2_HAS_CATALINA_PSRAM ? 40 : -1);
     p2_map_set_int(vm, "reserved_pin_last", P2_HAS_CATALINA_PSRAM ? 57 : -1);
 
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static void p2_psram_require_available(bvm *vm)
+{
+    if (!P2_HAS_CATALINA_PSRAM) {
+        be_raise(vm, "runtime_error", "not built with Catalina -lpsram");
+    }
+}
+
+static void p2_psram_check_range(bvm *vm, bint address, bint size)
+{
+    if (address < 0) {
+        be_raise(vm, "value_error", "address must be >= 0");
+    }
+    if (size < 0) {
+        be_raise(vm, "value_error", "size must be >= 0");
+    }
+    if (size > P2_PSRAM_TRANSFER_MAX) {
+        be_raise(vm, "value_error", "size exceeds p2.psram_info()[\"max_transfer\"]");
+    }
+    if (address > BE_P2_EXTERNAL_RAM_BYTES || size > BE_P2_EXTERNAL_RAM_BYTES - address) {
+        be_raise(vm, "value_error", "range outside PSRAM");
+    }
+}
+
+static int m_p2_psram_read(bvm *vm)
+{
+    bint address = p2_require_int_arg(vm, 1, "address must be an int");
+    bint size = p2_require_int_arg(vm, 2, "size must be an int");
+
+    p2_psram_require_available(vm);
+    p2_psram_check_range(vm, address, size);
+
+#if P2_HAS_CATALINA_PSRAM
+    if (size > 0) {
+        char *buffer = be_malloc(vm, (size_t)size);
+        int result = psram_read(buffer,
+            (void *)(uintptr_t)address,
+            (int32_t)size);
+        if (result < 0) {
+            be_free(vm, buffer, (size_t)size);
+            be_raise(vm, "io_error", "PSRAM read failed");
+        }
+        be_pushnstring(vm, buffer, (size_t)size);
+        be_free(vm, buffer, (size_t)size);
+    } else {
+        be_pushstring(vm, "");
+    }
+    be_return(vm);
+#else
+    be_return_nil(vm);
+#endif
+}
+
+static int m_p2_psram_write(bvm *vm)
+{
+    bint address = p2_require_int_arg(vm, 1, "address must be an int");
+    const void *data = NULL;
+    size_t size = 0;
+    int result = 0;
+
+    p2_psram_require_available(vm);
+    if (be_top(vm) < 2 || (!be_isstring(vm, 2) && !be_isbytes(vm, 2))) {
+        be_raise(vm, "type_error", "data must be a string or bytes");
+    }
+    if (be_isstring(vm, 2)) {
+        data = be_tostring(vm, 2);
+        size = (size_t)be_strlen(vm, 2);
+    } else {
+        data = be_tobytes(vm, 2, &size);
+    }
+    if (size > (size_t)P2_PSRAM_TRANSFER_MAX) {
+        be_raise(vm, "value_error", "data exceeds p2.psram_info()[\"max_transfer\"]");
+    }
+    p2_psram_check_range(vm, address, (bint)size);
+
+#if P2_HAS_CATALINA_PSRAM
+    if (size > 0) {
+        result = psram_write((void *)data,
+            (void *)(uintptr_t)address,
+            (int32_t)size);
+        if (result < 0) {
+            be_raise(vm, "io_error", "PSRAM write failed");
+        }
+    }
+#endif
+
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "ok", result >= 0);
+    p2_map_set_int(vm, "address", address);
+    p2_map_set_int(vm, "size", (bint)size);
+    p2_map_set_int(vm, "result", (bint)result);
     be_pop(vm, 1);
     be_return(vm);
 }
@@ -547,6 +647,8 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "sbrk")) be_pushntvfunction(vm, m_p2_sbrk);
     else if (!strcmp(name, "heap_info")) be_pushntvfunction(vm, m_p2_heap_info);
     else if (!strcmp(name, "psram_info")) be_pushntvfunction(vm, m_p2_psram_info);
+    else if (!strcmp(name, "psram_read")) be_pushntvfunction(vm, m_p2_psram_read);
+    else if (!strcmp(name, "psram_write")) be_pushntvfunction(vm, m_p2_psram_write);
     else if (!strcmp(name, "psram_test")) be_pushntvfunction(vm, m_p2_psram_test);
     else if (!strcmp(name, "status")) be_pushntvfunction(vm, m_p2_status);
     else if (!strcmp(name, "beep")) be_pushntvfunction(vm, m_p2_beep);
