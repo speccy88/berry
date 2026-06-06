@@ -224,7 +224,10 @@ Known limitation:
   the Berry REPL, but the current live card presented an empty root and rejected
   both `os.mkdir("/MODULES")` and `open("/ROOT.TXT", "w")`, so SD-backed
   `import math` still needs a writable-card/provisioning pass before it can be
-  claimed live-verified again.
+  claimed live-verified again. On the current edge32 flash image,
+  `p2.fs_info(true)` reports `mounted: false`, `mount_result: -1`, and
+  `mount_result_name: "errmisc"` before any root directory or write probe is
+  attempted.
 - The new `scripts/p2/repl_smoke.py` runner uses direct PySerial access with
   selectable line endings. Use `--no-wait-start` after `p2-edge32-flash`, because
   the flash helper has usually already consumed the boot prompt.

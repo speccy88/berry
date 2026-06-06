@@ -288,6 +288,120 @@ static int p2_path_exists(const char *path)
     return DFS_OpenDir(&__vi, (uint8_t *)p2_catalina_fs_path(path), &dirinfo) == DFS_OK;
 }
 
+static void p2_fs_info_init(berry_p2_fs_info *info)
+{
+    if (!info) {
+        return;
+    }
+    memset(info, 0, sizeof(*info));
+    info->mount_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->resolve_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->root_open_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->root_first_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->path_read_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->path_dir_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->create_file_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->write_file_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->read_file_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->unlink_file_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    strncpy(info->cwd, p2_cwd, sizeof(info->cwd) - 1u);
+}
+
+void p2_fs_info(const char *path, int write_probe, berry_p2_fs_info *info)
+{
+    char fullpath[P2_FS_PATH_MAX];
+    const char *probe_path = path && *path ? path : "/";
+    FILEINFO fileinfo;
+    DIRINFO dirinfo;
+    DIRENT entry;
+    uint8_t scratch[SECTOR_SIZE];
+    uint32_t count;
+    char readback[3];
+
+    p2_fs_info_init(info);
+    if (!info) {
+        return;
+    }
+    info->available = 1;
+
+    if (write_probe && (!path || !*path || !strcmp(path, "/"))) {
+        probe_path = "/P2FSPROB.TXT";
+    }
+
+    if (!p2_fs_mounted) {
+        info->mount_result = _mount(0, 0);
+        if (info->mount_result == 0) {
+            p2_fs_mounted = 1;
+        }
+    } else {
+        info->mount_result = 0;
+    }
+    info->mounted = p2_fs_mounted ? 1 : 0;
+    if (info->mount_result != 0) {
+        return;
+    }
+
+    memset(&dirinfo, 0, sizeof(dirinfo));
+    dirinfo.scratch = scratch;
+    info->root_open_result = (int)DFS_OpenDir(&__vi, (uint8_t *)"", &dirinfo);
+    if (info->root_open_result == DFS_OK) {
+        int scanned = 0;
+        uint32_t result = DFS_GetNext(&__vi, &dirinfo, &entry);
+        info->root_first_result = (int)result;
+        while (result == DFS_OK && scanned < 64) {
+            uint8_t first = (uint8_t)entry.name[0];
+            if (first != 0 && first != 0xE5
+                && (entry.attr & (ATTR_VOLUME_ID | ATTR_HIDDEN | 0xC0)) == 0) {
+                ++info->root_entry_count;
+            }
+            result = DFS_GetNext(&__vi, &dirinfo, &entry);
+            ++scanned;
+        }
+    }
+
+    info->resolve_result = p2_resolve_path(probe_path, fullpath, sizeof(fullpath));
+    if (info->resolve_result != 0) {
+        return;
+    }
+    strncpy(info->path, fullpath, sizeof(info->path) - 1u);
+    strncpy(info->fs_path, p2_catalina_fs_path(fullpath), sizeof(info->fs_path) - 1u);
+
+    info->path_read_result = (int)DFS_OpenFile(&__vi,
+        (uint8_t *)info->fs_path, DFS_READ, scratch, &fileinfo);
+
+    memset(&dirinfo, 0, sizeof(dirinfo));
+    dirinfo.scratch = scratch;
+    info->path_dir_result = (int)DFS_OpenDir(&__vi, (uint8_t *)info->fs_path, &dirinfo);
+
+    if (!write_probe) {
+        return;
+    }
+
+    (void)DFS_UnlinkFile(&__vi, (uint8_t *)info->fs_path, scratch);
+    info->create_file_result = (int)DFS_OpenFile(&__vi,
+        (uint8_t *)info->fs_path, DFS_WRITE, scratch, &fileinfo);
+    if (info->create_file_result != DFS_OK) {
+        return;
+    }
+
+    count = 0;
+    info->write_file_result = (int)DFS_WriteFile(&fileinfo, scratch,
+        (uint8_t *)"ok", &count, 2);
+    info->write_count = (int)count;
+
+    count = 0;
+    memset(readback, 0, sizeof(readback));
+    info->read_file_result = (int)DFS_OpenFile(&__vi,
+        (uint8_t *)info->fs_path, DFS_READ, scratch, &fileinfo);
+    if (info->read_file_result == DFS_OK) {
+        info->read_file_result = (int)DFS_ReadFile(&fileinfo, scratch,
+            (uint8_t *)readback, &count, 2);
+        info->read_count = (int)count;
+        strncpy(info->read_value, readback, sizeof(info->read_value) - 1u);
+    }
+    info->unlink_file_result = (int)DFS_UnlinkFile(&__vi, (uint8_t *)info->fs_path, scratch);
+}
+
 static int p2_path_push_segment(char *dst, size_t *length, const char *segment, size_t seglen)
 {
     if (*length > 1 && dst[*length - 1] != '/') {
@@ -381,6 +495,30 @@ static int p2_resolve_path(const char *path, char *out, size_t size)
         out[1] = '\0';
     }
     return 0;
+}
+#endif
+
+#if !defined(__CATALINA__)
+void p2_fs_info(const char *path, int write_probe, berry_p2_fs_info *info)
+{
+    (void)path;
+    (void)write_probe;
+    if (!info) {
+        return;
+    }
+    memset(info, 0, sizeof(*info));
+    info->mount_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->resolve_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->root_open_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->root_first_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->path_read_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->path_dir_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->create_file_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->write_file_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->read_file_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->unlink_file_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    strncpy(info->cwd, "/", sizeof(info->cwd) - 1u);
+    strncpy(info->path, path && *path ? path : "/", sizeof(info->path) - 1u);
 }
 #endif
 

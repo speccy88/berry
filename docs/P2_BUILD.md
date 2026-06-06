@@ -148,6 +148,15 @@ import math; print(math.sqrt(81))
 import p2; print(p2.psram_info()); print(p2.psram_test())
 ```
 
+If SD-backed imports or provisioning fail, inspect the mounted card from the
+REPL:
+
+```berry
+import p2
+print(p2.fs_info())
+print(p2.fs_info(true))   # creates, reads, and removes /P2FSPROB.TXT
+```
+
 ## P2 SD Smoke Suite
 
 The non-destructive on-target smoke tests live under `tests/p2/`. Copy that

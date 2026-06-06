@@ -126,6 +126,43 @@ static void p2_map_set_u32_hex(bvm *vm, const char *key, uint32_t value)
     p2_map_set_string(vm, key, buffer);
 }
 
+static const char *p2_fs_result_name(int result)
+{
+    switch (result) {
+    case BERRY_P2_FS_RESULT_NOT_RUN:
+        return "not_run";
+    case -1:
+        return "errmisc";
+    case 0:
+        return "ok";
+    case 1:
+        return "eof";
+    case 2:
+        return "write_protected";
+    case 3:
+        return "not_found";
+    case 4:
+        return "path_too_long";
+    case 5:
+        return "alloc_new_cluster";
+    case 6:
+        return "name_error";
+    case 7:
+        return "not_supported";
+    default:
+        return "unknown";
+    }
+}
+
+static void p2_map_set_fs_result(bvm *vm, const char *key, int result)
+{
+    char name_key[32];
+
+    p2_map_set_int(vm, key, (bint)result);
+    snprintf(name_key, sizeof(name_key), "%s_name", key);
+    p2_map_set_string(vm, name_key, p2_fs_result_name(result));
+}
+
 static int p2_require_pin_arg(bvm *vm, int index)
 {
     return berry_p2_bus_require_pin(vm, index, "pin must be an int");
@@ -250,6 +287,56 @@ static int m_p2_heap_info(bvm *vm)
     p2_map_set_int(vm, "main", (bint)p2_heap_main_free_bytes());
     p2_map_set_int(vm, "worker", (bint)p2_heap_worker_free_bytes());
     p2_map_set_bool(vm, "external_heap", BE_P2_HEAP_USES_EXTERNAL_RAM);
+
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_fs_info(bvm *vm)
+{
+    const char *path = "/";
+    int write_probe = 0;
+    int top = be_top(vm);
+    berry_p2_fs_info info;
+
+    if (top >= 1) {
+        if (be_isstring(vm, 1)) {
+            path = be_tostring(vm, 1);
+        } else if (be_isbool(vm, 1) || be_isint(vm, 1)) {
+            write_probe = be_tobool(vm, 1) ? 1 : 0;
+        }
+    }
+    if (top >= 2) {
+        if (be_isbool(vm, 2) || be_isint(vm, 2)) {
+            write_probe = be_tobool(vm, 2) ? 1 : 0;
+        } else if (be_isstring(vm, 2)) {
+            path = be_tostring(vm, 2);
+        }
+    }
+
+    p2_fs_info(path, write_probe, &info);
+
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "available", info.available);
+    p2_map_set_bool(vm, "mounted", info.mounted);
+    p2_map_set_bool(vm, "write_probe", write_probe);
+    p2_map_set_string(vm, "cwd", info.cwd);
+    p2_map_set_string(vm, "path", info.path);
+    p2_map_set_string(vm, "fs_path", info.fs_path);
+    p2_map_set_string(vm, "read_value", info.read_value);
+    p2_map_set_int(vm, "root_entry_count", (bint)info.root_entry_count);
+    p2_map_set_int(vm, "write_count", (bint)info.write_count);
+    p2_map_set_int(vm, "read_count", (bint)info.read_count);
+    p2_map_set_fs_result(vm, "mount_result", info.mount_result);
+    p2_map_set_fs_result(vm, "resolve_result", info.resolve_result);
+    p2_map_set_fs_result(vm, "root_open_result", info.root_open_result);
+    p2_map_set_fs_result(vm, "root_first_result", info.root_first_result);
+    p2_map_set_fs_result(vm, "path_read_result", info.path_read_result);
+    p2_map_set_fs_result(vm, "path_dir_result", info.path_dir_result);
+    p2_map_set_fs_result(vm, "create_file_result", info.create_file_result);
+    p2_map_set_fs_result(vm, "write_file_result", info.write_file_result);
+    p2_map_set_fs_result(vm, "read_file_result", info.read_file_result);
+    p2_map_set_fs_result(vm, "unlink_file_result", info.unlink_file_result);
 
     be_pop(vm, 1);
     be_return(vm);
@@ -802,6 +889,8 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "smartpin_clear")) be_pushntvfunction(vm, m_smartpin_clear);
     else if (!strcmp(name, "sbrk")) be_pushntvfunction(vm, m_p2_sbrk);
     else if (!strcmp(name, "heap_info")) be_pushntvfunction(vm, m_p2_heap_info);
+    else if (!strcmp(name, "fs_info")) be_pushntvfunction(vm, m_p2_fs_info);
+    else if (!strcmp(name, "sd_info")) be_pushntvfunction(vm, m_p2_fs_info);
     else if (!strcmp(name, "psram_info")) be_pushntvfunction(vm, m_p2_psram_info);
     else if (!strcmp(name, "psram_read")) be_pushntvfunction(vm, m_p2_psram_read);
     else if (!strcmp(name, "psram_write")) be_pushntvfunction(vm, m_p2_psram_write);
