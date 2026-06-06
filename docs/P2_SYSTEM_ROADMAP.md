@@ -93,7 +93,8 @@ def blink(pin)
   end
 end
 
-cog = rtos.newcog(blink, 56)
+cog = rtos.newcog(blink, 56)      # target shape
+cog = rtos.newcog("blink", 56)    # current safe named-child-VM shape
 ```
 
 Design constraints:
@@ -105,6 +106,17 @@ Design constraints:
   and shared byte buffers rather than accidental shared VM objects
 - errors from child VMs must be inspectable from the parent VM
 - each cog needs an explicit heap/stack budget
+
+Current implementation:
+
+- `rtos.newcog("name", ...int_args)` is the preferred process-facing API and is
+  backed by the existing second Berry VM/cog.
+- `rtos.newcog(function, ...)` raises a deliberate runtime error until function
+  transfer semantics are implemented; it must not silently share main-VM
+  closure/proto/upvalue pointers with another cog.
+- `rtos.process_info()` reports the backend model and current limits so examples
+  and tests can detect when true closure launch, multiple process slots, or a
+  cog-local task switcher become available.
 
 ## Feature Coverage Plan
 
@@ -118,7 +130,7 @@ Design constraints:
 4. Expand base-Berry library coverage module by module, measuring image size
    and heap pressure after each step.
 5. Add a lazy loader for SD/PSRAM-backed modules.
-6. Replace the worker-facing API with a closure/function launch design once
+6. Grow `rtos.newcog(function, ...)` into a real closure/function launch design once
    function transfer semantics are understood.
 7. Continue Spin2/PASM loading until Berry can orchestrate native P2 modules
    as first-class companions.

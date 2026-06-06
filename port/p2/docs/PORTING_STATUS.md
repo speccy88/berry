@@ -26,15 +26,15 @@ This note is the handoff for the next P2 porting session.
 On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 
 - `make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds a RAM image with Catalina 8.8.9:
-  - image: `522720` bytes
-  - code: `268444` bytes
-  - const: `18904` bytes
+  - image: `523904` bytes
+  - code: `269236` bytes
+  - const: `19304` bytes
   - init: `8052` bytes
   - data: `217144` bytes
 - `make p2-edge32 CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds the P2 Edge 32 MB RAM profile:
-  - image: `513088` bytes
-  - code: `270516` bytes
-  - const: `19108` bytes
+  - image: `514272` bytes
+  - code: `271308` bytes
+  - const: `19508` bytes
   - init: `8132` bytes
   - data: `200760` bytes
 - `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` flashed and booted from flash on the P2 Edge 32 MB RAM board. The boot banner reported `P2_EDGE, PSRAM`, `[edge32 profile]`, `131072 B` heap, and `33554432 B` PSRAM block API.
@@ -44,7 +44,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - `p2.psram_info()` and `p2.psram_test()` are now exposed for the P2 Edge 32 MB RAM profile; interactive PSRAM smoke verification is still pending
   - `import i2c`; `i2c.init(25,24,400)` returns to the prompt
   - `import spi`; `spi.init(10,11,12,13,0,1000)` returns to the prompt
-  - `import rtos`; locks, queues, flags, timers, callbacks, debug helpers, and worker-backed spawn work
+  - `import rtos`; locks, queues, flags, timers, callbacks, debug helpers, and process-style `rtos.newcog("name", ...int_args)` launch work through the current child VM backend
   - `import spin2`; `print(spin2.path())` -> `/spin2`
   - `import wifi` compiles and imports when `modules/wifi.be` is present on SD/module path; hardware detection on the ESP32-C6 AirLift board is still pending READY/BUSY troubleshooting
 - P2 pins on the no-PSRAM P2 Edge path:
@@ -62,7 +62,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - `rtos.event_set(1); print(rtos.event_wait(1,10)); rtos.event_clear(1)` -> `true`
   - `t=rtos.timer_start(10); rtos.timer_wait(t); print(rtos.timer_expired(t))` -> `true`
   - deferred callback dispatch with `rtos.irq_enable(0,"on_rtos")`, `rtos.event_set(1)`, `print(rtos.irq_poll())` -> `1`
-  - `rtos.load(source); cog=rtos.cog_start("worker_fn",7)` starts explicitly loaded worker code on the worker cog
+  - `rtos.load(source); cog=rtos.newcog("worker_fn",7)` starts explicitly loaded child-VM code on the process cog; direct `rtos.newcog(function, ...)` is intentionally guarded until safe closure transfer exists
 - `spin2.path()` returns `/spin2`; `spin2.list()` returned `[]` when no compatible binaries were present on the SD-visible path
 - `os.listdir("/")` returns the current SD root after filtering stale/non-printable DOSFS entries; the latest card listed `SPIN2`, `HELLO.TXT`, `NEWTEST.BIN`, `INDEX.TXT`, `SPN2`, `SPN3`, `SPN4`, `SPT0`, `SPT1`, `SPT2`, `SPT3`, `EXAMPLES`, `WIFI.BE`, and `DETECT.BE`
 - SD write/read/remove was live-verified with `/BERRYTMP.TXT`; the file and directory handles now use fixed P2 pools instead of Catalina libc `malloc`

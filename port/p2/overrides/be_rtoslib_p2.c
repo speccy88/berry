@@ -383,6 +383,58 @@ static const char *rtos_cog_state_name(int cog)
     return "running";
 }
 
+static int rtos_launch_named_task(bvm *vm, const char *name, int first_arg)
+{
+    int argc = be_top(vm) - first_arg + 1;
+    int argv[BERRY_WORKER_ARGS_MAX];
+    int i;
+    const char *error = NULL;
+    int cog;
+
+    if (argc < 0) {
+        argc = 0;
+    }
+    if (argc > BERRY_WORKER_ARGS_MAX) {
+        be_raise(vm, "value_error", "too many task arguments");
+    }
+    for (i = 0; i < argc; ++i) {
+        argv[i] = (int)rtos_require_int(vm, first_arg + i, "task arguments must be ints");
+    }
+
+    cog = berry_worker_start_cog(&error);
+    if (cog < 0) {
+        be_raise(vm, "runtime_error", error ? error : "failed to start process cog");
+    }
+    if (berry_worker_exec_ints(name, argc, argv, &error) != 0) {
+        be_raise(vm, "runtime_error", error ? error : "failed to launch process");
+    }
+
+    return cog;
+}
+
+static void rtos_raise_closure_launch_pending(bvm *vm)
+{
+    be_raise(vm,
+        "runtime_error",
+        "rtos.newcog(function, ...) needs closure/proto transfer into a child VM; "
+        "load the task source and call rtos.newcog(\"name\", ...) for now");
+}
+
+static void rtos_push_process_info(bvm *vm)
+{
+    int worker_cog = berry_worker_cog_id();
+
+    be_newobject(vm, "map");
+    rtos_map_set_string(vm, "backend", "single_worker_vm");
+    rtos_map_set_int(vm, "max_processes", (bint)1);
+    rtos_map_set_int(vm, "max_args", (bint)BERRY_WORKER_ARGS_MAX);
+    rtos_map_set_int(vm, "cog", (bint)worker_cog);
+    rtos_map_set_string(vm, "state", berry_worker_state_name(berry_worker_mailbox_state()));
+    rtos_map_set_bool(vm, "closure_launch", 0);
+    rtos_map_set_bool(vm, "multi_vm_slots", 0);
+    rtos_map_set_bool(vm, "task_switcher", 0);
+}
+
 static void rtos_mark_irq_mask_locked(uint32_t mask)
 {
     int channel;
@@ -407,29 +459,30 @@ static void rtos_mark_irq_mask(bvm *vm, uint32_t mask)
 static int m_rtos_spawn(bvm *vm)
 {
     const char *name = rtos_require_name(vm, 1, "function name must be a string");
-    int argc = be_top(vm) - 1;
-    int argv[BERRY_WORKER_ARGS_MAX];
-    int i;
-    const char *error = NULL;
-    int cog;
-
-    if (argc > BERRY_WORKER_ARGS_MAX) {
-        be_raise(vm, "value_error", "too many task arguments");
-    }
-    for (i = 0; i < argc; ++i) {
-        argv[i] = (int)rtos_require_int(vm, i + 2, "task arguments must be ints");
-    }
-
-    cog = berry_worker_start_cog(&error);
-    if (cog < 0) {
-        be_raise(vm, "runtime_error", error ? error : "failed to start worker cog");
-    }
-    if (berry_worker_exec_ints(name, argc, argv, &error) != 0) {
-        be_raise(vm, "runtime_error", error ? error : "failed to launch worker task");
-    }
+    int cog = rtos_launch_named_task(vm, name, 2);
 
     be_pushint(vm, (bint)cog);
     be_return(vm);
+}
+
+static int m_rtos_newcog(bvm *vm)
+{
+    int cog;
+
+    if (be_top(vm) < 1) {
+        be_raise(vm, "type_error", "task function or function name is required");
+    }
+    if (be_isstring(vm, 1)) {
+        const char *name = rtos_require_name(vm, 1, "function name must be a string");
+        cog = rtos_launch_named_task(vm, name, 2);
+        be_pushint(vm, (bint)cog);
+        be_return(vm);
+    }
+    if (be_isfunction(vm, 1)) {
+        rtos_raise_closure_launch_pending(vm);
+    }
+    be_raise(vm, "type_error", "task must be a function or function name string");
+    be_return_nil(vm);
 }
 
 static int m_rtos_load_str(bvm *vm)
@@ -942,6 +995,13 @@ static int m_rtos_debug_tasks(bvm *vm)
     be_return(vm);
 }
 
+static int m_rtos_process_info(bvm *vm)
+{
+    rtos_push_process_info(vm);
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
 static int m_rtos_debug_regs(bvm *vm)
 {
     bint cog = rtos_require_int(vm, 1, "cog must be an int");
@@ -981,8 +1041,10 @@ static int m_rtos_member(bvm *vm)
     else if (!strcmp(name, "load_file")) be_pushntvfunction(vm, m_rtos_load_file);
     else if (!strcmp(name, "spawn")) be_pushntvfunction(vm, m_rtos_spawn);
     else if (!strcmp(name, "cog_start")) be_pushntvfunction(vm, m_rtos_spawn);
-    else if (!strcmp(name, "thread")) be_pushntvfunction(vm, m_rtos_spawn);
-    else if (!strcmp(name, "new")) be_pushntvfunction(vm, m_rtos_spawn);
+    else if (!strcmp(name, "newcog")) be_pushntvfunction(vm, m_rtos_newcog);
+    else if (!strcmp(name, "process")) be_pushntvfunction(vm, m_rtos_newcog);
+    else if (!strcmp(name, "thread")) be_pushntvfunction(vm, m_rtos_newcog);
+    else if (!strcmp(name, "new")) be_pushntvfunction(vm, m_rtos_newcog);
     else if (!strcmp(name, "stop")) be_pushntvfunction(vm, m_rtos_stop);
     else if (!strcmp(name, "state")) be_pushntvfunction(vm, m_rtos_state);
     else if (!strcmp(name, "error")) be_pushntvfunction(vm, m_rtos_error);
@@ -1012,6 +1074,8 @@ static int m_rtos_member(bvm *vm)
     else if (!strcmp(name, "irq_disable")) be_pushntvfunction(vm, m_rtos_irq_disable);
     else if (!strcmp(name, "debug_tasks")) be_pushntvfunction(vm, m_rtos_debug_tasks);
     else if (!strcmp(name, "debug_regs")) be_pushntvfunction(vm, m_rtos_debug_regs);
+    else if (!strcmp(name, "process_info")) be_pushntvfunction(vm, m_rtos_process_info);
+    else if (!strcmp(name, "task_info")) be_pushntvfunction(vm, m_rtos_process_info);
     else if (!strcmp(name, "IRQ_ATN")) be_pushint(vm, RTOS_IRQ_ATN);
     else if (!strcmp(name, "IRQ_DEFERRED")) be_pushbool(vm, 1);
     else if (!strcmp(name, "QUEUE_MAX")) be_pushint(vm, RTOS_QUEUE_MAX);

@@ -130,14 +130,14 @@ p2.status()
 
 #### `rtos` Module
 
-The `rtos` module owns P2 concurrency: worker-backed task spawn/cog start, cooperative sleep/yield, hardware locks, named queues, event flags, counter timers, deferred event callbacks, and debug maps. The older experimental `worker` and `threads` modules are no longer exported in the normal P2 profile; their backend pieces are folded under `rtos`. The current implementation supports the main VM plus one worker VM/cog, with shared Hub-RAM queues/events/locks shaped for a later multi-worker heap expansion.
+The `rtos` module owns P2 concurrency: process-style task spawn/cog start, cooperative sleep/yield, hardware locks, named queues, event flags, counter timers, deferred event callbacks, and debug maps. The older experimental `worker` and `threads` modules are no longer exported in the normal P2 profile; their backend pieces are folded under `rtos`. The current implementation supports the main VM plus one child Berry VM/cog, with shared Hub-RAM queues/events/locks shaped for a later multi-VM heap expansion.
 
 ```berry
 import rtos
 
 rtos.channel("sensor")
 rtos.load_file("/examples/rtos/workers/packet_reader.be")
-rtos.spawn("packet_reader", 100)
+rtos.newcog("packet_reader", 100)
 print(rtos.get("sensor", 500))
 rtos.stop()
 
@@ -147,7 +147,7 @@ rtos.unlock(lock)
 rtos.delete_lock(lock)
 ```
 
-Use `rtos.load_file(path)` for readable worker code stored on the SD card. `rtos.load_str(source)` is available when generated source is useful, and `rtos.load(source)` remains as the compatibility alias for `rtos.load_str(source)`. Worker code runs in a separate Berry VM on another cog, so functions or closures defined only in the main VM cannot be passed directly to `rtos.spawn()`. Load the worker function into the worker VM first, then spawn it by name.
+Use `rtos.load_file(path)` for readable child-task code stored on the SD card. `rtos.load_str(source)` is available when generated source is useful, and `rtos.load(source)` remains as the compatibility alias for `rtos.load_str(source)`. Child code runs in a separate Berry VM on another cog, so functions or closures defined only in the main VM cannot be passed directly yet. The preferred process spelling is `rtos.newcog("function_name", ...int_args)` after loading the task source. `rtos.newcog(function, ...)` is reserved for the real closure-transfer path and currently raises a clear runtime error instead of sharing unsafe VM pointers.
 
 The global `run_file(path)` helper compiles and runs a `.be` file from the current VM, which makes it useful from the REPL or from another script:
 
@@ -301,7 +301,7 @@ print(open("/TMPD/TEST.TXT", "r").read())
 
 #### Propeller 2 Hardware Helpers
 
-Propeller 2 hardware helpers are exposed through the `p2` module for clocks, counters, pins, smartpins, CORDIC, locks, attention, and cog inspection. Task sleep and worker-backed cog startup live in `rtos` so those concepts have one public home. The older `prop2_*` globals remain available for compatibility, but new examples should use `p2` and `rtos`.
+Propeller 2 hardware helpers are exposed through the `p2` module for clocks, counters, pins, smartpins, CORDIC, locks, attention, and cog inspection. Task sleep and process-style cog startup live in `rtos` so those concepts have one public home. The older `prop2_*` globals remain available for compatibility, but new examples should use `p2` and `rtos`.
 
 ```berry
 import p2

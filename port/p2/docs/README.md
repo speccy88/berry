@@ -39,12 +39,12 @@ Current Catalina status on P2 Edge / latest silicon:
 
 - the default build targets the no-PSRAM P2 Edge: `CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, with no `-lpsram`
 - the default feature profile is `P2_PROFILE=full`; `make p2-minimal` builds the core-language/string-only footprint profile, and `make p2-edge32` builds the P2 Edge 32 MB RAM profile with Catalina `-lpsram`
-- `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` reaches a working REPL with a `522720` byte full-profile image
+- `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` reaches a working REPL with a `523904` byte full-profile image
 - `print()`, assignment, and basic arithmetic are live-verified
 - `for i:0..3`, `for e:list`, `for v:map`, and `for k:map.keys()` are live-verified
 - `import string`, `import math`, `import json`, `import bytes`, and `import os` are live-verified
 - `import p2`, `import rtos`, `import i2c`, `import spi`, and `import spin2` are now live-verified
-- `import rtos` exposes worker-backed tasks, locks, queues, event flags, timers, deferred callbacks, and debug helpers
+- `import rtos` exposes process-style tasks, locks, queues, event flags, timers, deferred callbacks, and debug helpers
 - blank Enter presses no longer leak the REPL into an out-of-memory state
 - Up/Down recall the last three REPL commands and Left/Right/Backspace edit the current line
 - `bytes('1122')`, `bytes().fromstring('AB')`, `tohex()`, `asstring()`, `readbytes()`, and range slicing are live-verified
@@ -55,7 +55,7 @@ Current Catalina status on P2 Edge / latest silicon:
 - `p2.status()` prints build size, heap usage bars, clock info, and all 8 cog states
 - `p2.psram_info()` and `p2.psram_test()` are available on the P2 hardware module; on the `edge32` profile they report and smoke-test Catalina PSRAM block access
 - native bus helpers are exposed as `i2c.*` and `spi.*`
-- worker-backed task/cog startup and queues are exposed as `rtos.*`
+- process-style task/cog startup and queues are exposed as `rtos.*`
 - Spin2/PASM binary loading scaffolding is exposed as `spin2.*`
 - WiFiNINA/AirLift SPI framing scaffolding is available in `modules/wifi.be`; ESP32-C6 firmware detection still needs hardware READY/BUSY bring-up
 
@@ -71,20 +71,27 @@ Current hardware verification examples:
 - `import os; print(os.listdir('/'))` lists the current SD root after filtering stale/non-printable DOSFS entries
 - `f=open('/BERRYTMP.TXT','w'); f.write('sd ok'); f.close(); print(open('/BERRYTMP.TXT','r').read()); os.remove('/BERRYTMP.TXT')` is live-verified
 - `import rtos; rtos.channel("a"); rtos.put("a",123); print(rtos.get("a", 10))` -> `123`
-- `rtos.load_file("/examples/rtos/workers/counter_task.be"); cog=rtos.cog_start("counter_task",7)` starts an explicitly loaded worker function on the worker cog
+- `rtos.load_file("/examples/rtos/workers/counter_task.be"); cog=rtos.newcog("counter_task",7)` starts an explicitly loaded child-VM function on the process cog
 - `run_file("/examples/core/qsort.be")` runs a `.be` file from the current VM, including from the REPL
 - `import spin2; print(spin2.path()); print(spin2.list())` -> `/spin2` and `[]` on the current SD-visible path
 
-Worker-side methods are loaded explicitly into the worker VM before `rtos.spawn()` or `rtos.cog_start()`:
+Child-VM methods are loaded explicitly before `rtos.newcog()`, `rtos.spawn()`,
+or `rtos.cog_start()`:
 
 ```berry
 rtos.channel("rx_packets")
 rtos.load_file("/examples/rtos/workers/packet_reader.be")
-rtos.spawn("packet_reader", 50)
+rtos.newcog("packet_reader", 50)
 print(rtos.get("rx_packets", 250))
 ```
 
-`rtos.load_file(path)` is the recommended form because the worker function stays in a normal `.be` file. `rtos.load_str(source)` is still available for generated source strings, and `rtos.load(source)` remains as the compatibility alias for `rtos.load_str(source)`. Worker code runs in its own Berry VM; do not pass closures or VM-owned objects from the main VM to a worker cog. Load the function into the worker VM, then launch it by name.
+`rtos.load_file(path)` is the recommended form because the child task stays in a
+normal `.be` file. `rtos.load_str(source)` is still available for generated
+source strings, and `rtos.load(source)` remains as the compatibility alias for
+`rtos.load_str(source)`. Child code runs in its own Berry VM; direct
+`rtos.newcog(function, ...)` closure launch is intentionally rejected until the
+runtime can safely serialize or recompile the function into the target VM. Load
+the function into the child VM, then launch it by name.
 
 Examples:
 
@@ -106,19 +113,22 @@ the current Catalina COMPACT build: Berry callbacks are dispatched only from
 normal Berry code via `rtos.irq_poll()`, never directly from an interrupt
 service routine.
 
-Current limitation: this implementation supports the main VM plus one
-worker VM/cog. The queue, event, timer, and lock objects are shared Hub-RAM
-state and are written so additional worker VMs can use the same API once the
-P2 heap layer grows multiple worker arenas.
+Current limitation: this implementation supports the main VM plus one child
+process VM/cog. The queue, event, timer, and lock objects are shared Hub-RAM
+state and are written so additional child VMs can use the same API once the P2
+heap layer grows multiple process arenas.
 
 Task helpers:
 
-- `rtos.load_file(path)`: load and run a Berry source file in the worker VM. Put worker task functions in that file, then spawn them by name.
-- `rtos.load_str(source)`: load Berry source text into the worker VM. `rtos.load(source)` is a compatibility alias.
-- `rtos.spawn(name, ...int_args) -> int`: start the worker cog if needed and run a loaded worker-side function by name with up to eight integer arguments.
+- `rtos.load_file(path)`: load and run a Berry source file in the child VM. Put task functions in that file, then launch them by name.
+- `rtos.load_str(source)`: load Berry source text into the child VM. `rtos.load(source)` is a compatibility alias.
+- `rtos.newcog(name, ...int_args) -> int`: start the process cog if needed and run a loaded child-VM function by name with up to eight integer arguments.
+- `rtos.process(name, ...int_args)`, `rtos.thread(name, ...int_args)`, and `rtos.new(name, ...int_args)`: aliases for `rtos.newcog()`.
+- `rtos.spawn(name, ...int_args) -> int`: compatibility spelling for named child-VM launch.
 - `rtos.cog_start(name, ...int_args) -> int`: alias for `rtos.spawn()`.
-- `rtos.thread(name, ...int_args)` / `rtos.new(name, ...int_args)`: aliases for `rtos.spawn()` for thread-style code.
-- `rtos.stop()`, `rtos.state()`, `rtos.error()`: inspect or stop the worker-backed task cog.
+- `rtos.process_info()` / `rtos.task_info()`: inspect the current backend model,
+  child cog, and whether direct closure launch is available.
+- `rtos.stop()`, `rtos.state()`, `rtos.error()`: inspect or stop the process task cog.
 - `rtos.yield()` / `rtos.task_yield()`: cooperative yield.
 - `rtos.sleep_ms(ms)`: sleep the current cog, with Ctrl-C checks on the main VM.
 - `rtos.cog_id() -> int`: current cog number.
@@ -147,14 +157,16 @@ Debug helpers:
 
 RTOS examples live in `../../../examples/rtos/`:
 
-- `queue_worker_producer.be`: worker cog produces packet IDs into a queue consumed by the main VM.
-- `event_worker_signal.be`: worker cog signals the main VM with an event bit after queueing data.
-- `lock_serial_request.be`: worker cog requests main-cog serial output through a queue guarded by a lock.
-- `timer_worker_heartbeat.be`: worker cog uses RTOS timers to send heartbeat messages.
-- `sleep_ms_worker_blink.be`: worker cog blinks a pin with `rtos.sleep_ms()`.
-- `cog_start_worker_loop.be`: `rtos.cog_start()` launches an explicitly loaded worker function.
-- `debug_tasks.be`: inspect cog/task state while a worker task is running.
-- `load_str_inline.be`: compatibility example for loading generated source strings into the worker VM.
+- `queue_worker_producer.be`: child process cog produces packet IDs into a queue consumed by the main VM.
+- `event_worker_signal.be`: child process cog signals the main VM with an event bit after queueing data.
+- `lock_serial_request.be`: child process cog requests main-cog serial output through a queue guarded by a lock.
+- `timer_worker_heartbeat.be`: child process cog uses RTOS timers to send heartbeat messages.
+- `sleep_ms_worker_blink.be`: child process cog blinks a pin with `rtos.sleep_ms()`.
+- `cog_start_worker_loop.be`: `rtos.cog_start()` launches an explicitly loaded child-VM function.
+- `debug_tasks.be`: inspect cog/task state while a child process task is running.
+- `newcog_process_info.be`: use the new process spelling and inspect backend
+  limits.
+- `load_str_inline.be`: compatibility example for loading generated source strings into the child VM.
 
 Files under `examples/rtos/workers/` are loaded by the main examples with
 `rtos.load_file()`. They intentionally define one worker-side function each so

@@ -68,7 +68,7 @@ print(os.remove("/BERRYTMP.TXT"))
 ## `p2`
 
 `p2` is the direct Propeller 2 hardware helper module. It is intentionally
-low-level; cooperative sleeps, worker cogs, locks, and queues live under
+low-level; cooperative sleeps, process cogs, locks, and queues live under
 `rtos`.
 
 Constants:
@@ -204,22 +204,29 @@ spi.deselect()
 ## `rtos`
 
 `rtos` owns the public concurrency and synchronization API. The current full
-profile supports the main VM plus one worker VM/cog. Worker functions must be
-loaded into the worker VM and launched by name; do not pass closures or VM-owned
-objects across cogs.
+profile supports the main VM plus one process VM/cog. Task source must be
+loaded into the child VM before launch. `rtos.newcog("name", ...int_args)` is
+the preferred spelling for new code; direct `rtos.newcog(function, ...)` closure
+launch is guarded until Berry functions can be serialized or recompiled safely
+inside the target VM.
 
-Worker task control:
+Process/cog task control:
 
-- `rtos.load_file(path)`: load Berry source into the worker VM from the SD card.
-- `rtos.load_str(source)`: load Berry source text into the worker VM.
+- `rtos.load_file(path)`: load Berry source into the process VM from the SD card.
+- `rtos.load_str(source)`: load Berry source text into the process VM.
 - `rtos.load(source)`: compatibility alias for `rtos.load_str()`.
-- `rtos.spawn(name, ...int_args) -> int`: run a loaded worker function by name.
+- `rtos.newcog(name, ...int_args) -> int`: run a loaded child-VM function by
+  name on the process cog.
+- `rtos.process(name, ...int_args)`, `rtos.thread(name, ...int_args)`, and
+  `rtos.new(name, ...int_args)`: aliases for `rtos.newcog()`.
+- `rtos.spawn(name, ...int_args) -> int`: compatibility spelling for named
+  child-VM launch.
 - `rtos.cog_start(name, ...int_args) -> int`: alias for `rtos.spawn()`.
-- `rtos.thread(name, ...int_args)` / `rtos.new(name, ...int_args)`: aliases for
-  thread-style examples.
-- `rtos.stop()`: stop the worker cog.
-- `rtos.state() -> string`: current worker state.
-- `rtos.error() -> string or nil`: last worker error.
+- `rtos.stop()`: stop the process cog.
+- `rtos.state() -> string`: current process VM state.
+- `rtos.error() -> string or nil`: last child-VM error.
+- `rtos.process_info() -> map`: current backend limits, process cog ID, and
+  whether direct closure launch is available.
 - `rtos.yield()` / `rtos.task_yield()`: cooperative yield.
 - `rtos.sleep_ms(ms)`: sleep with Ctrl-C checks on the main VM.
 - `rtos.cog_id() -> int`: current cog ID.
@@ -270,7 +277,7 @@ import rtos
 
 rtos.channel("rx_packets")
 rtos.load_file("/examples/rtos/workers/packet_reader.be")
-rtos.spawn("packet_reader", 50)
+rtos.newcog("packet_reader", 50)
 print(rtos.get("rx_packets", 250))
 rtos.stop()
 ```
