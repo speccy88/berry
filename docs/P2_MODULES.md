@@ -493,18 +493,28 @@ Constants:
 
 Functions:
 
-- `taskspin.TASKSPIN(task, step, state) -> int`: create a task. Use `task=-1`
-  for the first free slot, or `0..31` for a fixed slot. `step(id, state)` is
-  called by `TASKNEXT()`.
+- `taskspin.TASKSPIN(task, step, state, stack_address=nil) -> int`: create a
+  task. Use `task=-1` for the first free slot, or `0..31` for a fixed slot.
+  `step(id, state)` is called by `TASKNEXT()`. `stack_address` is kept as
+  Spin2-compatible metadata for diagnostics and future native task switching.
 - `taskspin.TASKNEXT() -> int`: run the next unhalted task step and return its
   task ID, or `-1` if no task can run.
 - `taskspin.TASKSTOP(task) -> bool`: stop/free a task. Use `-1` for current.
-- `taskspin.TASKHALT(task) -> bool`: halt a task. Use `-1` for current.
+- `taskspin.TASKHALT(task) -> bool`: halt a task. Use `-1` for current. If a
+  currently running task halts itself, `TASKNEXT()` is run once to give another
+  unhalted task a chance to execute.
 - `taskspin.TASKCONT(task) -> bool`: continue a halted task.
 - `taskspin.TASKCHK(task) -> int`: return `FREE`, `RUNNING`, or `HALTED`.
 - `taskspin.TASKID() -> int`: current task ID, or `-1` before any task step.
+- `taskspin.TASKHLT() -> int`: Spin2-style reverse-order halt bit mask. Task
+  `0` maps to bit `31`, task `31` maps to bit `0`.
+- `taskspin.halt_bit(task) -> int`: return one task's `TASKHLT()` bit.
+- `taskspin.task_info(task) -> map`: return one slot's status, current flag,
+  and stored `stack_address`.
+- `taskspin.tasks() -> list`: return active task slot metadata.
 - `taskspin.reset()`: clear all slots.
-- `taskspin.info() -> map`: scheduler status and model information.
+- `taskspin.info() -> map`: scheduler status, `halt_mask`, current slot, model
+  information, and Spin2 task-pointer register range metadata.
 
 Example:
 
@@ -519,7 +529,7 @@ def blink_step(id, state)
     return state["n"] >= 10 ? taskspin.STOP : taskspin.RUN
 end
 
-taskspin.TASKSPIN(-1, blink_step, state)
+taskspin.TASKSPIN(-1, blink_step, state, 0x11F)
 while taskspin.TASKNEXT() >= 0
 end
 ```

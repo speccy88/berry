@@ -67,7 +67,9 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 - `modules/math.be` now provides the P2 `math` smoke-test surface from SD,
   avoiding the Catalina/P2 native math path and saving Hub image space.
 - `modules/taskspin.be` provides a 32-slot Spin2-shaped cooperative task API
-  from SD, keeping this experiment out of the Hub firmware image.
+  from SD, including `TASKHLT()` halt-mask diagnostics and task
+  `stack_address` metadata, keeping this experiment out of the Hub firmware
+  image.
 - P2 cached module loading is live-verified after the Catalina const native function hang fix:
   - `import p2`; `print(p2.cogid())` -> `0`
   - `p2.psram_info()`, `p2.psram_test()`, bounded `p2.psram_read()` /

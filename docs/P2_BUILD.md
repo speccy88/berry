@@ -170,7 +170,8 @@ The smoke suite covers:
   `libstore`; on edge32, `libstore` also smoke-tests chunked PSRAM source-cache
   round trips, discovered-module `cache_all()` warmup, and loading SD modules
   back from the PSRAM cache
-- SD-loaded cooperative `taskspin` tasks using a Spin2-shaped `TASK*` API
+- SD-loaded cooperative `taskspin` tasks using a Spin2-shaped `TASK*` API,
+  including halt-mask and stack-address diagnostics
 - SD create/read/readbytes/remove using only `/P2SMOKE.TXT`
 - `rtos` channels, events, timers, `process_info()`, guarded closure launch,
   source-backed `rtos.run(source, task, ...)`, and SD-loaded

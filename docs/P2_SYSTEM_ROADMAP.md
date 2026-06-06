@@ -95,7 +95,8 @@ Short term:
   on both edge32 and XMM-style profiles
 - `taskspin.be` is the first Spin2-shaped concurrency library kept entirely on
   SD: it adds cooperative `TASKSPIN`/`TASKNEXT`/`TASKSTOP`/`TASKHALT`/
-  `TASKCONT`/`TASKCHK`/`TASKID` behavior without increasing the firmware image
+  `TASKCONT`/`TASKCHK`/`TASKID`/`TASKHLT` behavior, stack-address metadata, and
+  per-task diagnostics without increasing the firmware image
 - keep the image under the 512 KiB Hub RAM guard for `p2-ram`
 
 Medium term:

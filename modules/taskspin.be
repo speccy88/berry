@@ -50,7 +50,7 @@ taskspin._first_free = def()
     return -1
 end
 
-taskspin.taskspin = def(task, step, state)
+taskspin.taskspin = def(task, step, state, stack_address)
     if type(step) != "function"
         return -1
     end
@@ -66,6 +66,7 @@ taskspin.taskspin = def(task, step, state)
     taskspin._tasks[slot] = {
         "step": step,
         "state": state,
+        "stack_address": stack_address,
         "status": taskspin.RUNNING
     }
     taskspin._count += 1
@@ -80,16 +81,70 @@ taskspin.tasknext = def()
         taskspin._current = (taskspin._current + 1) % taskspin.MAX_TASKS
         var task = taskspin._tasks[taskspin._current]
         if task != nil && task["status"] == taskspin.RUNNING
+            var id = taskspin._current
             var result = task["step"](taskspin._current, task["state"])
-            if result == taskspin.STOP || result == false
-                taskspin.taskstop(taskspin._current)
-            elif result == taskspin.HALT
-                taskspin.taskhalt(taskspin._current)
+            if taskspin._tasks[id] != nil && (result == taskspin.STOP || result == false)
+                taskspin.taskstop(id)
+            elif taskspin._tasks[id] != nil && result == taskspin.HALT
+                taskspin.taskhalt(id, false)
             end
-            return taskspin._current
+            if taskspin._tasks[id] == nil
+                return id
+            elif taskspin._tasks[id]["status"] == taskspin.HALTED
+                return id
+            else
+                return taskspin._current
+            end
         end
     end
     return -1
+end
+
+taskspin.taskhlt = def()
+    var mask = 0
+    for i : 0..taskspin.MAX_TASKS - 1
+        var task = taskspin._tasks[i]
+        if task != nil && task["status"] == taskspin.HALTED
+            mask |= taskspin.halt_bit(i)
+        end
+    end
+    return mask
+end
+
+taskspin.halt_bit = def(task)
+    if !taskspin._valid(task)
+        return 0
+    end
+    return 1 << (taskspin.MAX_TASKS - 1 - task)
+end
+
+taskspin.task_info = def(task)
+    if !taskspin._valid(task) || taskspin._tasks[task] == nil
+        return {
+            "id": task,
+            "status": taskspin.FREE
+        }
+    end
+    var item = taskspin._tasks[task]
+    return {
+        "id": task,
+        "status": item["status"],
+        "halted": item["status"] == taskspin.HALTED,
+        "running": item["status"] == taskspin.RUNNING,
+        "stack_address": item["stack_address"],
+        "current": task == taskspin._current
+    }
+end
+
+taskspin.tasks = def()
+    var out = []
+    for i : 0..taskspin.MAX_TASKS - 1
+        var item = taskspin.task_info(i)
+        if item["status"] != taskspin.FREE
+            out.push(item)
+        end
+    end
+    return out
 end
 
 taskspin.taskstop = def(task)
@@ -105,12 +160,15 @@ taskspin.taskstop = def(task)
     return true
 end
 
-taskspin.taskhalt = def(task)
+taskspin.taskhalt = def(task, switch_now)
     var slot = taskspin._resolve(task)
     if !taskspin._valid(slot) || taskspin._tasks[slot] == nil
         return false
     end
     taskspin._tasks[slot]["status"] = taskspin.HALTED
+    if slot == taskspin._current && switch_now != false && taskspin._count > 1
+        taskspin.tasknext()
+    end
     return true
 end
 
@@ -151,7 +209,10 @@ taskspin.info = def()
         "tasks": taskspin._count,
         "running": running,
         "halted": halted,
+        "halt_mask": taskspin.taskhlt(),
+        "current": taskspin._current,
         "model": "cooperative_step_closures",
+        "task_pointer_registers": "$11F..$100",
         "storage": "sd"
     }
 end
@@ -163,6 +224,7 @@ taskspin.TASKHALT = taskspin.taskhalt
 taskspin.TASKCONT = taskspin.taskcont
 taskspin.TASKCHK = taskspin.taskchk
 taskspin.TASKID = taskspin.taskid
+taskspin.TASKHLT = taskspin.taskhlt
 
 taskspin.reset()
 

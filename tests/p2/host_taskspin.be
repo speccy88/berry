@@ -1,38 +1,4 @@
-print("P2_SMOKE_BEGIN libraries")
-
-import binary_heap
-
-var data = [3, 1, 4, 1, 5]
-binary_heap.sort(data, /a b -> a < b)
-assert(data == [1, 1, 3, 4, 5])
-
-import libstore
-
-var status = libstore.status()
-assert(status["lazy"] == true)
-assert(status["source"] == "sd")
-assert(status["heap"] == "hub")
-assert(status["psram_cache"] == status["psram_available"])
-assert(status["psram_cache_used"] == 0)
-assert(status["psram_cache_free"] == status["psram_cache_limit"])
-assert(status["psram_cache_items"] == 0)
-assert(status["library_count"] >= 5)
-assert(status["psram_max_transfer"] >= 0)
-assert(libstore.strategy()["library_home"] == "sd")
-assert(libstore.strategy()["object_heap"] == false)
-assert(libstore.strategy()["direct_execute_from_psram"] == false)
-assert(libstore.strategy()["load"] == "lazy_source_or_psram_cache")
-assert(libstore.modules().size() >= 4)
-assert(libstore.module_name("MATH.BE") == "math")
-assert(libstore.module_name("README.TXT") == nil)
-assert(libstore.exists("binary_heap"))
-assert(libstore.source_path("binary_heap") == "/modules/binary_heap.be")
-assert(libstore.info("binary_heap")["exists"] == true)
-assert(libstore.info("binary_heap")["source"] == "sd")
-assert(libstore.exists("taskspin"))
-assert(libstore.source_path("taskspin") == "/modules/taskspin.be")
-
-import taskspin
+var taskspin = run_file("modules/taskspin.be")
 
 taskspin.reset()
 
@@ -56,11 +22,9 @@ end
 
 var ta = taskspin.TASKSPIN(-1, step_a, a, 287)
 var tb = taskspin.TASKSPIN(-1, step_b, b, 286)
-assert(ta >= 0 && tb >= 0 && ta != tb)
-assert(taskspin.TASKCHK(ta) == taskspin.RUNNING)
-assert(taskspin.TASKCHK(tb) == taskspin.RUNNING)
+assert(ta == 0)
+assert(tb == 1)
 assert(taskspin.task_info(ta)["stack_address"] == 287)
-assert(taskspin.task_info(tb)["stack_address"] == 286)
 assert(taskspin.tasks().size() == 2)
 
 assert(taskspin.TASKHALT(ta))
@@ -108,11 +72,9 @@ assert(taskspin.task_info(tr)["current"] == true)
 assert(taskspin.TASKSTOP(th))
 assert(taskspin.TASKSTOP(tr))
 
-var info2 = taskspin.info()
-assert(info2["max_tasks"] == 32)
-assert(info2["tasks"] == 0)
-assert(info2["halt_mask"] == 0)
-assert(info2["task_pointer_registers"] == "$11F..$100")
-assert(info2["storage"] == "sd")
-
-print("P2_SMOKE_PASS libraries")
+var info = taskspin.info()
+assert(info["max_tasks"] == 32)
+assert(info["tasks"] == 0)
+assert(info["halt_mask"] == 0)
+assert(info["task_pointer_registers"] == "$11F..$100")
+assert(info["storage"] == "sd")

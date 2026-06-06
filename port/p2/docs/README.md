@@ -216,9 +216,11 @@ memory, so `libstore` uses only the reported safe block window.
 
 `modules/taskspin.be` is also SD-loaded. It implements a Spin2-shaped
 cooperative task API (`TASKSPIN`, `TASKNEXT`, `TASKSTOP`, `TASKHALT`,
-`TASKCONT`, `TASKCHK`, and `TASKID`) for closure-based state machines in the
-current VM. This keeps the API experiment out of the Hub image while the
-lower-level cog-local switcher design matures.
+`TASKCONT`, `TASKCHK`, `TASKID`, and `TASKHLT`) for closure-based state
+machines in the current VM. Task slots keep `stack_address` metadata and expose
+per-task diagnostics, so Berry examples can use the Spin2 vocabulary while the
+lower-level cog-local switcher design matures. This keeps the API experiment
+out of the Hub image.
 
 Reserved-pin note on the current Catalina `P2_EDGE` path:
 
