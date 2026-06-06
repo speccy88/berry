@@ -44,9 +44,10 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   `make p2-smoke-edge32` once that directory and `modules/` have been copied to
   the SD card.
 - P2 VMs add `/modules` as a default lazy import root, so optional `.be`
-  libraries can live on SD. `modules/libstore.be` reports the SD-first model and
-  can mirror source text into PSRAM on edge32 while keeping live Berry objects in
-  Hub RAM.
+  libraries can live on SD. `modules/libstore.be` reports the SD-first model,
+  mirrors source text into PSRAM as bounded chunks on edge32, and can load a
+  cached module by materializing source back into Hub RAM only when requested.
+  Live Berry objects and bytecode still remain in Hub RAM.
 - `modules/math.be` now provides the P2 `math` smoke-test surface from SD,
   avoiding the Catalina/P2 native math path and saving Hub image space.
 - `modules/taskspin.be` provides a 32-slot Spin2-shaped cooperative task API
@@ -62,8 +63,8 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - direct edge32 PSRAM/library-cache REPL checks pass:
     `p2.psram_test()["ok"]` -> `true`,
     `p2.psram_read(29*1024*1024, 5)` after writing `"cache"` -> `cache`, and
-    `libstore.cache_source("binary_heap")` / `libstore.cached_source(...)`
-    round-trip `1565` bytes
+    chunked `libstore.cache_source("binary_heap")` /
+    `libstore.cached_source(...)` round-trip `1565` bytes
   - `import i2c`; `i2c.init(25,24,400)` returns to the prompt
   - `import spi`; `spi.init(10,11,12,13,0,1000)` returns to the prompt
   - `import rtos`; locks, queues, flags, timers, callbacks, debug helpers, and process-style `rtos.newcog("name", ...int_args)` launch work through the current child VM backend
@@ -186,7 +187,7 @@ Current machine focus to preserve:
 Known limitation:
 
 - not every standard library module has been re-verified interactively yet on the cached-runtime-module path; `string`, SD-loaded `math`, `json`, `bytes`, `os`, and the P2 hardware modules have current or prior hardware coverage, but longer mixed-module sessions still need stress testing
-- `P2_PROFILE=edge32` enables Catalina `-lpsram` and PSRAM block access. Berry exposes bounded `p2.psram_read()` / `p2.psram_write()` wrappers and `libstore` can use them as a source-cache backend, but Berry's object heap remains in Hub RAM. Catalina's COMPACT PSRAM API is transfer-based, not ordinary C pointer-addressable memory; moving the GC/object heap to external RAM would require an XMM/large-memory object representation or a handle/cache layer.
+- `P2_PROFILE=edge32` enables Catalina `-lpsram` and PSRAM block access. Berry exposes bounded `p2.psram_read()` / `p2.psram_write()` wrappers and `libstore` can use them as a chunked source-cache backend, but Berry's object heap remains in Hub RAM. Catalina's COMPACT PSRAM API is transfer-based, not ordinary C pointer-addressable memory; moving the GC/object heap to external RAM would require an XMM/large-memory object representation or a handle/cache layer.
 - `make p2-smoke-edge32` still depends on `/tests/p2` being present on the SD
   card. The quick REPL smoke passes, but the temporary serial SD loader wedged
   while creating or writing the nested `/tests/p2` tree; direct REPL checks were

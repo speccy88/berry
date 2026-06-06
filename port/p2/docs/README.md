@@ -202,11 +202,13 @@ print(libstore.status())
 print(libstore.exists("binary_heap"))
 ```
 
-On edge32, `libstore.status()` reports PSRAM availability but keeps
-`psram_cache` true and can mirror source text into a reserved PSRAM cache area
-with `libstore.cache_source(name)`. SD remains the canonical library store, and
-compiled/live Berry objects still use Hub RAM because Catalina COMPACT PSRAM is
-block-transfer storage rather than ordinary pointer-addressable heap.
+On edge32, `libstore.status()` reports PSRAM availability and current cache
+usage. `libstore.cache_source(name)` mirrors source text into a reserved PSRAM
+cache area as bounded chunks, and `libstore.load(name)` can compile a module
+after materializing the cached source back into Hub RAM. SD remains the
+canonical library store, and compiled/live Berry objects still use Hub RAM
+because Catalina COMPACT PSRAM is block-transfer storage rather than ordinary
+pointer-addressable heap.
 
 `modules/taskspin.be` is also SD-loaded. It implements a Spin2-shaped
 cooperative task API (`TASKSPIN`, `TASKNEXT`, `TASKSTOP`, `TASKHALT`,
@@ -236,7 +238,7 @@ P2 Edge 32 MB RAM notes:
 - build with `make p2-edge32` or flash with `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp`
 - the profile uses `CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, and `CATALINA_SERIAL_LIB=-lpsram`
 - Catalina's COMPACT PSRAM support is a block-transfer API (`psram_read()` / `psram_write()`), so Berry's pointer-following GC/object heap remains in Hub RAM for now
-- use `import p2; print(p2.psram_info()); print(p2.psram_test())` as the quick runtime PSRAM smoke check; `make p2-smoke-edge32` also checks raw `p2.psram_read()` / `p2.psram_write()` and the `libstore` PSRAM source cache
+- use `import p2; print(p2.psram_info()); print(p2.psram_test())` as the quick runtime PSRAM smoke check; `make p2-smoke-edge32` also checks raw `p2.psram_read()` / `p2.psram_write()`, chunked `libstore` PSRAM source caching, and loading `math` from the PSRAM source cache
 
 Other toolchains and silicon paths should still be kept buildable, but this is
 the first path to validate when continuing the port. In particular, do not

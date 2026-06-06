@@ -392,8 +392,8 @@ and probes the current SD-first library store:
 
 - `libstore.paths`: current SD library roots. The firmware adds `/modules` to
   Berry's import path at VM startup.
-- `libstore.status() -> map`: reports lazy SD loading, Hub-heap execution, and
-  whether PSRAM is available as a source-cache backend.
+- `libstore.status() -> map`: reports lazy SD loading, Hub-heap execution,
+  PSRAM cache availability, used/free cache bytes, and cached item count.
 - `libstore.strategy() -> map`: reports the storage model: SD is the canonical
   library home, PSRAM is a transfer/cache backend when available, and live Berry
   objects still use the Hub heap.
@@ -402,14 +402,26 @@ and probes the current SD-first library store:
 - `libstore.exists(name) -> bool`: true when `/modules/<name>.be` exists.
 - `libstore.source_path(name) -> string or nil`: returns the SD source path.
 - `libstore.info(name) -> map`: return SD path/cache metadata for one module.
+- `libstore.cached(name) -> bool`: true when the module source is already in
+  the current PSRAM cache directory.
 - `libstore.cache_source(name) -> map or nil`: copy one module's source text
-  from SD into the reserved PSRAM cache area when PSRAM is available.
+  from SD into the reserved PSRAM cache area when PSRAM is available. Sources
+  are stored as PSRAM chunks, so the module can be larger than one Catalina
+  transfer even though each individual read/write remains bounded by
+  `p2.psram_info()["max_transfer"]`.
 - `libstore.cached_source(name) -> string or nil`: read cached source text back
   from PSRAM into a temporary Hub string.
 - `libstore.cache_reset()`: clear the in-memory cache directory and reset the
   PSRAM allocation pointer.
 - `libstore.run_cached(name)`: compile and call a cached source module. This is
   mainly a diagnostic path; normal `import` still loads lazily from SD.
+- `libstore.load(name)`: load by module name, using the PSRAM source cache when
+  available and falling back to `run_file()` from SD otherwise.
+- `libstore.cache_many(name, ...)`: cache a selected set of modules.
+- `libstore.cache_all()`: cache all known modules that exist under
+  `libstore.paths`.
+- `libstore.cache_report() -> map`: return current cache status and per-module
+  chunk/address metadata.
 - `libstore.run(path)`: calls `run_file(path)`.
 
 Example:
