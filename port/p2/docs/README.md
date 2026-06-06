@@ -75,6 +75,18 @@ Current hardware verification examples:
 - `run_file("/examples/core/qsort.be")` runs a `.be` file from the current VM, including from the REPL
 - `import spin2; print(spin2.path()); print(spin2.list())` -> `/spin2` and `[]` on the current SD-visible path
 
+Repeatable smoke tests live in `../../../tests/p2/`. Copy that directory to the
+SD card root and run from the host while Berry is sitting at `berry>`:
+
+```sh
+make p2-smoke PORT=/dev/cu.usbserial-P97cvdxp
+make p2-smoke-edge32 PORT=/dev/cu.usbserial-P97cvdxp
+```
+
+The target scripts print `P2_SMOKE_PASS ...` markers when complete. The general
+suite creates and removes only `/P2SMOKE.TXT`; the edge32 suite also asserts
+Catalina PSRAM block access through `p2.psram_info()` and `p2.psram_test()`.
+
 Child-VM methods are loaded explicitly before `rtos.newcog()`, `rtos.spawn()`,
 or `rtos.cog_start()`:
 

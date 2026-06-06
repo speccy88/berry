@@ -336,6 +336,17 @@ print(p2.psram_info())
 print(p2.psram_test())
 ```
 
+Repeatable SD smoke tests live under `tests/p2/`. Copy that directory to the SD
+card root, start Berry, then run:
+
+```sh
+make p2-smoke PORT=/dev/cu.usbserial-P97cvdxp
+make p2-smoke-edge32 PORT=/dev/cu.usbserial-P97cvdxp
+```
+
+The edge32 target includes the general smoke suite plus PSRAM block-access
+assertions.
+
 #### Reliable Catalina RAM and Flash Flow
 
 The Catalina path is already set up so RAM loading and flash programming are separate, documented flows instead of ad-hoc `loadp2` commands.

@@ -39,6 +39,9 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - data: `200760` bytes
 - `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` flashed and booted from flash on the P2 Edge 32 MB RAM board. The boot banner reported `P2_EDGE, PSRAM`, `[edge32 profile]`, `131072 B` heap, and `33554432 B` PSRAM block API.
 - `make p2-run TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build PORT=/dev/cu.usbserial-P97cvdxp` RAM-loads and reaches the Berry prompt
+- Non-destructive SD smoke tests now live under `tests/p2/` and can be driven
+  from the host with `make p2-smoke`, `make p2-smoke-quick`, and
+  `make p2-smoke-edge32` once that directory has been copied to the SD card.
 - P2 cached module loading is live-verified after the Catalina const native function hang fix:
   - `import p2`; `print(p2.cogid())` -> `0`
   - `p2.psram_info()` and `p2.psram_test()` are now exposed for the P2 Edge 32 MB RAM profile; interactive PSRAM smoke verification is still pending
@@ -166,6 +169,9 @@ Known limitation:
 - not every standard library module has been re-verified interactively yet on the cached-runtime-module path; `string`, `math`, `json`, `bytes`, `os`, and the P2 hardware modules have current or prior hardware coverage, but longer mixed-module sessions still need stress testing
 - `P2_PROFILE=edge32` enables Catalina `-lpsram` and PSRAM block access, but Berry's object heap remains in Hub RAM. Catalina's COMPACT PSRAM API is transfer-based, not ordinary C pointer-addressable memory; moving the GC/object heap to external RAM would require an XMM/large-memory object representation or a handle/cache layer.
 - Automated serial smoke after the edge32 flash boot reached the prompt but did not reliably deliver Enter through the Python/pty harness; manual `tio -b 230400 /dev/cu.usbserial-P97cvdxp` verification should be run next for `print(6*7)`, string concat, map lookup, `math.sqrt(81)`, and `p2.psram_test()`.
+- The new `scripts/p2/repl_smoke.py` runner uses direct PySerial access with
+  selectable line endings. It still needs a live hardware run on the current
+  board before replacing the manual verification note above.
 - `p2.cog_start_c()` now builds but still needs a focused Berry FFI validation pass on hardware
 - `spin2.call()` needs an SD-card run with a copied compatible `berry_mailbox_demo.bin`; `make spin2` is build-verified, but the current live SD-visible `/spin2` path had no binaries
 - WiFiNINA/AirLift support is a Berry SPI transport skeleton. The ESP32-C6 board flashed with firmware `3.3.0` did not assert READY/BUSY during the last probe, so `wifi.firmware_version()` is not live-verified yet.
@@ -206,7 +212,7 @@ Known limitation:
    - older silicon selection where possible
 6. Next engineering focus:
    - keep checking for heap regressions under longer REPL sessions now that blank-line OOM is fixed
-   - decide whether to add a non-destructive automated P2 smoke test for the verified `string` / `math` / `json` / `bytes` / `os` path
+   - run the new non-destructive `tests/p2/` smoke suite on both full and edge32 hardware images
    - decide when to retire or hide compatibility `prop2_*` globals from full profiles
    - continue Windows validation on `COM6` after the macOS Catalina path is stable enough
 

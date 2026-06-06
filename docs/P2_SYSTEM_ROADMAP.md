@@ -122,7 +122,7 @@ Current implementation:
 
 1. Keep the existing no-PSRAM `full` profile working.
 2. Keep `edge32` flash/RAM builds working.
-3. Build a non-destructive smoke suite for:
+3. Keep expanding the non-destructive `tests/p2/` smoke suite for:
    - arithmetic, strings, lists, maps, ranges
    - `string`, `math`, `json`, `bytes`, `os`, `p2`, `rtos`, `i2c`, `spi`, `spin2`
    - SD read/write/list/remove

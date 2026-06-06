@@ -204,7 +204,7 @@ P2_SERIAL_PROBE_SRCS := $(P2_TEST_DIR)/serial_probe.c $(P2_RUNTIME_DIR)/berry_po
 P2_SERIAL_PROBE := $(P2_BUILD_DIR)/serial_probe.binary
 P2_PREBUILD_DEPS := $(COC) $(P2_CONFIG) $(P2_CONFIG_SOURCE) scripts/prebuild-p2.sh scripts/prebuild-p2.ps1 $(P2_IMAGE_SIZE_CHECK)
 
-.PHONY: p2 p2-minimal p2-full p2-edge32 p2-edge32-ram p2-edge32-flash p2-xmm p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run spin2 spin2-clean spin2-sd-loader spin2-sd-loader-host spin2-sd-put spin2-sd-sync spin2-load spin2-load-all run configure configure-reset show-config
+.PHONY: p2 p2-minimal p2-full p2-edge32 p2-edge32-ram p2-edge32-flash p2-xmm p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-smoke p2-smoke-quick p2-smoke-edge32 p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run spin2 spin2-clean spin2-sd-loader spin2-sd-loader-host spin2-sd-put spin2-sd-sync spin2-load spin2-load-all run configure configure-reset show-config
 
 configure:
 	$(MSG) [Configure] $(P2_LOCAL_CONFIG)
@@ -486,6 +486,30 @@ else
 	$(Q) "$(LOADP2)" -p "$(PORT)" -b "$(P2_BAUD)" -xTERM
 endif
 
+p2-smoke:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite full
+
+p2-smoke-quick:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-quick PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite quick
+
+p2-smoke-edge32:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-edge32 PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite edge32
+
 p2-stop:
 ifeq ($(HOST_OS),windows)
 	$(Q) $(PWSH) -Command "Get-CimInstance Win32_Process | Where-Object { \$_.Name -match 'loadp2' -and \$_.CommandLine -match [regex]::Escape('$(PORT)') } | ForEach-Object { Write-Host ('[Loader] stopping stale loadp2 on $(PORT) (pid ' + \$_.ProcessId + ')'); Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }"
@@ -496,7 +520,7 @@ else
 		for pid in $$PIDS; do \
 			cmd="$$(ps -p "$$pid" -o command= 2>/dev/null || true)"; \
 			case "$$cmd" in \
-				*loadp2*" $(PORT) "*|*loadp2*"$(PORT)"*|*proploader*" $(PORT) "*|*proploader*"$(PORT)"*|*serial_terminal.py*" $(PORT) "*|*serial_terminal.py*"$(PORT)"*|*tio*" $(PORT) "*|*tio*"$(PORT)"*) \
+				*loadp2*" $(PORT) "*|*loadp2*"$(PORT)"*|*proploader*" $(PORT) "*|*proploader*"$(PORT)"*|*serial_terminal.py*" $(PORT) "*|*serial_terminal.py*"$(PORT)"*|*repl_smoke.py*" $(PORT) "*|*repl_smoke.py*"$(PORT)"*|*tio*" $(PORT) "*|*tio*"$(PORT)"*) \
 					echo "[Loader] stopping stale terminal on $(PORT) (pid $$pid)"; \
 					kill -CONT "$$pid" 2>/dev/null || true; \
 					kill "$$pid" 2>/dev/null || true; \
