@@ -8,11 +8,20 @@
 #include "be_object.h"
 #include "be_gc.h"
 
+#if defined(BE_P2_TRACE_GC_MODULE) && BE_P2_TRACE_GC_MODULE
+extern void p2_serial_puts(const char *s);
+#define GC_MODULE_TRACE(_msg) p2_serial_puts(_msg)
+#else
+#define GC_MODULE_TRACE(_msg) ((void)0)
+#endif
+
 #if BE_USE_GC_MODULE
 
 static int m_allocated(bvm *vm)
 {
+    GC_MODULE_TRACE("[gcmod] allocated entry\n");
     size_t count = be_gc_memcount(vm);
+    GC_MODULE_TRACE("[gcmod] allocated count\n");
 #if BE_INTGER_TYPE >= 2
     /* bint is 64-bit: can always represent the memory count as int */
     be_pushint(vm, (bint)count);
@@ -24,12 +33,15 @@ static int m_allocated(bvm *vm)
         be_pushreal(vm, (breal)count);
     }
 #endif
+    GC_MODULE_TRACE("[gcmod] allocated return\n");
     be_return(vm);
 }
 
 static int m_collect(bvm *vm)
 {
+    GC_MODULE_TRACE("[gcmod] collect start\n");
     be_gc_collect(vm);
+    GC_MODULE_TRACE("[gcmod] collect return\n");
     be_return_nil(vm);
 }
 

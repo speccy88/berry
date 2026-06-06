@@ -19,6 +19,13 @@
 #include "be_exec.h"
 #include "be_debug.h"
 
+#if defined(BE_P2_TRACE_GC_COLLECT) && BE_P2_TRACE_GC_COLLECT
+extern void p2_serial_puts(const char *s);
+#define GC_TRACE(_msg) p2_serial_puts(_msg)
+#else
+#define GC_TRACE(_msg) ((void)0)
+#endif
+
 #define GC_PAUSE    (1 << 0) /* GC will not be executed automatically */
 #define GC_HALT     (1 << 1) /* GC completely stopped */
 #define GC_ALLOC    (1 << 2) /* GC in alloc */
@@ -564,6 +571,7 @@ void be_gc_collect(bvm *vm)
     if (vm->gc.status & GC_HALT) {
         return; /* the GC cannot run for some reason */
     }
+    GC_TRACE("[gc] start\n");
 #if BE_USE_PERF_COUNTERS
     size_t slors_used_before_gc, slots_allocated_before_gc;
     be_gc_memory_pools_info(vm, &slors_used_before_gc, &slots_allocated_before_gc);
@@ -573,22 +581,34 @@ void be_gc_collect(bvm *vm)
     if (vm->obshook != NULL) (*vm->obshook)(vm, BE_OBS_GC_START, vm->gc.usage);
     /* step 1: set root-set reference objects to unscanned */
     mark_gray_reset_counters(vm); /* reset all internal counters */
+    GC_TRACE("[gc] internal\n");
     premark_internal(vm); /* object internal the VM */
+    GC_TRACE("[gc] global\n");
     premark_global(vm); /* global objects */
+    GC_TRACE("[gc] stack\n");
     premark_stack(vm); /* stack objects */
+    GC_TRACE("[gc] trace\n");
     premark_tracestack(vm); /* trace stack objects */
+    GC_TRACE("[gc] fixed\n");
     premark_fixed(vm); /* fixed objects */
     /* step 2: set unscanned objects to black */
+    GC_TRACE("[gc] mark\n");
     mark_unscanned(vm);
     /* step 3: destruct and delete unreachable objects */
+    GC_TRACE("[gc] destruct\n");
     destruct_white(vm);
+    GC_TRACE("[gc] delete\n");
     delete_white(vm);
+    GC_TRACE("[gc] strtab\n");
     be_gcstrtab(vm);
     /* step 4: reset the fixed objects */
+    GC_TRACE("[gc] fixed-reset\n");
     reset_fixedlist(vm);
     /* step 5: calculate the next GC threshold */
     vm->gc.threshold = next_threshold(vm->gc);
+    GC_TRACE("[gc] pools\n");
     be_gc_memory_pools(vm); /* free unsued memory pools */
+    GC_TRACE("[gc] end\n");
 #if BE_USE_PERF_COUNTERS
     size_t slors_used_after_gc, slots_allocated_after_gc;
     be_gc_memory_pools_info(vm, &slors_used_after_gc, &slots_allocated_after_gc);

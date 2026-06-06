@@ -24,7 +24,7 @@ else
     endif
 endif
 
-.PHONY: all debug test install uninstall prebuild clean clean-host
+.PHONY: all debug test test-host install uninstall prebuild clean clean-host
 
 HOST_PREBUILD_STAMP ?= $(GENERATE)/.host-prebuild
 
@@ -38,6 +38,16 @@ test: LFLAGS += $(TEST_FLAGS)
 test: all
 	$(MSG) [Run Testcases...]
 	$(Q) ./testall.be
+	$(Q) $(RM) */*.gcno */*.gcda
+
+P2_HOST_TESTS ?= tests/p2/host_libstore_chunk.be tests/p2/host_taskspin.be tests/p2/host_task.be tests/p2/host_p2ipc.be
+
+test-host: test
+	$(MSG) [Run P2 host regressions...]
+	$(Q) for t in $(P2_HOST_TESTS); do \
+		echo "run p2 host testcase: $$t"; \
+		./$(TARGET) "$$t" || exit $$?; \
+	done
 	$(Q) $(RM) */*.gcno */*.gcda
 
 $(TARGET): $(OBJS)

@@ -23,7 +23,12 @@ static bint p2_require_int(bvm *vm, int index, const char *what)
 
 static uint32_t p2_require_u32(bvm *vm, int index, const char *what)
 {
-    return (uint32_t)p2_require_int(vm, index, what);
+    bint value = p2_require_int(vm, index, what);
+
+    if (value < 0) {
+        be_raise(vm, "value_error", what);
+    }
+    return (uint32_t)value;
 }
 
 static int p2_require_boolish(bvm *vm, int index, const char *what)
@@ -66,6 +71,26 @@ static int p2_optional_cog(bvm *vm, int index)
         }
         return (int)cog;
     }
+}
+
+static int p2_require_cog(bvm *vm, int index)
+{
+    bint cog = p2_require_int(vm, index, "cog must be an int");
+
+    if (cog < 0 || cog > 7) {
+        be_raise(vm, "value_error", "cog must be between 0 and 7");
+    }
+    return (int)cog;
+}
+
+static int p2_require_lock(bvm *vm, int index)
+{
+    bint lock = p2_require_int(vm, index, "lock must be an int");
+
+    if (lock < 0 || lock > 15) {
+        be_raise(vm, "value_error", "lock must be between 0 and 15");
+    }
+    return (int)lock;
 }
 
 static void *p2_optional_pointer(bvm *vm, int index)
@@ -338,7 +363,7 @@ int m_cog_start_hex(bvm *vm)
 
 int m_cog_stop(bvm *vm)
 {
-    int cog = p2_require_int(vm, 1, "cog must be an int");
+    int cog = p2_require_cog(vm, 1);
     _cogstop(cog);
     p2_cog_release_stack(cog);
     be_return_nil(vm);
@@ -346,7 +371,7 @@ int m_cog_stop(bvm *vm)
 
 int m_cog_check(bvm *vm)
 {
-    be_pushint(vm, (bint)_cogchk(p2_require_int(vm, 1, "cog must be an int")));
+    be_pushint(vm, (bint)_cogchk(p2_require_cog(vm, 1)));
     be_return(vm);
 }
 
@@ -372,10 +397,7 @@ int m_cog_states(bvm *vm)
 
 int m_cog_stack_bytes(bvm *vm)
 {
-    int cog = p2_require_int(vm, 1, "cog must be an int");
-    if (cog < 0 || cog > 7) {
-        be_raise(vm, "value_error", "cog must be between 0 and 7");
-    }
+    int cog = p2_require_cog(vm, 1);
     be_pushint(vm, (bint)p2_cog_stack_size[cog]);
     be_return(vm);
 }
@@ -388,25 +410,25 @@ int m_lock_new(bvm *vm)
 
 int m_lock_return(bvm *vm)
 {
-    _lockret(p2_require_int(vm, 1, "lock must be an int"));
+    _lockret(p2_require_lock(vm, 1));
     be_return_nil(vm);
 }
 
 int m_lock_try(bvm *vm)
 {
-    be_pushint(vm, (bint)_locktry(p2_require_int(vm, 1, "lock must be an int")));
+    be_pushint(vm, (bint)_locktry(p2_require_lock(vm, 1)));
     be_return(vm);
 }
 
 int m_lock_release(bvm *vm)
 {
-    _lockrel(p2_require_int(vm, 1, "lock must be an int"));
+    _lockrel(p2_require_lock(vm, 1));
     be_return_nil(vm);
 }
 
 int m_lock_check(bvm *vm)
 {
-    be_pushint(vm, (bint)_lockchk(p2_require_int(vm, 1, "lock must be an int")));
+    be_pushint(vm, (bint)_lockchk(p2_require_lock(vm, 1)));
     be_return(vm);
 }
 

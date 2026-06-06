@@ -94,3 +94,31 @@ assert(libstore.cached_source("math") == open("modules/math.be", "r").read())
 all_cached = libstore.cache_all()
 assert(all_cached.size() >= 5)
 assert(libstore.status()["psram_cache_items"] >= 5)
+
+p2.mem = {}
+var p2mem = run_file("modules/p2mem.be")
+var stats = p2mem.stats()
+assert(type(stats) == "map")
+assert(stats["module_count"] >= 5)
+var modules = p2mem.modules()
+assert(modules.size() >= 5)
+var saw_math = false
+for rec : modules
+    if rec["module"] == "math"
+        saw_math = true
+        assert(rec["source_path"] == "modules/math.be")
+        assert(rec.contains("compiled_path"))
+        assert(rec.contains("source_hash"))
+        assert(rec.contains("compiled_hash"))
+        assert(rec.contains("cache_hit_count"))
+        assert(rec.contains("cache_miss_count"))
+        assert(rec.contains("last_used"))
+    end
+end
+assert(saw_math)
+var cache = p2mem.cache()
+assert(type(cache["items"]) == "list")
+var gc_report = p2mem.gc()
+assert(type(gc_report["before"]) == "int")
+var evicted = p2mem.evict()
+assert(evicted["after"]["psram_cache_items"] == 0)

@@ -19,6 +19,8 @@ CATALINA_MODEL="${CATALINA_MODEL:-COMPACT}"
 CATALINA_CLIB="${CATALINA_CLIB:--lcix}"
 CATALINA_SERIAL_LIB="${CATALINA_SERIAL_LIB:-}"
 CATALINA_MLIB="${CATALINA_MLIB:--lm}"
+CATALINA_HEAP_TOP="${CATALINA_HEAP_TOP:-}"
+CATALINA_EXTRA_CFLAGS="${CATALINA_EXTRA_CFLAGS:-}"
 CATALINA_CONFIG_FLAGS="${CATALINA_CONFIG_FLAGS:--C ${CATALINA_PLATFORM} -C ${CATALINA_MODEL} -C SIMPLE -C VT100 -C NO_ARGS}"
 P2_PROFILE="${P2_PROFILE:-full}"
 
@@ -36,6 +38,10 @@ RUN apt-get update \\
 EOF
 fi
 
+BUILD_LOG="$(mktemp "${TMPDIR:-/tmp}/berry-p2-catalina.XXXXXX.log")"
+trap 'rm -f "${BUILD_LOG}"' EXIT
+
+set +e
 docker run --rm \
     --platform "${DOCKER_PLATFORM}" \
     -e TARGET="${TARGET}" \
@@ -46,6 +52,8 @@ docker run --rm \
     -e CATALINA_CLIB="${CATALINA_CLIB}" \
     -e CATALINA_SERIAL_LIB="${CATALINA_SERIAL_LIB}" \
     -e CATALINA_MLIB="${CATALINA_MLIB}" \
+    -e CATALINA_HEAP_TOP="${CATALINA_HEAP_TOP}" \
+    -e CATALINA_EXTRA_CFLAGS="${CATALINA_EXTRA_CFLAGS}" \
     -e CATALINA_CONFIG_FLAGS="${CATALINA_CONFIG_FLAGS}" \
     -e P2_PROFILE="${P2_PROFILE}" \
     -v "${WORKDIR}:/work" \
@@ -70,5 +78,18 @@ docker run --rm \
             CATALINA_CLIB="${CATALINA_CLIB}" \
             CATALINA_SERIAL_LIB="${CATALINA_SERIAL_LIB}" \
             CATALINA_MLIB="${CATALINA_MLIB}" \
+            CATALINA_HEAP_TOP="${CATALINA_HEAP_TOP}" \
+            CATALINA_EXTRA_CFLAGS="${CATALINA_EXTRA_CFLAGS}" \
             CATALINA_CONFIG_FLAGS="${CATALINA_CONFIG_FLAGS}"
-    '
+    ' 2>&1 | tee "${BUILD_LOG}"
+docker_status=${PIPESTATUS[0]}
+set -e
+
+if [ "${docker_status}" -ne 0 ]; then
+    exit "${docker_status}"
+fi
+
+if grep -Eq '(^|[0-9]+:)[[:space:]]*ERROR:' "${BUILD_LOG}"; then
+    echo "[Catalina] Fatal ERROR output detected; failing build before any flash target can continue." >&2
+    exit 1
+fi

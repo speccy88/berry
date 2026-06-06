@@ -9,6 +9,25 @@ assert(math.sqrt(81) == 9)
 assert(math.min(5, 2, 9) == 2)
 assert(math.max(5, 2, 9) == 9)
 assert(math.abs(-42) == 42)
+def math_close(a, b, eps)
+    return math.abs(a - b) < eps
+end
+assert(math_close(math.sin(0), 0, 0.0001))
+assert(math_close(math.sin(math.pi / 2), 1, 0.0001))
+assert(math_close(math.cos(0), 1, 0.0001))
+assert(math_close(math.cos(math.pi), -1, 0.0001))
+assert(math_close(math.tan(0), 0, 0.0001))
+assert(math_close(math.atan(1), math.pi / 4, 0.0001))
+assert(math_close(math.atan2(1, 0), math.pi / 2, 0.0001))
+assert(math_close(math.asin(1), math.pi / 2, 0.0001))
+assert(math_close(math.acos(0), math.pi / 2, 0.0001))
+assert(math_close(math.exp(1), math.e, 0.0002))
+assert(math_close(math.log(math.e), 1, 0.0002))
+assert(math_close(math.log10(100), 2, 0.0002))
+assert(math_close(math.pow(2, 0.5), math.sqrt(2), 0.0002))
+assert(math_close(math.sinh(0), 0, 0.0001))
+assert(math_close(math.cosh(0), 1, 0.0001))
+assert(math_close(math.tanh(0), 0, 0.0001))
 
 import json
 var decoded = json.load('{"a":1,"b":[2,3]}')
@@ -41,5 +60,7 @@ assert(type(status["cogs"]) == "list")
 assert(status["cogs"].size() == 8)
 assert(status["cogs"][p2.cogid()]["current"] == true)
 assert(p2.debug_snapshot()["build"]["profile"] == status["build"]["profile"])
+
+run_file("/tests/p2/smoke_p2_api.be")
 
 print("P2_SMOKE_PASS modules")

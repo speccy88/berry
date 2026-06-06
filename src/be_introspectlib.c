@@ -19,6 +19,12 @@
 
 #if BE_USE_INTROSPECT_MODULE
 
+#if defined(__CATALINA__) && defined(BE_P2_PROFILE)
+#define BE_INTROSPECT_P2_SAFE_PTRS 1
+#else
+#define BE_INTROSPECT_P2_SAFE_PTRS 0
+#endif
+
 #define global(vm)      ((vm)->gbldesc.global)
 #define builtin(vm)     ((vm)->gbldesc.builtin)
 
@@ -128,8 +134,16 @@ static int m_toptr(bvm *vm)
             be_pushcomptr(vm, var_toobj(v));
             be_return(vm);
         } else if (var_type(v) == BE_INT) {
+#if BE_INTROSPECT_P2_SAFE_PTRS
+            if (var_toint(v) == 0) {
+                be_pushcomptr(vm, NULL);
+                be_return(vm);
+            }
+            be_raise(vm, "value_error", "integer pointer conversion is disabled on P2");
+#else
             be_pushcomptr(vm, (void*) (intptr_t) var_toint(v));
             be_return(vm);
+#endif
         } else {
             be_raise(vm, "value_error", "unsupported for this type"); /* LCOV_EXCL_LINE - noreturn via longjmp, gcov can't track execution */
         }
@@ -155,6 +169,16 @@ static int m_fromptr(bvm *vm)
 {
     int top = be_top(vm);
     if (top >= 1) {
+#if BE_INTROSPECT_P2_SAFE_PTRS
+        if (be_iscomptr(vm, 1)) {
+            if (be_tocomptr(vm, 1) == NULL) {
+                be_return_nil(vm);
+            }
+        } else if (be_toint(vm, 1) == 0) {
+            be_return_nil(vm);
+        }
+        be_raise(vm, "value_error", "pointer object conversion is disabled on P2");
+#else
         void* v;
         if (be_iscomptr(vm, 1)) {
             v = be_tocomptr(vm, 1);
@@ -171,6 +195,7 @@ static int m_fromptr(bvm *vm)
             }
             be_return(vm);
         }
+#endif
     }
     be_return_nil(vm);
 }

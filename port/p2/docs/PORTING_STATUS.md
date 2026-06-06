@@ -42,20 +42,20 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - init: `7360` bytes
   - data: `210420` bytes
 - `make p2-edge32 CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds the P2 Edge 32 MB RAM profile:
-  - image: `499008` bytes
-  - code: `260776` bytes
-  - const: `20644` bytes
-  - init: `7440` bytes
-  - data: `195592` bytes
+  - image: `506080` bytes
+  - code: `283940` bytes
+  - const: `23048` bytes
+  - init: `7516` bytes
+  - data: `178240` bytes
 - `make p2-xmm CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds the experimental P2 Edge 32 MB RAM XMM profile:
   - Catalina model: `LARGE`
   - libraries/config: `-lcx -lpsram -lm` with explicit `-C PSRAM`
-  - image: `1225376` bytes under the `16 MiB` experimental XMM image limit
-  - code: `543352` bytes
-  - const: `20636` bytes
-  - init: `7564` bytes
-  - data: `587768` bytes
-  - heap: `512 KiB`, reported as external-memory intent through `BE_P2_HEAP_USES_EXTERNAL_RAM`
+  - image: `726432` bytes under the `16 MiB` experimental XMM image limit
+  - code: `583584` bytes
+  - const: `23040` bytes
+  - init: `7644` bytes
+  - data: `46116` bytes
+  - heap: `15728640` bytes, reported by `p2.status()` as `Berry heap in PSRAM`
   - memory split: Catalina can use the lower `16 MiB` of P2 Edge PSRAM as XMM memory; Berry exposes the upper `16 MiB` as the safe raw PSRAM block/cache window
   - status: hardware verified through Catalina's XMM serial loader and through standalone SPI-flash boot
   - note: `CATALINA_CLIB=-lci` compiled most C files but failed link with undefined Catalina DOSFS `__vi`, so Berry's filesystem path still needs `-lcx`
@@ -63,7 +63,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 - `make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp ...` creates a complete bootable XMM SPI-flash image and writes it with FlexProp `loadp2 -HIMEM=flash @80000000=...`.
   - flash layout: stage-1 boot block at `0x00000`, size-prefixed stage-2 flash-to-PSRAM loader at `0x10000`, size-prefixed Berry XMM image at `0x40000`
   - after reset, standalone XMM flash boot takes about `25-30` seconds before the Berry banner while the stage-2 loader copies the XMM image into PSRAM
-  - verified banner reports `[xmm profile]`, `Berry heap external`, `XMM 16777216 B`, and `block 16777216 B @ 16777216`
+  - verified banner reports `[xmm profile]`, `Berry heap external`, `XMM 16777216 B`, and `block 16777216 B @ 16777216`; `p2.status()` reports `main heap` total `15728640 B`
 - `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` flashed and booted from flash on the P2 Edge 32 MB RAM board. The boot banner reported `P2_EDGE, PSRAM`, `[edge32 profile]`, `131072 B` heap, and `33554432 B` PSRAM block API.
 - `make p2-run TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build PORT=/dev/cu.usbserial-P97cvdxp` RAM-loads and reaches the Berry prompt
 - Non-destructive SD smoke tests now live under `tests/p2/` and can be driven
@@ -112,7 +112,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - `import math; print(math.sqrt(81))` prints `9` from both RAM-loaded edge32
     and standalone flash-booted edge32 images with the current SD card.
   - SD hang root fix is hardware verified: the Catalina patch wrapper is
-    `berry-p2-patch-v23`, direct SD sector stubs compile with the active
+    `berry-p2-patch-v24`, direct SD sector stubs compile with the active
     `CATALINA_MODEL` (COMPACT for edge32, LARGE for XMM), direct SD avoids the
     PSRAM sector cache, Catalina `-lcx` SD auto-plugin is disabled for Berry's
     direct-SD profile, stale service locks fail fast, and Berry uses a static

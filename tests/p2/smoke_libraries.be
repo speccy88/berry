@@ -41,6 +41,54 @@ assert(libstore.info("binary_heap")["source"] == "sd")
 assert(libstore.exists("taskspin"))
 assert(libstore.source_path("taskspin") == "/modules/taskspin.be")
 
+import p2mem
+
+var mem_stats = p2mem.stats()
+assert(type(mem_stats) == "map")
+assert(type(mem_stats["heap"]) == "map")
+assert(type(mem_stats["psram"]) == "map")
+assert(type(mem_stats["libstore"]) == "map")
+assert(mem_stats["module_count"] >= 5)
+
+var mem_modules = p2mem.modules()
+assert(type(mem_modules) == "list")
+assert(mem_modules.size() >= 5)
+var saw_math = false
+for rec : mem_modules
+    assert(type(rec) == "map")
+    assert(rec.contains("module"))
+    assert(rec.contains("source_path"))
+    assert(rec.contains("compiled_path"))
+    assert(rec.contains("storage_tier"))
+    assert(rec.contains("source_hash"))
+    assert(rec.contains("compiled_hash"))
+    assert(rec.contains("hub_bytes_used"))
+    assert(rec.contains("psram_bytes_used"))
+    assert(rec.contains("cache_hit_count"))
+    assert(rec.contains("cache_miss_count"))
+    assert(rec.contains("pinned"))
+    assert(rec.contains("last_used"))
+    if rec["module"] == "math"
+        saw_math = true
+        assert(rec["source_path"] == "/modules/math.be")
+    end
+end
+assert(saw_math)
+
+var mem_cache = p2mem.cache()
+assert(type(mem_cache) == "map")
+assert(type(mem_cache["status"]) == "map")
+assert(type(mem_cache["items"]) == "list")
+
+var gc_report = p2mem.gc()
+assert(type(gc_report) == "map")
+assert(type(gc_report["before"]) == "int")
+assert(type(gc_report["after"]) == "int")
+
+var evict_report = p2mem.evict()
+assert(type(evict_report) == "map")
+assert(evict_report["after"]["psram_cache_items"] == 0)
+
 import taskspin
 
 taskspin.reset()

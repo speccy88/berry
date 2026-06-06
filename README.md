@@ -15,6 +15,27 @@ This repository stays clone-first for users who want Berry plus the Propeller 2 
 
 The long-term maintenance rule is simple: keep the fork easy to use, while keeping Berry upstream merges manageable.
 
+
+## P2 Documentation Map
+
+The active Propeller 2 docs are split by purpose:
+
+- [`docs/getting-started.md`](./docs/getting-started.md): first build, flash, and smoke path.
+- [`docs/building.md`](./docs/building.md): Catalina profiles, board/profile flags, and P2 trace/debug/unsafe-ASM flag policy.
+- [`docs/board-support.md`](./docs/board-support.md): supported board profiles and reserved pins.
+- [`docs/sd-layout.md`](./docs/sd-layout.md): current `/modules` layout and target `/berry/...` layout.
+- [`docs/psram-loader.md`](./docs/psram-loader.md): Hub/PSRAM/XMM cache model.
+- [`docs/berry-compatibility.md`](./docs/berry-compatibility.md): Berry compatibility coverage and bare-metal host-like limitations.
+- [`docs/p2-api.md`](./docs/p2-api.md): current `p2` API snapshot.
+- [`docs/smartpins.md`](./docs/smartpins.md): raw smart-pin API and remaining mode-family roadmap.
+- [`docs/cogs.md`](./docs/cogs.md): current cog/child-VM model and closure-transfer policy.
+- [`docs/tasks.md`](./docs/tasks.md): cooperative `task` and `taskspin` modules.
+- [`docs/pasm.md`](./docs/pasm.md): safe `p2.asm` facade and future PASM ABI rules.
+- [`docs/debugging.md`](./docs/debugging.md): query-based diagnostics and debug flag policy.
+- [`docs/performance.md`](./docs/performance.md): benchmark plan and reporting format.
+- [`docs/hardware-tests.md`](./docs/hardware-tests.md): pins, wiring, resistors, board variants, skips, and runnable hardware-test entrypoints.
+- [`docs/limitations.md`](./docs/limitations.md): explicit unsupported/open areas.
+
 ## Quick Start
 
 Standard Berry host build:
@@ -55,7 +76,7 @@ P2 build profiles are selected with `P2_PROFILE` or with convenience targets:
 - `make p2-minimal` builds the smallest practical REPL profile: core language, standard classes, and `string`, with filesystem, JSON, math, OS, P2 hardware modules, and `prop2_*` globals disabled. The saved image uses the freed Hub RAM for the main Berry heap.
 - `make p2-full` builds the current no-PSRAM P2 Edge profile with the existing modules enabled.
 - `make p2-edge32` builds the P2 Edge 32 MB RAM profile with Catalina `-lpsram`. This enables PSRAM block-transfer support and reserves pins `40..57`; Berry's object heap remains in Hub RAM because COMPACT PSRAM is not ordinary C pointer-addressable storage.
-- `make p2-xmm` remains as a compatibility alias for `make p2-edge32`.
+- `make p2-xmm` builds the experimental Catalina `LARGE`/XMM profile for the P2 Edge 32 MB RAM board. It uses the lower `16 MiB` PSRAM window for Catalina XMM/external heap storage and leaves the upper `16 MiB` as an explicit block/cache window.
 
 P2 app images are checked against the 512 KiB Hub RAM limit. Oversized builds fail before `berry_p2.binary` is published.
 

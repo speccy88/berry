@@ -5,7 +5,7 @@ CATALINA_DIR="${1:?usage: $0 <catalina-dir> [platform] [model] [clib]}"
 CATALINA_PLATFORM="${2:-P2_EDGE}"
 CATALINA_MODEL="${3:-COMPACT}"
 CATALINA_CLIB="${4:-cix}"
-PATCH_VERSION="berry-p2-patch-v23"
+PATCH_VERSION="berry-p2-patch-v24"
 CATALINA_DIR="$(cd "${CATALINA_DIR}" && pwd -P)"
 STAMP_FILE="${CATALINA_DIR}/.${PATCH_VERSION}-${CATALINA_CLIB}-${CATALINA_MODEL}"
 
@@ -725,8 +725,12 @@ PY
 export LCCDIR="${CATALINA_DIR}"
 source "${LCCDIR}/use_catalina" >/dev/null
 
-io_compile_flags=(-p2 -W-w -C "${CATALINA_MODEL}" -C "${CATALINA_PLATFORM}" -C PSRAM -D__CATALINA_SIMPLE_IO=0 -D__CATALINA_SDCARD_IO=1 -D__BERRY_P2_DIRECT_SD_IO -DNOFLOAT)
-sector_compile_flags=(-p2 -W-w -C "${CATALINA_MODEL}" -C "${CATALINA_PLATFORM}" -C PSRAM -D__CATALINA_SIMPLE_IO=0 -D__CATALINA_SDCARD_IO=1 -D__BERRY_P2_DIRECT_SD_IO)
+model_compile_flags=(-C "${CATALINA_MODEL}" -C "${CATALINA_PLATFORM}")
+if [ "${CATALINA_MODEL}" = "LARGE" ]; then
+   model_compile_flags+=(-C PSRAM)
+fi
+io_compile_flags=(-p2 -W-w "${model_compile_flags[@]}" -D__CATALINA_SIMPLE_IO=0 -D__CATALINA_SDCARD_IO=1 -D__BERRY_P2_DIRECT_SD_IO -DNOFLOAT)
+sector_compile_flags=(-p2 -W-w "${model_compile_flags[@]}" -D__CATALINA_SIMPLE_IO=0 -D__CATALINA_SDCARD_IO=1 -D__BERRY_P2_DIRECT_SD_IO)
 io_src_dir="${CATALINA_DIR}/source/lib/io"
 lib_src_dir="${CATALINA_DIR}/source/lib/catalina"
 lib_dst_dir="${CATALINA_DIR}/lib/p2/cmm/${CATALINA_CLIB}"

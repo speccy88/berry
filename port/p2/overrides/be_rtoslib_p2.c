@@ -11,7 +11,9 @@
 #include "be_string.h"
 #include "berry_conf_p2.h"
 #include "berry_port.h"
+#if BE_P2_USE_WORKER_MODULE
 #include "berry_worker.h"
+#endif
 
 #include <cog.h>
 #include <propeller2.h>
@@ -371,18 +373,23 @@ static void rtos_map_set_string(bvm *vm, const char *key, const char *value)
 
 static const char *rtos_cog_state_name(int cog)
 {
-    int worker_cog = berry_worker_cog_id();
     int raw = _cogchk(cog);
 
     if (!raw) {
         return "free";
     }
-    if (cog == worker_cog) {
-        return berry_worker_state_name(berry_worker_mailbox_state());
+#if BE_P2_USE_WORKER_MODULE
+    {
+        int worker_cog = berry_worker_cog_id();
+        if (cog == worker_cog) {
+            return berry_worker_state_name(berry_worker_mailbox_state());
+        }
     }
+#endif
     return "running";
 }
 
+#if BE_P2_USE_WORKER_MODULE
 static int rtos_launch_named_task(bvm *vm, const char *name, int first_arg)
 {
     int argc = be_top(vm) - first_arg + 1;
@@ -424,6 +431,8 @@ static void rtos_load_source_or_raise(bvm *vm, const char *source)
     }
 }
 
+#endif
+
 static const char *rtos_closure_launch_name(bvm *vm, int index)
 {
     bvalue *value = be_indexof(vm, index);
@@ -461,15 +470,25 @@ static const char *rtos_launch_name_from_value(bvm *vm, int index)
 
 static void rtos_push_process_info(bvm *vm)
 {
-    int worker_cog = berry_worker_cog_id();
-
     be_newobject(vm, "map");
-    rtos_map_set_string(vm, "backend", "single_worker_vm");
-    rtos_map_set_int(vm, "max_processes", (bint)1);
-    rtos_map_set_int(vm, "max_args", (bint)BERRY_WORKER_ARGS_MAX);
-    rtos_map_set_int(vm, "cog", (bint)worker_cog);
-    rtos_map_set_string(vm, "state", berry_worker_state_name(berry_worker_mailbox_state()));
-    rtos_map_set_bool(vm, "closure_launch", 1);
+#if BE_P2_USE_WORKER_MODULE
+    {
+        int worker_cog = berry_worker_cog_id();
+        rtos_map_set_string(vm, "backend", "single_worker_vm");
+        rtos_map_set_int(vm, "max_processes", (bint)1);
+        rtos_map_set_int(vm, "max_args", (bint)BERRY_WORKER_ARGS_MAX);
+        rtos_map_set_int(vm, "cog", (bint)worker_cog);
+        rtos_map_set_string(vm, "state", berry_worker_state_name(berry_worker_mailbox_state()));
+        rtos_map_set_bool(vm, "closure_launch", 1);
+    }
+#else
+    rtos_map_set_string(vm, "backend", "archived_worker_vm");
+    rtos_map_set_int(vm, "max_processes", (bint)0);
+    rtos_map_set_int(vm, "max_args", (bint)0);
+    rtos_map_set_int(vm, "cog", (bint)-1);
+    rtos_map_set_string(vm, "state", "archived");
+    rtos_map_set_bool(vm, "closure_launch", 0);
+#endif
     rtos_map_set_bool(vm, "multi_vm_slots", 0);
     rtos_map_set_bool(vm, "task_switcher", 0);
 }
@@ -495,6 +514,7 @@ static void rtos_mark_irq_mask(bvm *vm, uint32_t mask)
     rtos_release_state();
 }
 
+#if BE_P2_USE_WORKER_MODULE
 static int m_rtos_spawn(bvm *vm)
 {
     const char *name = rtos_require_name(vm, 1, "function name must be a string");
@@ -589,6 +609,39 @@ static int m_rtos_error(bvm *vm)
     }
     be_return(vm);
 }
+
+#else
+static int m_rtos_worker_archived(bvm *vm)
+{
+    (void)vm;
+    be_raise(vm, "runtime_error", "archived worker/newcog backend is disabled; use the future real closure/VM cog path");
+    be_return_nil(vm);
+}
+
+static int m_rtos_stop(bvm *vm)
+{
+    (void)vm;
+    be_return_nil(vm);
+}
+
+static int m_rtos_state(bvm *vm)
+{
+    be_pushstring(vm, "archived");
+    be_return(vm);
+}
+
+static int m_rtos_error(bvm *vm)
+{
+    be_pushstring(vm, "archived worker/newcog backend is disabled");
+    be_return(vm);
+}
+
+#define m_rtos_spawn m_rtos_worker_archived
+#define m_rtos_newcog m_rtos_worker_archived
+#define m_rtos_run_source m_rtos_worker_archived
+#define m_rtos_load_str m_rtos_worker_archived
+#define m_rtos_load_file m_rtos_worker_archived
+#endif
 
 static int m_rtos_yield(bvm *vm)
 {

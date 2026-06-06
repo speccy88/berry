@@ -39,11 +39,11 @@ Current Catalina status on P2 Edge / latest silicon:
 
 - the default build targets the no-PSRAM P2 Edge: `CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, with no `-lpsram`
 - the default feature profile is `P2_PROFILE=full`; `make p2-minimal` builds the core-language/string-only footprint profile, and `make p2-edge32` builds the P2 Edge 32 MB RAM profile with Catalina `-lpsram`
-- `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` reaches a working REPL with a `523904` byte full-profile image
+- `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` reaches a working REPL on the full-profile image
 - `print()`, assignment, and basic arithmetic are live-verified
 - `for i:0..3`, `for e:list`, `for v:map`, and `for k:map.keys()` are live-verified
 - `import string`, SD-loaded `import math`, `import json`, `import bytes`, and `import os` are live-verified
-- `import p2`, `import rtos`, `import i2c`, `import spi`, and `import spin2` are now live-verified
+- `import p2`, `import rtos`, `import i2c`, and `import spi` are now live-verified; `spin2` source remains archived and is not compiled by default
 - `import rtos` exposes process-style tasks, locks, queues, event flags, timers, deferred callbacks, and debug helpers
 - blank Enter presses no longer leak the REPL into an out-of-memory state
 - Up/Down recall the last three REPL commands and Left/Right/Backspace edit the current line
@@ -56,7 +56,7 @@ Current Catalina status on P2 Edge / latest silicon:
 - `p2.psram_info()` and `p2.psram_test()` are available on the P2 hardware module; on the `edge32` profile they report and smoke-test Catalina PSRAM block access
 - native bus helpers are exposed as `i2c.*` and `spi.*`
 - process-style task/cog startup and queues are exposed as `rtos.*`
-- Spin2/PASM binary loading scaffolding is exposed as `spin2.*`
+- Spin2/PASM binary loading scaffolding is archived behind the opt-in Spin2 build path and is not part of the default image
 - WiFiNINA/AirLift SPI framing scaffolding is available in `modules/wifi.be`; ESP32-C6 firmware detection still needs hardware READY/BUSY bring-up
 
 Current hardware verification examples:
@@ -119,6 +119,34 @@ Examples:
 - `p2.smartpin_write_mode(pin, mode)`
 - `p2.smartpin_query(pin)`
 - `p2.smartpin_start(pin, mode, x, y)`
+
+The grouped low-level API from the long-term roadmap is also exposed as
+compatibility submodules over the current native helpers:
+
+- `p2.clock.freq()`, `p2.clock.mode()`, `p2.clock.set(mode, freq)`,
+  `p2.clock.cnt()`, `p2.clock.cnth()`, `p2.clock.waitx(cycles)`,
+  `p2.clock.waitus(us)`, `p2.clock.waitms(ms)`, `p2.clock.waitsec(sec)`,
+  `p2.clock.waitcnt(tick)`, and `p2.clock.hubset(value)`
+- `p2.cog.id()`, `p2.cog.check(cog_id)`, `p2.cog.stop(cog_id)`,
+  `p2.cog.attention(mask)`, `p2.cog.poll_attention()`, and
+  `p2.cog.wait_attention()`
+- `p2.lock.new()`, `p2.lock.ret(lock_id)`, `p2.lock.try(lock_id)`,
+  `p2.lock.release(lock_id)`, and `p2.lock.check(lock_id)`
+- `p2.pin.dir_low(pin)`, `p2.pin.dir_high(pin)`, `p2.pin.write(pin, value)`,
+  `p2.pin.low(pin)`, `p2.pin.high(pin)`, `p2.pin.toggle(pin)`,
+  `p2.pin.float(pin)`, and `p2.pin.read(pin)`
+- `p2.cordic.rotxy(x, y, theta)`, `p2.cordic.polxy(r, theta)`, and
+  `p2.cordic.xypol(x, y)`
+- `p2.math.isqrt(x)`, `p2.math.muldiv64(a, b, divisor)`, `p2.math.rev(x)`,
+  and `p2.math.encod(x)`
+- `p2.rng.rnd()`
+- `p2.smart.wrpin(pin, mode)`, `p2.smart.wxpin(pin, x)`,
+  `p2.smart.wypin(pin, y)`, `p2.smart.akpin(pin)`,
+  `p2.smart.rdpin(pin)`, `p2.smart.rqpin(pin)`,
+  `p2.smart.start(pin, mode, x, y)`, and `p2.smart.clear(pin)`
+
+The existing flat names remain supported for current examples and compatibility.
+The grouped API is covered by `/tests/p2/smoke_p2_api.be`.
 
 ## RTOS Module
 
@@ -200,8 +228,14 @@ without enabling the larger upstream `sys` module just to mutate `sys.path()`.
 
 ```berry
 import libstore
+import p2mem
 print(libstore.status())
 print(libstore.exists("binary_heap"))
+print(p2mem.stats())
+print(p2mem.modules())
+print(p2mem.cache())
+p2mem.gc()
+p2mem.evict()
 ```
 
 On edge32 and XMM-style profiles, `libstore.status()` reports PSRAM availability
@@ -216,7 +250,46 @@ PSRAM is block-transfer storage rather than ordinary pointer-addressable heap.
 On XMM profiles, Catalina owns the lower PSRAM window for transparent VM
 memory, so `libstore` uses only the reported safe block window.
 
-`modules/taskspin.be` is also SD-loaded. It implements a Spin2-shaped
+`modules/p2mem.be` is the diagnostics facade over the current memory and
+library-cache model:
+
+- `p2mem.stats()` returns heap, runtime memory, PSRAM, libstore, cache, module
+  count, cache item count, and current GC allocation data.
+- `p2mem.modules()` returns one metadata map per discovered SD module.
+- `p2mem.cache()` returns current PSRAM source-cache status and cached-item
+  records.
+- `p2mem.gc()` runs Berry GC and reports before/after allocation counts.
+- `p2mem.evict()` resets the current libstore PSRAM source cache and reports
+  before/window/after state.
+
+Current limitations are explicit in the returned metadata: compiled `.bec`
+paths, hashes, mtimes, hit/miss counts, refcounts, and last-used timestamps are
+reported as `nil` or `0` until the runtime starts tracking them.
+
+
+`modules/task.be` is the lower-case cooperative task facade over `taskspin`.
+It provides the current roadmap-shaped API while keeping the implementation
+honest: task closures are cooperative step closures in the current VM, not
+independent stackful Berry VMs.
+
+- `task.spin(task_id, closure, *args) -> int`: schedule a closure in a fixed
+  slot or the first free slot when `task_id == -1`; a trailing options map
+  such as `{ "stack": 287 }` records stack metadata for diagnostics.
+- `task.next()`, `task.stop(id)`, `task.halt(id)`, `task.cont(id)`,
+  `task.chk(id)`, `task.id()`, `task.hlt()`, `task.info()`, `task.tasks()`,
+  and `task.task_info(id)` wrap the backed `taskspin` scheduler.
+- A task closure returning `nil`, `task.STOP`, or `false` stops its task;
+  `task.RUN` keeps it runnable and `task.HALT` halts it.
+- `task.info()["all_halted"]` defines the all-halted behavior: there are
+  tasks, but no runnable tasks, so `task.next()` returns `-1` until one is
+  continued or stopped.
+- `task.Semaphore`, `task.Mutex`, `task.Queue`, `task.EventFlags`, and
+  `task.Timer` are cooperative source-level primitives for the current VM.
+
+The still-open scheduler work is explicitly not hidden here: independent
+Berry call stacks/coroutines, true Spin2/PASM task switching, and non-callback
+stackful execution remain future work.
+\n`modules/taskspin.be` is also SD-loaded. It implements a Spin2-shaped
 cooperative task API (`TASKSPIN`, `TASKNEXT`, `TASKSTOP`, `TASKHALT`,
 `TASKCONT`, `TASKCHK`, `TASKID`, and `TASKHLT`) for closure-based state
 machines in the current VM. Task slots keep `stack_address` metadata and expose

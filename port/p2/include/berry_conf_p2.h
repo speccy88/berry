@@ -105,7 +105,7 @@
 #define BE_USE_MATH                     0
 #define BE_USE_OS                       1
 #define BE_USE_FILE                     1
-#define BE_USE_INTROSPECT               0
+#define BE_USE_INTROSPECT               1
 #define BE_USE_SOLIDIFY                 0
 #define BE_USE_DEBUG                    0
 
@@ -115,13 +115,18 @@
 #define BE_P2_USE_SPI_MODULE            1
 #define BE_P2_USE_RTOS_MODULE           1
 #define BE_P2_USE_THREADS_MODULE        0
-#define BE_P2_USE_SPIN2_MODULE          1
+#define BE_P2_USE_SPIN2_MODULE          0 /* archived: replace with real closure/VM path */
 #define BE_P2_USE_WORKER_MODULE         0
 #define BE_P2_USE_XMM_PLACEHOLDER       0
 #define BE_P2_USE_EDGE32_PSRAM          1
 
 #if BE_P2_PROFILE == BE_P2_PROFILE_XMM
-#define BE_P2_HEAP_SIZE                 (512 * 1024)
+/* Catalina LARGE/XMM exposes the lower PSRAM window as pointer-addressable C
+ * memory. Reserve 1 MiB for Catalina/runtime allocations and use the rest as
+ * the Berry VM heap arena. The upper 16 MiB remains the explicit block/cache
+ * window through BE_P2_PSRAM_BLOCK_BASE. */
+#define BE_P2_XMM_RUNTIME_RESERVE_BYTES (1 * 1024 * 1024)
+#define BE_P2_HEAP_SIZE                 (15 * 1024 * 1024)
 #else
 #define BE_P2_HEAP_SIZE                 (128 * 1024)
 #endif
@@ -136,7 +141,7 @@
 #define BE_USE_MATH                     0
 #define BE_USE_OS                       1
 #define BE_USE_FILE                     1
-#define BE_USE_INTROSPECT               0
+#define BE_USE_INTROSPECT               1
 #define BE_USE_SOLIDIFY                 0
 #define BE_USE_DEBUG                    0
 
@@ -146,7 +151,7 @@
 #define BE_P2_USE_SPI_MODULE            1
 #define BE_P2_USE_RTOS_MODULE           1
 #define BE_P2_USE_THREADS_MODULE        0
-#define BE_P2_USE_SPIN2_MODULE          1
+#define BE_P2_USE_SPIN2_MODULE          0 /* archived: replace with real closure/VM path */
 #define BE_P2_USE_WORKER_MODULE         0
 #define BE_P2_USE_XMM_PLACEHOLDER       0
 
@@ -236,6 +241,8 @@
 #define BE_P2_ENABLE_MAIN_INTERRUPT     1
 #define BE_USE_PERF_COUNTERS            0
 #define BE_VM_OBSERVABILITY_SAMPLING    18
+#define BE_P2_TRACE_GC_COLLECT          0
+#define BE_P2_TRACE_GC_MODULE           0
 
 #define BE_STACK_TOTAL_MAX              BE_P2_STACK_SLOTS
 #define BE_STACK_FREE_MIN               8
