@@ -231,7 +231,7 @@ Primary development focus from now on:
 - `P2_EDGE`
 - latest silicon path (`P2_SILICON=latest`, targeting your Rev C board)
 - no-PSRAM P2 Edge defaults (`CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, no `-lpsram`)
-- profile defaults: `full` for normal no-PSRAM work, `minimal` for footprint work, and `edge32` for P2 Edge boards with the 32 MB RAM module
+- profile defaults: `full` for normal no-PSRAM work, `minimal` for footprint work, `edge32` for verified P2 Edge boards with the 32 MB RAM module, and `xmm` for the experimental unified-memory image
 
 P2 Edge 32 MB RAM notes:
 
@@ -239,6 +239,14 @@ P2 Edge 32 MB RAM notes:
 - the profile uses `CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, and `CATALINA_SERIAL_LIB=-lpsram`
 - Catalina's COMPACT PSRAM support is a block-transfer API (`psram_read()` / `psram_write()`), so Berry's pointer-following GC/object heap remains in Hub RAM for now
 - use `import p2; print(p2.psram_info()); print(p2.psram_test())` as the quick runtime PSRAM smoke check; `make p2-smoke-edge32` also checks raw `p2.psram_read()` / `p2.psram_write()`, chunked `libstore` PSRAM source caching, and loading `math` from the PSRAM source cache
+- build the experimental unified-memory image with `make p2-xmm`; it uses
+  Catalina `LARGE` plus `-lpsram` and `-C PSRAM`, reports the Berry heap as
+  external, and keeps the Hub/PSRAM distinction below Berry's allocator.
+  Catalina's P2 Edge XMM support uses the lower `16 MiB` of PSRAM as transparent
+  memory, while Berry leaves the upper `16 MiB` available for explicit
+  PSRAM/block-cache use. Hardware boot/smoke is still pending because XMM
+  images need Catalina's XMM loader utilities, so keep using `edge32` for
+  verified board work.
 
 Other toolchains and silicon paths should still be kept buildable, but this is
 the first path to validate when continuing the port. In particular, do not

@@ -12,6 +12,8 @@ systems:
 - `.be` programs stored on SD and runnable directly from the REPL
 - lazy module loading from SD and, on 32 MB P2 Edge boards, PSRAM-backed module
   storage or cache space
+- a unified VM memory model where Berry code and the Berry GC do not need to
+  know whether backing storage is Hub RAM or PSRAM
 - maximum useful Hub RAM left for the active VM, stacks, buffers, and hardware
   mailboxes
 - broad P2 hardware coverage: pins, smart pins, counters, CORDIC, locks,
@@ -48,6 +50,36 @@ p2.psram_write(29 * 1024 * 1024, "cache")
 print(p2.psram_read(29 * 1024 * 1024, 5))
 ```
 
+## Experimental XMM Unified Memory
+
+The `xmm` profile is the first explicit attempt to make Berry see one larger
+memory model on P2 Edge 32 MB RAM:
+
+```sh
+make p2-xmm
+```
+
+It builds with Catalina `LARGE` plus `-lpsram` and `-C PSRAM`, marks the Berry
+heap as an external-memory heap, and increases the Berry heap target to
+`512 KiB` without changing Berry's allocator API. This is the clean path if it
+boots: Berry keeps calling `p2_heap_malloc()`, while Catalina's XMM memory model
+decides how Hub RAM and PSRAM back that C data.
+
+Catalina currently documents the lower `16 MiB` of P2 Edge PSRAM as XMM memory.
+Berry therefore treats that lower window as Catalina-owned in the public
+`p2.psram_read()` / `p2.psram_write()` API and leaves the upper `16 MiB` for
+explicit block/cache use. A future true `32 MiB + Hub RAM` seamless Berry heap
+would need an object/handle/cache representation that can move GC-managed
+objects without exposing raw PSRAM pointers to the VM.
+
+Current state:
+
+- build verified: `1057120` byte XMM image, under the `16 MiB` experimental XMM
+  image limit
+- direct `loadp2` transferred the XMM image but produced no REPL banner; local
+  Catalina docs say XMM programs need Catalina's XMM loader utilities
+- the normal `full` and `edge32` COMPACT images remain the verified paths
+
 ## Memory Strategy
 
 Short term:
@@ -66,6 +98,8 @@ Short term:
 
 Medium term:
 
+- use `xmm` as the first unified-memory experiment, so the VM does not grow
+  Hub/PSRAM-specific object semantics unless Catalina XMM proves unsuitable
 - add a module cache layer that can store source text, bytecode-like compiled
   artifacts, or solidified tables in PSRAM and copy hot chunks into Hub RAM on
   demand
@@ -76,8 +110,7 @@ Medium term:
 
 Long term:
 
-- evaluate Catalina `LARGE`/`SMALL` XMM execution for a separate experimental
-  image
+- boot and stress Catalina `LARGE`/`SMALL` XMM execution on hardware
 - evaluate whether a handle-based Berry object arena or moving GC can make
   external RAM practical
 - avoid claiming external heap support until object pointers, GC scanning,

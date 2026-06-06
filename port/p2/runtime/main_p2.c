@@ -67,10 +67,20 @@ static void p2_print_banner(void)
     p2_serial_puts(buffer);
 
     if (BE_P2_EXTERNAL_RAM_BYTES > 0) {
-        snprintf(buffer, sizeof(buffer),
-            "[external %lu B PSRAM block API | Berry heap %s]\n",
-            (unsigned long)BE_P2_EXTERNAL_RAM_BYTES,
-            BE_P2_HEAP_USES_EXTERNAL_RAM ? "PSRAM" : "Hub RAM");
+        if (BE_P2_XMM_BYTES > 0) {
+            snprintf(buffer, sizeof(buffer),
+                "[external %lu B PSRAM | XMM %lu B | block %lu B @ %lu | Berry heap %s]\n",
+                (unsigned long)BE_P2_EXTERNAL_RAM_BYTES,
+                (unsigned long)BE_P2_XMM_BYTES,
+                (unsigned long)(BE_P2_EXTERNAL_RAM_BYTES - BE_P2_PSRAM_BLOCK_BASE),
+                (unsigned long)BE_P2_PSRAM_BLOCK_BASE,
+                BE_P2_HEAP_USES_EXTERNAL_RAM ? "external" : "Hub RAM");
+        } else {
+            snprintf(buffer, sizeof(buffer),
+                "[external %lu B PSRAM block API | Berry heap %s]\n",
+                (unsigned long)BE_P2_EXTERNAL_RAM_BYTES,
+                BE_P2_HEAP_USES_EXTERNAL_RAM ? "external" : "Hub RAM");
+        }
         p2_serial_puts(buffer);
     }
 }

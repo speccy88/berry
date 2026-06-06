@@ -26,17 +26,29 @@ This note is the handoff for the next P2 porting session.
 On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 
 - `make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds a RAM image with Catalina 8.8.9:
-  - image: `494304` bytes
-  - code: `248128` bytes
-  - const: `18220` bytes
+  - image: `494624` bytes
+  - code: `248300` bytes
+  - const: `18376` bytes
   - init: `7360` bytes
   - data: `210420` bytes
 - `make p2-edge32 CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds the P2 Edge 32 MB RAM profile:
-  - image: `485024` bytes
-  - code: `250464` bytes
-  - const: `18508` bytes
+  - image: `485344` bytes
+  - code: `250652` bytes
+  - const: `18664` bytes
   - init: `7440` bytes
   - data: `194036` bytes
+- `make p2-xmm CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds the experimental P2 Edge 32 MB RAM XMM profile:
+  - Catalina model: `LARGE`
+  - libraries/config: `-lcx -lpsram -lm` with explicit `-C PSRAM`
+  - image: `1057120` bytes under the `16 MiB` experimental XMM image limit
+  - code: `431212` bytes
+  - const: `18660` bytes
+  - init: `7468` bytes
+  - data: `587252` bytes
+  - heap: `512 KiB`, reported as external-memory intent through `BE_P2_HEAP_USES_EXTERNAL_RAM`
+  - memory split: Catalina can use the lower `16 MiB` of P2 Edge PSRAM as XMM memory; Berry exposes the upper `16 MiB` as the safe raw PSRAM block/cache window
+  - status: build-only; direct `loadp2` RAM load transferred the image but produced no REPL banner, which matches Catalina's note that XMM programs need the Catalina XMM load utilities
+  - note: `CATALINA_CLIB=-lci` compiled most C files but failed link with undefined Catalina DOSFS `__vi`, so Berry's filesystem path still needs `-lcx`
 - `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` flashed and booted from flash on the P2 Edge 32 MB RAM board. The boot banner reported `P2_EDGE, PSRAM`, `[edge32 profile]`, `131072 B` heap, and `33554432 B` PSRAM block API.
 - `make p2-run TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build PORT=/dev/cu.usbserial-P97cvdxp` RAM-loads and reaches the Berry prompt
 - Non-destructive SD smoke tests now live under `tests/p2/` and can be driven
@@ -188,6 +200,14 @@ Known limitation:
 
 - not every standard library module has been re-verified interactively yet on the cached-runtime-module path; `string`, SD-loaded `math`, `json`, `bytes`, `os`, and the P2 hardware modules have current or prior hardware coverage, but longer mixed-module sessions still need stress testing
 - `P2_PROFILE=edge32` enables Catalina `-lpsram` and PSRAM block access. Berry exposes bounded `p2.psram_read()` / `p2.psram_write()` wrappers and `libstore` can use them as a chunked source-cache backend, but Berry's object heap remains in Hub RAM. Catalina's COMPACT PSRAM API is transfer-based, not ordinary C pointer-addressable memory; moving the GC/object heap to external RAM would require an XMM/large-memory object representation or a handle/cache layer.
+- `P2_PROFILE=xmm` is the preferred experiment for the user's desired
+  "one big memory" model. It keeps Berry using the same allocator API while
+  moving the Hub/PSRAM decision below the VM through Catalina `LARGE` XMM. Do
+  not claim this is runtime-verified until the image boots through Catalina's
+  XMM loader and passes smoke on the P2 Edge 32 MB board. Catalina documents
+  only the lower `16 MiB` as XMM-addressable on P2 Edge, so a true seamless
+  `32 MiB + 512 KiB` Berry heap would need a future VM object/handle/cache
+  representation rather than ordinary C pointers alone.
 - `make p2-smoke-edge32` still depends on `/tests/p2` being present on the SD
   card. The quick REPL smoke passes, but the temporary serial SD loader wedged
   while creating or writing the nested `/tests/p2` tree; direct REPL checks were

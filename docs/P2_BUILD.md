@@ -40,8 +40,9 @@ the Berry module feature macros, P2-native module caching, heap sizes, stack
 slot limit, and maximum `bytes()` size.
 
 - `minimal`: core language and standard classes plus the `string` module. It disables filesystem, JSON, math, OS, P2 hardware modules, worker/thread/rtos/spin2 helpers, and low-level `prop2_*` globals. Current verified image: `426624` bytes with a `192 KiB` main heap.
-- `full`: the current no-PSRAM P2 Edge build. Current verified image: `494304` bytes with the existing `128 KiB` main heap, `32 KiB` worker heap, SD-backed `open()`/`os`, P2 hardware modules, `rtos`, `spin2`, and Berry `math`/WiFiNINA helpers available as source. Experimental `worker` and `threads` module APIs are folded under the public `rtos` API, and new cooperative task experiments such as `taskspin.be` live on SD.
-- `edge32`: P2 Edge 32 MB RAM profile for the P2-EC32MB-style board. It enables Catalina `-lpsram`, reserves pins `40..57` for the memory interface, keeps Berry's object heap in Hub RAM, and exposes bounded PSRAM block transfers plus an SD-library source cache for runtime smoke testing. Current verified image: `485024` bytes with a `128 KiB` main heap and `16 KiB` worker heap, leaving Hub RAM room for the PSRAM plugin.
+- `full`: the current no-PSRAM P2 Edge build. Current verified image: `494624` bytes with the existing `128 KiB` main heap, `32 KiB` worker heap, SD-backed `open()`/`os`, P2 hardware modules, `rtos`, `spin2`, and Berry `math`/WiFiNINA helpers available as source. Experimental `worker` and `threads` module APIs are folded under the public `rtos` API, and new cooperative task experiments such as `taskspin.be` live on SD.
+- `edge32`: P2 Edge 32 MB RAM profile for the P2-EC32MB-style board. It enables Catalina `-lpsram`, reserves pins `40..57` for the memory interface, keeps Berry's object heap in Hub RAM, and exposes bounded PSRAM block transfers plus an SD-library source cache for runtime smoke testing. Current verified image: `485344` bytes with a `128 KiB` main heap and `16 KiB` worker heap, leaving Hub RAM room for the PSRAM plugin.
+- `xmm`: experimental P2 Edge 32 MB RAM profile using Catalina `LARGE` plus `-lpsram` and `-C PSRAM`. This is the first clean unified-memory experiment: Berry still calls the same `p2_heap_malloc()` allocator, but the Catalina XMM memory model can place the backing C data arena in external RAM so the VM does not need separate Hub-vs-PSRAM object rules. Catalina can use the lower `16 MiB` of P2 Edge PSRAM as XMM memory today; Berry keeps the upper `16 MiB` exposed as the explicit PSRAM block/cache window. Current build-only image: `1057120` bytes with a `512 KiB` Berry heap. Hardware boot/smoke is still pending.
 
 Convenience targets pin the intended Catalina board profile:
 
@@ -62,6 +63,12 @@ P2 Edge 32 MB RAM explicit form:
 
 ```sh
 make p2 TOOLCHAIN=catalina P2_PROFILE=edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+```
+
+Experimental unified-memory XMM explicit form:
+
+```sh
+make p2 TOOLCHAIN=catalina P2_PROFILE=xmm CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram CATALINA_CONFIG_FLAGS="-C P2_EDGE -C LARGE -C SIMPLE -C VT100 -C NO_ARGS -C PSRAM"
 ```
 
 ## Local Environment Defaults
@@ -110,6 +117,7 @@ Current macOS Catalina notes:
 - SD file and directory handles use small fixed pools in the P2 runtime (`4` files and `2` directory iterators). Avoiding Catalina libc heap allocation here is required for the full image near the Hub RAM limit.
 - for the PSRAM P2 Edge, use `make p2-edge32` or build explicitly with `P2_PROFILE=edge32 CATALINA_MODEL=COMPACT CATALINA_SERIAL_LIB=-lpsram`; that profile reserves pins `40..57` for memory, including pin `57` as PSRAM chip-select
 - Catalina's COMPACT `-lpsram` path gives Berry bounded block access to the 32 MB PSRAM through `p2.psram_read()` and `p2.psram_write()`, backed by Catalina's `psram_read()` and `psram_write()`. It does not make PSRAM ordinary C pointer-addressable storage, so Berry's GC/object heap remains in Hub RAM on this profile.
+- `make p2-xmm` builds an experimental Catalina `LARGE` image for the same P2 Edge 32 MB RAM board. That path is intended to make Hub/PSRAM invisible to Berry by putting the unified memory decision below Berry's allocator instead of adding PSRAM-specific object handling to the VM. Catalina's documented P2 Edge XMM support uses only the lower `16 MiB` of the `32 MiB` PSRAM as transparent XMM memory; Berry reserves that lower window from `p2.psram_read()` / `p2.psram_write()` and leaves the upper `16 MiB` for explicit block/cache use. It is guarded by `P2_XMM_IMAGE_MAX_BYTES`, not by the 512 KiB Hub image limit, because an XMM image includes external-memory program content. Do not use it as the normal `p2-ram` path until hardware boot is verified with Catalina's XMM loader.
 - `make p2-ram` is the normal interactive RAM-load command
 - `make p2-flash` now builds Catalina's `flshload.t` flash-programmer image, loads that to RAM, and waits until Berry boots back from SPI flash
 - `make p2-flash-run` uses the same Catalina flash-programmer image but keeps the terminal attached

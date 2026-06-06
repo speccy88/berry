@@ -253,7 +253,14 @@ static int m_p2_psram_info(bvm *vm)
 
     p2_map_set_bool(vm, "available", P2_HAS_CATALINA_PSRAM);
     p2_map_set_int(vm, "bytes", (bint)BE_P2_EXTERNAL_RAM_BYTES);
-    p2_map_set_string(vm, "access", P2_HAS_CATALINA_PSRAM ? "block" : "none");
+    p2_map_set_int(vm, "xmm_bytes", (bint)BE_P2_XMM_BYTES);
+    p2_map_set_int(vm, "block_base", (bint)BE_P2_PSRAM_BLOCK_BASE);
+    p2_map_set_int(vm, "block_bytes",
+        (bint)(BE_P2_EXTERNAL_RAM_BYTES - BE_P2_PSRAM_BLOCK_BASE));
+    p2_map_set_string(vm, "access",
+        P2_HAS_CATALINA_PSRAM
+            ? (BE_P2_HEAP_USES_EXTERNAL_RAM ? "xmm+block" : "block")
+            : "none");
     p2_map_set_int(vm, "max_transfer", P2_HAS_CATALINA_PSRAM ? P2_PSRAM_TRANSFER_MAX : 0);
     p2_map_set_bool(vm, "heap", BE_P2_HEAP_USES_EXTERNAL_RAM);
     p2_map_set_int(vm, "reserved_pin_first", P2_HAS_CATALINA_PSRAM ? 40 : -1);
@@ -280,6 +287,9 @@ static void p2_psram_check_range(bvm *vm, bint address, bint size)
     }
     if (size > P2_PSRAM_TRANSFER_MAX) {
         be_raise(vm, "value_error", "size exceeds p2.psram_info()[\"max_transfer\"]");
+    }
+    if (address < BE_P2_PSRAM_BLOCK_BASE) {
+        be_raise(vm, "value_error", "range reserved for Catalina XMM");
     }
     if (address > BE_P2_EXTERNAL_RAM_BYTES || size > BE_P2_EXTERNAL_RAM_BYTES - address) {
         be_raise(vm, "value_error", "range outside PSRAM");

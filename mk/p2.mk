@@ -18,6 +18,7 @@ P2_IMAGE_SIZE_CHECK := scripts/check-p2-image-size.py
 P2_BUILD_CONFIG_STAMP := $(P2_BUILD_DIR)/p2_build_config.stamp
 P2_GENERATED_CONFIG := $(P2_BUILD_DIR)/berry_conf_p2_profile.h
 P2_HUB_RAM_MAX_BYTES ?= 524288
+P2_XMM_IMAGE_MAX_BYTES ?= 16777216
 P2_CONFIG_SOURCE := $(P2_INCLUDE_DIR)/berry_conf_p2.h
 P2_CONFIG := $(P2_GENERATED_CONFIG)
 SPIN2_DIR := spin2
@@ -58,16 +59,32 @@ P2_PROFILE_ID := 2
 else ifeq ($(P2_PROFILE),edge32)
 P2_PROFILE_ID := 3
 else ifeq ($(P2_PROFILE),xmm)
-P2_PROFILE_ID := 3
+P2_PROFILE_ID := 4
 else
 $(error Unsupported P2_PROFILE '$(P2_PROFILE)'; use minimal, full, edge32, or xmm)
 endif
 
 P2_PROFILE_DEFINE := -DBE_P2_PROFILE=$(P2_PROFILE_ID)
 
-ifeq ($(P2_PROFILE_ID),3)
+ifeq ($(P2_PROFILE),xmm)
+P2_IMAGE_MAX_BYTES ?= $(P2_XMM_IMAGE_MAX_BYTES)
+P2_IMAGE_SIZE_LABEL ?= Catalina P2 XMM image
+P2_IMAGE_LIMIT_NAME ?= Catalina P2 XMM load image limit
+else
+P2_IMAGE_MAX_BYTES ?= $(P2_HUB_RAM_MAX_BYTES)
+P2_IMAGE_SIZE_LABEL ?= Catalina P2 image
+P2_IMAGE_LIMIT_NAME ?= P2 Hub RAM limit
+endif
+
+ifneq ($(filter edge32 xmm,$(P2_PROFILE)),)
 ifneq ($(origin CATALINA_SERIAL_LIB),command line)
 CATALINA_SERIAL_LIB := -lpsram
+endif
+endif
+
+ifeq ($(P2_PROFILE),xmm)
+ifeq ($(findstring -C PSRAM,$(CATALINA_CONFIG_FLAGS)),)
+override CATALINA_CONFIG_FLAGS += -C PSRAM
 endif
 endif
 
@@ -203,7 +220,7 @@ P2_SERIAL_PROBE_SRCS := $(P2_TEST_DIR)/serial_probe.c $(P2_RUNTIME_DIR)/berry_po
 P2_SERIAL_PROBE := $(P2_BUILD_DIR)/serial_probe.binary
 P2_PREBUILD_DEPS := $(COC) $(P2_CONFIG) $(P2_CONFIG_SOURCE) scripts/prebuild-p2.sh scripts/prebuild-p2.ps1 $(P2_IMAGE_SIZE_CHECK)
 
-.PHONY: p2 p2-minimal p2-full p2-edge32 p2-edge32-ram p2-edge32-flash p2-xmm p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-smoke p2-smoke-quick p2-smoke-edge32 p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run spin2 spin2-clean spin2-sd-loader spin2-sd-loader-host spin2-sd-put spin2-sd-sync spin2-load spin2-load-all run configure configure-reset show-config
+.PHONY: p2 p2-minimal p2-full p2-edge32 p2-edge32-ram p2-edge32-flash p2-edge32-xmm p2-xmm p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-smoke p2-smoke-quick p2-smoke-edge32 p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run spin2 spin2-clean spin2-sd-loader spin2-sd-loader-host spin2-sd-put spin2-sd-sync spin2-load spin2-load-all run configure configure-reset show-config
 
 configure:
 	$(MSG) [Configure] $(P2_LOCAL_CONFIG)
@@ -371,6 +388,10 @@ $(P2_BUILD_CONFIG_STAMP): FORCE | $(P2_BUILD_DIR)
 		echo "CATALINA_MLIB=$(CATALINA_MLIB)"; \
 		echo "CATALINA_CONFIG_FLAGS=$(CATALINA_CONFIG_FLAGS)"; \
 		echo "P2_HUB_RAM_MAX_BYTES=$(P2_HUB_RAM_MAX_BYTES)"; \
+		echo "P2_XMM_IMAGE_MAX_BYTES=$(P2_XMM_IMAGE_MAX_BYTES)"; \
+		echo "P2_IMAGE_MAX_BYTES=$(P2_IMAGE_MAX_BYTES)"; \
+		echo "P2_IMAGE_SIZE_LABEL=$(P2_IMAGE_SIZE_LABEL)"; \
+		echo "P2_IMAGE_LIMIT_NAME=$(P2_IMAGE_LIMIT_NAME)"; \
 		echo "P2_PROFILE_DEFINE=$(P2_PROFILE_DEFINE)"; \
 		echo "P2_CFLAGS=$(P2_CFLAGS)"; \
 	} > "$@.tmp"
@@ -396,7 +417,7 @@ p2-catalina-host: $(P2_BUILD_DIR) $(P2_BUILD_INFO_HEADER)
 	$(Q) $(call RM_F,$(P2_CATALINA_BASE).bin)
 	$(Q) CMD='CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" CATALINA_INCLUDE="$(CATALINA_INCLUDEDIR)" CATALINA_TARGET="$(CATALINA_TARGETDIR)" CATALINA_LIBRARY="$(CATALINA_DIR)" PATH="$(CATALINA_BINDIR)$(HOST_PATHSEP)$$PATH" "$(CATALINA)" -C99 -p2 $(P2_PROFILE_DEFINE) $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) $(CATALINA_CONFIG_FLAGS) -I src -I $(P2_BUILD_DIR) -I $(P2_INCLUDE_DIR) -o "$(P2_CATALINA_BASE)" $(P2_SRCS)'; \
 		bash -lc "set -o pipefail; $$CMD 2>&1 | tee '$(P2_BUILD_INFO_LOG)'"
-	$(Q) "$(PYTHON)" "$(P2_IMAGE_SIZE_CHECK)" --image "$(P2_CATALINA_BASE).bin" --max-bytes "$(P2_HUB_RAM_MAX_BYTES)" --label "Catalina P2 image"
+	$(Q) "$(PYTHON)" "$(P2_IMAGE_SIZE_CHECK)" --image "$(P2_CATALINA_BASE).bin" --max-bytes "$(P2_IMAGE_MAX_BYTES)" --label "$(P2_IMAGE_SIZE_LABEL)" --limit-name "$(P2_IMAGE_LIMIT_NAME)"
 	$(Q) "$(PYTHON)" "$(P2_BUILD_INFO_SCRIPT)" --log "$(P2_BUILD_INFO_LOG)" --binary "$(P2_CATALINA_BASE).bin" --header "$(P2_BUILD_INFO_HEADER).tmp"
 	$(Q) if ! cmp -s "$(P2_BUILD_INFO_HEADER).tmp" "$(P2_BUILD_INFO_HEADER)"; then \
 		mv "$(P2_BUILD_INFO_HEADER).tmp" "$(P2_BUILD_INFO_HEADER)"; \
@@ -405,7 +426,7 @@ p2-catalina-host: $(P2_BUILD_DIR) $(P2_BUILD_INFO_HEADER)
 	else \
 		rm -f "$(P2_BUILD_INFO_HEADER).tmp"; \
 	fi
-	$(Q) "$(PYTHON)" "$(P2_IMAGE_SIZE_CHECK)" --image "$(P2_CATALINA_BASE).bin" --max-bytes "$(P2_HUB_RAM_MAX_BYTES)" --label "Catalina P2 image"
+	$(Q) "$(PYTHON)" "$(P2_IMAGE_SIZE_CHECK)" --image "$(P2_CATALINA_BASE).bin" --max-bytes "$(P2_IMAGE_MAX_BYTES)" --label "$(P2_IMAGE_SIZE_LABEL)" --limit-name "$(P2_IMAGE_LIMIT_NAME)"
 	$(Q) $(PYTHON) -c "from pathlib import Path; Path(r'$(P2_IMAGE)').write_bytes(Path(r'$(P2_CATALINA_BASE).bin').read_bytes())"
 	$(MSG) done
 
@@ -447,8 +468,11 @@ p2-edge32-ram:
 p2-edge32-flash:
 	$(Q) $(MAKE) p2-flash TOOLCHAIN=catalina P2_PROFILE=edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
 
+p2-edge32-xmm:
+	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=xmm CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+
 p2-xmm:
-	$(Q) $(MAKE) p2-edge32
+	$(Q) $(MAKE) p2-edge32-xmm
 
 ifeq ($(TOOLCHAIN),catalina)
 $(P2_CATALINA_FLASH_IMAGE): $(P2_IMAGE) tools/p2/loader/build-catalina-flash-image.sh | $(P2_BUILD_DIR)
