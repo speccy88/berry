@@ -1,6 +1,7 @@
 print("P2_SMOKE_BEGIN libraries")
 
 import binary_heap
+import p2
 
 var data = [3, 1, 4, 1, 5]
 binary_heap.sort(data, /a b -> a < b)
@@ -8,10 +9,14 @@ assert(data == [1, 1, 3, 4, 5])
 
 import libstore
 
+var psram = p2.psram_info()
+var expected_policy = psram["available"] ? libstore.POLICY_SD_CACHE_PSRAM : libstore.POLICY_SD_LAZY
 var status = libstore.status()
+var policy = libstore.policy()
 assert(status["lazy"] == true)
 assert(status["source"] == "sd")
 assert(status["heap"] == "hub")
+assert(policy["name"] == expected_policy)
 assert(status["psram_cache"] == status["psram_available"])
 assert(status["psram_cache_used"] == 0)
 assert(status["psram_cache_free"] == status["psram_cache_limit"])
@@ -21,7 +26,11 @@ assert(status["psram_max_transfer"] >= 0)
 assert(libstore.strategy()["library_home"] == "sd")
 assert(libstore.strategy()["object_heap"] == false)
 assert(libstore.strategy()["direct_execute_from_psram"] == false)
-assert(libstore.strategy()["load"] == "lazy_source_or_psram_cache")
+if psram["available"] {
+    assert(libstore.strategy()["load"] == "lazy_source_or_psram_cache")
+} else {
+    assert(libstore.strategy()["load"] == "lazy_source")
+}
 assert(libstore.modules().size() >= 4)
 assert(libstore.module_name("MATH.BE") == "math")
 assert(libstore.module_name("README.TXT") == nil)

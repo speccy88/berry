@@ -44,6 +44,22 @@ slot limit, and maximum `bytes()` size.
 - `edge32`: P2 Edge 32 MB RAM profile for the P2-EC32MB-style board. It enables Catalina `-lpsram`, reserves pins `40..57` for the memory interface, keeps Berry's object heap in Hub RAM, and exposes bounded PSRAM block transfers plus an SD-library source cache for runtime smoke testing. Current verified image: `485344` bytes with a `128 KiB` main heap and `16 KiB` worker heap, leaving Hub RAM room for the PSRAM plugin.
 - `xmm`: experimental P2 Edge 32 MB RAM profile using Catalina `LARGE` plus `-lpsram` and `-C PSRAM`. This is the first clean unified-memory experiment: Berry still calls the same `p2_heap_malloc()` allocator, but the Catalina XMM memory model can place the backing C data arena in external RAM so the VM does not need separate Hub-vs-PSRAM object rules. Catalina can use the lower `16 MiB` of P2 Edge PSRAM as XMM memory today; Berry keeps the upper `16 MiB` exposed as the explicit PSRAM block/cache window. Current build-only image: `1057120` bytes with a `512 KiB` Berry heap. Hardware boot/smoke is still pending.
 
+Library loading policy (`modules/libstore.be`) on P2:
+
+- `libstore.POLICY_SD_LAZY` (`sd_only`): keep library execution SD-file-first, no PSRAM cache.
+- `libstore.POLICY_SD_CACHE_PSRAM` (`sd_cache_psram`): mirror SD module source into PSRAM cache on demand before execution.
+- `libstore.POLICY_SD_PRELOAD_PSRAM` (`sd_preload_psram`): same strategy, with optional eager preload.
+
+At runtime:
+
+- `libstore.policy()` reports the active policy.
+- `libstore.set_policy(libstore.POLICY_SD_PRELOAD_PSRAM, true)` can request preload caching.
+
+Operational note:
+
+- On `edge32`, PSRAM is block-only (`p2.psram_read`/`p2.psram_write`), so this is a **source-cache strategy** and does not change where Berry VM objects are allocated.
+- On `xmm`, Catalina's XMM memory model is the path that can move allocator-backed VM storage onto PSRAM.
+
 Convenience targets pin the intended Catalina board profile:
 
 ```sh
@@ -118,6 +134,7 @@ Current macOS Catalina notes:
 - for the PSRAM P2 Edge, use `make p2-edge32` or build explicitly with `P2_PROFILE=edge32 CATALINA_MODEL=COMPACT CATALINA_SERIAL_LIB=-lpsram`; that profile reserves pins `40..57` for memory, including pin `57` as PSRAM chip-select
 - Catalina's COMPACT `-lpsram` path gives Berry bounded block access to the 32 MB PSRAM through `p2.psram_read()` and `p2.psram_write()`, backed by Catalina's `psram_read()` and `psram_write()`. It does not make PSRAM ordinary C pointer-addressable storage, so Berry's GC/object heap remains in Hub RAM on this profile.
 - `make p2-xmm` builds an experimental Catalina `LARGE` image for the same P2 Edge 32 MB RAM board. That path is intended to make Hub/PSRAM invisible to Berry by putting the unified memory decision below Berry's allocator instead of adding PSRAM-specific object handling to the VM. Catalina's documented P2 Edge XMM support uses only the lower `16 MiB` of the `32 MiB` PSRAM as transparent XMM memory; Berry reserves that lower window from `p2.psram_read()` / `p2.psram_write()` and leaves the upper `16 MiB` for explicit block/cache use. It is guarded by `P2_XMM_IMAGE_MAX_BYTES`, not by the 512 KiB Hub image limit, because an XMM image includes external-memory program content. Do not use it as the normal `p2-ram` path until hardware boot is verified with Catalina's XMM loader.
+- For `edge32`, `libstore` defaults to `sd_cache_psram` and exposes the `.be` module source text cache window; for no-PSRAM profiles, `libstore` falls back to `sd_only`.
 - `make p2-ram` is the normal interactive RAM-load command
 - `make p2-flash` now builds Catalina's `flshload.t` flash-programmer image, loads that to RAM, and waits until Berry boots back from SPI flash
 - `make p2-flash-run` uses the same Catalina flash-programmer image but keeps the terminal attached
@@ -190,6 +207,8 @@ The smoke suite covers:
   `libstore`; on edge32, `libstore` also smoke-tests chunked PSRAM source-cache
   round trips, discovered-module `cache_all()` warmup, and loading SD modules
   back from the PSRAM cache
+- `p2.heap_info()`/`p2.sbrk()` allocator accounting: allocate transient objects,
+  verify free-space drops, then GC and assert free-space is reclaimed
 - SD-loaded cooperative `taskspin` tasks using a Spin2-shaped `TASK*` API,
   including halt-mask and stack-address diagnostics
 - SD create/read/readbytes/remove using only `/P2SMOKE.TXT`

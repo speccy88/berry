@@ -1,16 +1,20 @@
 # P2 SD library store helper.
 #
-# The current P2 firmware imports .be libraries lazily from /modules on the SD
-# card. On edge32, PSRAM is a block device today, so source text can be cached
-# there in chunks and materialized into Hub RAM only when a program asks to load
-# it. On xmm, Catalina owns the lower PSRAM window as transparent VM memory, so
-# libstore only uses the safe block window reported by p2.psram_info().
+# The current P2 firmware imports `.be` libraries lazily from `/modules` on SD.
+# On edge32, PSRAM is exposed only through block APIs, so source text is mirrored
+# into PSRAM in bounded chunks and then materialized into active Hub RAM only when
+# a program requests execution. This keeps the image small and moves most large
+# library source text out of Hub RAM.
 
 import os
 import p2
 import string
 
 var libstore = module("libstore")
+
+libstore.POLICY_SD_LAZY = "sd_only"
+libstore.POLICY_SD_CACHE_PSRAM = "sd_cache_psram"
+libstore.POLICY_SD_PRELOAD_PSRAM = "sd_preload_psram"
 
 libstore.paths = ["/modules"]
 libstore.known = ["binary_heap", "libstore", "math", "taskspin", "wifi"]
@@ -20,20 +24,67 @@ libstore.cache_base = 0
 libstore.cache_limit = 0
 libstore.cache = {}
 libstore.cache_next = 0
+libstore._policy = nil
+
+libstore._policy_supported = def(policy)
+    if policy == nil {
+        return false
+    }
+    return policy == libstore.POLICY_SD_LAZY
+        || policy == libstore.POLICY_SD_CACHE_PSRAM
+        || policy == libstore.POLICY_SD_PRELOAD_PSRAM
+end
+
+libstore._normalize_policy = def(policy)
+    if libstore._policy_supported(policy) {
+        return policy
+    }
+    return nil
+end
+
+libstore._psram_policy_cache_available = def()
+    var info = p2.psram_info()
+    return info["available"] && info["bytes"] > 0 && info["block_bytes"] > 0
+end
+
+libstore._policy_default = def()
+    if libstore._psram_policy_cache_available() {
+        return libstore.POLICY_SD_CACHE_PSRAM
+    }
+    return libstore.POLICY_SD_LAZY
+end
+
+libstore._policy_resolve = def()
+    if libstore._policy == nil {
+        return libstore._policy_default()
+    }
+    return libstore._policy
+end
+
+libstore._policy_uses_psram_cache = def(policy)
+    if policy == nil {
+        policy = libstore._policy_resolve()
+    }
+    return policy == libstore.POLICY_SD_CACHE_PSRAM || policy == libstore.POLICY_SD_PRELOAD_PSRAM
+end
+
+libstore._policy_supports_preload = def(policy)
+    return libstore._policy_uses_psram_cache(policy)
+end
 
 libstore.module_name = def(entry)
     var lower = string.tolower(entry)
-    if size(lower) <= 3 || !string.endswith(lower, ".be")
+    if size(lower) <= 3 || !string.endswith(lower, ".be") {
         return nil
-    end
+    }
     return lower[0..(size(lower) - 4)]
 end
 
 libstore.add_unique = def(out, seen, name)
-    if name != nil && !seen.contains(name)
+    if name != nil && !seen.contains(name) {
         seen[name] = true
         out.push(name)
-    end
+    }
 end
 
 libstore.scan = def()
@@ -63,28 +114,31 @@ libstore.cache_window = def()
     var psram = p2.psram_info()
     var block_base = 0
     var block_bytes = 0
-    if psram["available"]
+    var policy = libstore._policy_resolve()
+    var use_psram_cache = libstore._policy_uses_psram_cache(policy)
+
+    if use_psram_cache && psram["available"] {
         block_base = psram.contains("block_base") ? psram["block_base"] : 0
-        if psram.contains("block_bytes")
+        if psram.contains("block_bytes") {
             block_bytes = psram["block_bytes"]
-        else
+        } else {
             block_bytes = psram["bytes"] - block_base
-        end
-        if block_bytes < 0
+        }
+        if block_bytes < 0 {
             block_bytes = 0
-        end
-    end
+        }
+    }
 
     var limit = libstore.cache_limit_requested
-    if block_bytes < limit
+    if block_bytes < limit {
         limit = block_bytes
-    end
+    }
     var base = block_base
-    if limit > 0
+    if limit > 0 {
         base = block_base + block_bytes - limit
-    end
+    }
     return {
-        "available": psram["available"] && limit > 0,
+        "available": psram["available"] && use_psram_cache && limit > 0,
         "base": base,
         "limit": limit,
         "block_base": block_base,
@@ -96,25 +150,79 @@ end
 
 libstore.cache_ensure = def()
     var window = libstore.cache_window()
-    if libstore.cache.size() == 0 && libstore.cache_next == 0
+    if libstore.cache.size() == 0 && libstore.cache_next == 0 {
         libstore.cache_base = window["base"]
         libstore.cache_limit = window["limit"]
         libstore.cache_next = libstore.cache_base
-    end
+    }
     return window
+end
+
+libstore.policy = def()
+    var policy = libstore._policy_resolve()
+    var window = libstore.cache_window()
+    var psram = p2.psram_info()
+    return {
+        "name": policy,
+        "default": libstore._policy_default(),
+        "uses_psram_cache": libstore._policy_uses_psram_cache(policy),
+        "preload_supported": libstore._policy_supports_preload(policy),
+        "psram_cache_available": window["available"],
+        "psram_bytes": psram["bytes"],
+        "psram_block_bytes": window["block_bytes"]
+    }
+end
+
+libstore.set_policy = def(policy, preload)
+    if preload == nil {
+        preload = false
+    }
+    var resolved = libstore._normalize_policy(policy)
+    if resolved == nil {
+        raise "value_error", "unsupported libstore policy"
+    }
+
+    var previous = libstore._policy_resolve()
+    if previous != resolved {
+        libstore._policy = resolved
+        libstore.cache_reset()
+    }
+    var loaded = 0
+    if preload && libstore._policy_supports_preload(resolved) && p2.psram_info()["available"] {
+        var all = libstore.cache_all()
+        loaded = all.size()
+    }
+
+    return {
+        "previous": previous,
+        "policy": resolved,
+        "preloaded": preload && libstore._policy_supports_preload(resolved),
+        "count": loaded
+    }
 end
 
 libstore.strategy = def()
     var psram = p2.psram_info()
     var heap = psram["heap"] ? "external" : "hub"
+    var policy = libstore._policy_resolve()
+    var use_psram_cache = libstore._policy_uses_psram_cache(policy)
+    var load = use_psram_cache ? "lazy_source_or_psram_cache" : "lazy_source"
+    var psram_role = "not_used"
+    if psram["available"] {
+        psram_role = use_psram_cache
+            ? (psram["heap"] ? "xmm_heap_and_chunked_source_cache" : "chunked_source_cache")
+            : "not_used"
+    }
     return {
         "library_home": "sd",
         "module_path": libstore.paths,
-        "load": "lazy_source_or_psram_cache",
+        "load": load,
         "heap": heap,
         "object_heap": psram["heap"],
+        "policy": policy,
         "direct_execute_from_psram": false,
-        "psram_role": psram["available"] ? (psram["heap"] ? "xmm_heap_and_chunked_source_cache" : "chunked_source_cache") : "unavailable",
+        "preload_supported": libstore._policy_supports_preload(policy),
+        "psram_role": psram["available"] ? psram_role : "unavailable",
         "psram_access": psram["access"],
         "psram_max_transfer": psram["max_transfer"]
     }
@@ -122,12 +230,15 @@ end
 
 libstore.status = def()
     var psram = p2.psram_info()
+    var policy = libstore._policy_resolve()
     var window = libstore.cache_ensure()
     var heap = psram["heap"] ? "external" : "hub"
     return {
         "paths": libstore.paths,
         "lazy": true,
         "source": "sd",
+        "policy": policy,
+        "psram_policy_cache": libstore._policy_uses_psram_cache(policy),
         "psram_available": psram["available"],
         "psram_bytes": psram["bytes"],
         "psram_block_base": window["block_base"],
@@ -152,9 +263,9 @@ end
 libstore.source_path = def(name)
     for base : libstore.paths
         var path = base + "/" + name + ".be"
-        if os.path.exists(path)
+        if os.path.exists(path) {
             return path
-        end
+        }
     end
     return nil
 end
@@ -168,14 +279,21 @@ libstore.info = def(name)
     var psram = p2.psram_info()
     var window = libstore.cache_ensure()
     var heap = psram["heap"] ? "external" : "hub"
+    var policy = libstore._policy_resolve()
+    var use_psram_cache = libstore._policy_uses_psram_cache(policy)
+    var load = use_psram_cache ? "lazy_source_or_psram_cache" : "lazy_source"
+    if !psram["available"] {
+        load = "lazy_source"
+    }
     var cached = libstore.cache.contains(name) ? libstore.cache[name] : nil
     return {
         "name": name,
         "path": path,
         "exists": path != nil,
         "source": "sd",
-        "load": "lazy_source_or_psram_cache",
+        "load": load,
         "heap": heap,
+        "policy": policy,
         "psram_cache": window["available"],
         "psram_cache_base": libstore.cache_base,
         "psram_cache_limit": libstore.cache_limit,
@@ -198,42 +316,47 @@ libstore.cached = def(name)
 end
 
 libstore.cache_source = def(name)
+    var policy = libstore._policy_resolve()
+    var use_psram_cache = libstore._policy_uses_psram_cache(policy)
+    if !use_psram_cache {
+        return nil
+    }
     var psram = p2.psram_info()
     var window = libstore.cache_ensure()
-    if !window["available"]
+    if !window["available"] || !psram["available"] {
         return nil
-    end
+    }
     var path = libstore.source_path(name)
-    if path == nil
+    if path == nil {
         return nil
-    end
-    if libstore.cache.contains(name)
+    }
+    if libstore.cache.contains(name) {
         return libstore.cache[name]
-    end
+    }
 
     var source = open(path, "r").read()
     var total = size(source)
     var max_transfer = psram["max_transfer"]
-    if max_transfer <= 0
+    if max_transfer <= 0 {
         raise "value_error", "PSRAM transfer size is not available"
-    end
-    if libstore.cache_next + total > libstore.cache_base + libstore.cache_limit
+    }
+    if libstore.cache_next + total > libstore.cache_base + libstore.cache_limit {
         raise "memory_error", "libstore PSRAM cache area is full"
-    end
+    }
 
     var address = libstore.cache_next
     var chunks = []
     var offset = 0
     while offset < total
         var n = total - offset
-        if n > max_transfer
+        if n > max_transfer {
             n = max_transfer
-        end
+        }
         var chunk = source[offset..(offset + n - 1)]
         var written = p2.psram_write(address + offset, chunk)
-        if !written["ok"] || written["size"] != n
+        if !written["ok"] || written["size"] != n {
             raise "io_error", "PSRAM cache write failed"
-        end
+        }
         chunks.push({
             "address": address + offset,
             "size": n
@@ -257,12 +380,12 @@ end
 
 libstore.cached_source = def(name)
     var item = libstore.cache.contains(name) ? libstore.cache[name] : nil
-    if item == nil
+    if item == nil {
         item = libstore.cache_source(name)
-    end
-    if item == nil
+    }
+    if item == nil {
         return nil
-    end
+    }
     var out = ""
     for chunk : item["chunks"]
         out += p2.psram_read(chunk["address"], chunk["size"])
@@ -272,20 +395,24 @@ end
 
 libstore.run_cached = def(name)
     var source = libstore.cached_source(name)
-    if source == nil
+    if source == nil {
         return nil
-    end
+    }
     return compile(source)()
 end
 
 libstore.load = def(name)
     var path = libstore.source_path(name)
-    if path == nil
+    if path == nil {
         return nil
-    end
-    if p2.psram_info()["available"]
-        return libstore.run_cached(name)
-    end
+    }
+    var policy = libstore._policy_resolve()
+    if libstore._policy_uses_psram_cache(policy) {
+        var source = libstore.cached_source(name)
+        if source != nil {
+            return compile(source)()
+        }
+    }
     return run_file(path)
 end
 
@@ -300,9 +427,9 @@ end
 libstore.cache_all = def()
     var out = []
     for name : libstore.modules()
-        if libstore.exists(name)
+        if libstore.exists(name) {
             out.push(libstore.cache_source(name))
-        end
+        }
     end
     return out
 end
@@ -310,7 +437,7 @@ end
 libstore.cache_report = def()
     var items = []
     for name : libstore.modules()
-        if libstore.cache.contains(name)
+        if libstore.cache.contains(name) {
             var item = libstore.cache[name]
             items.push({
                 "name": name,
@@ -319,7 +446,7 @@ libstore.cache_report = def()
                 "size": item["size"],
                 "chunks": item["chunk_count"]
             })
-        end
+        }
     end
     return {
         "status": libstore.status(),

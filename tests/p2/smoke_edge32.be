@@ -26,6 +26,12 @@ assert(p2.psram_read(address, size(text)) == text)
 
 import libstore
 
+var original_policy = libstore.policy()["name"]
+if original_policy != libstore.POLICY_SD_CACHE_PSRAM {
+    var set_cache = libstore.set_policy(libstore.POLICY_SD_CACHE_PSRAM, true)
+    assert(set_cache["policy"] == libstore.POLICY_SD_CACHE_PSRAM)
+}
+
 libstore.cache_reset()
 var cached = libstore.cache_source("binary_heap")
 assert(cached["name"] == "binary_heap")
@@ -64,5 +70,14 @@ assert(libstore.cached("libstore"))
 assert(libstore.cached("math"))
 assert(libstore.cached("taskspin"))
 assert(libstore.cached("wifi"))
+
+var switched = libstore.set_policy(libstore.POLICY_SD_LAZY)
+assert(switched["policy"] == libstore.POLICY_SD_LAZY)
+assert(libstore.status()["psram_cache"] == false)
+var math_sd = libstore.load("math")
+assert(math_sd.sqrt(81) == 9)
+assert(math_sd.abs(-42) == 42)
+
+libstore.set_policy(original_policy)
 
 print("P2_SMOKE_PASS edge32")
