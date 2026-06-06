@@ -5,10 +5,37 @@
 
 #define BERRY_P2_FS_TEXT_MAX 256
 #define BERRY_P2_FS_RESULT_NOT_RUN -9999
+#define BERRY_P2_FS_RESULT_SD_TIMEOUT 0x101
+#define BERRY_P2_FS_RESULT_SD_BUSY 0x102
+#define BERRY_P2_FS_RESULT_SD_NO_SERVICE 0x103
 
 typedef struct berry_p2_fs_info {
     int available;
     int mounted;
+    int sd_init_result;
+    int raw_sector0_result;
+    int dfs_sector0_result;
+    int sd_service_entry;
+    int sd_service_cog;
+    int sd_service_lock;
+    int sd_service_code;
+    int sd_request;
+    int sd_response;
+    int fil_cog;
+    int fil_registered_type;
+    int sector0_signature;
+    int sector0_byte0;
+    int sector0_byte1;
+    int sector0_byte2;
+    int sector0_byte3;
+    int sector0_sig0;
+    int sector0_sig1;
+    int partition_type;
+    int partition_active;
+    int partition_start;
+    int partition_size;
+    int volinfo_result;
+    int filesystem_type;
     int mount_result;
     int resolve_result;
     int root_open_result;

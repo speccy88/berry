@@ -2,6 +2,7 @@ TOOLCHAIN ?= flexc
 PORT ?=
 FLEXPROP_DIR ?= .third_party_cache/flexprop
 P2_SILICON ?= latest
+P2_BOARD ?= auto
 P2_PROFILE ?= full
 P2_PORT_ROOT := port/p2
 P2_INCLUDE_DIR := $(P2_PORT_ROOT)/include
@@ -41,9 +42,22 @@ P2_INCFLAGS := -I"$(P2_BUILD_DIR)" -I"$(P2_INCLUDE_DIR)" -I"src" -I"default"
 P2_COC_RUN := $(PYTHON) $(COC)
 P2_FLASH_FLAGS ?= -SPI
 P2_CATALINA_DOCKER_SCRIPT := scripts/build-p2-catalina-docker.sh
+P2_XMM_TOOLS_SCRIPT := tools/p2/loader/build-catalina-xmm-tools.sh
+P2_XMM_PAYLOAD_RUNNER := tools/p2/loader/run-catalina-xmm-payload.sh
+P2_XMM_HOST_DIR := build/p2/host
+P2_XMM_LOADER_DIR := build/p2/catalina/xmm-loader
+P2_XMM_PAYLOAD := $(P2_XMM_HOST_DIR)/payload
+P2_XMM_LOADER_IMAGE := $(P2_XMM_LOADER_DIR)/XMM_USB.binary
+P2_XMM_PAYLOAD_FLAGS ?= -o2 -j -m 10 -n 1000 -f 5000
+P2_XMM_FLASH_SCRIPT := tools/p2/loader/build-catalina-xmm-flash-image.sh
+P2_XMM_FLASH_IMAGE := $(P2_BUILD_DIR)/berry_p2_xmm_flash.binary
+P2_XMM_FLASH_LOADER_ADDR ?= 0x10000
+P2_XMM_FLASH_APP_ADDR ?= 0x40000
+P2_XMM_FLASH_LOAD_SPEC := @80000000=$(P2_XMM_FLASH_IMAGE)
 P2_CONFIG_TOOLCHAIN ?= $(TOOLCHAIN)
 P2_CONFIG_PORT ?= $(PORT)
 P2_CONFIG_SILICON ?= $(P2_SILICON)
+P2_CONFIG_BOARD ?= $(P2_BOARD)
 P2_CONFIG_HOST_OS ?= $(HOST_OS)
 P2_CONFIG_CATALINA_PLATFORM ?= $(CATALINA_PLATFORM)
 P2_CONFIG_CATALINA_MODEL ?= $(CATALINA_MODEL)
@@ -66,6 +80,45 @@ $(error Unsupported P2_PROFILE '$(P2_PROFILE)'; use minimal, full, edge32, or xm
 endif
 
 P2_PROFILE_DEFINE := -DBE_P2_PROFILE=$(P2_PROFILE_ID)
+P2_DIRECT_SD_DEFINE ?=
+
+ifeq ($(P2_BOARD),auto)
+ifneq ($(filter edge32 xmm,$(P2_PROFILE)),)
+override P2_BOARD := p2edge32
+else
+override P2_BOARD := p2edge
+endif
+endif
+
+ifeq ($(P2_BOARD),p2edge)
+P2_BOARD_ID := 1
+P2_BOARD_NAME := p2edge
+P2_BOARD_HAS_PSRAM := 0
+P2_LED0_PIN := 56
+P2_LED1_PIN := 57
+else ifeq ($(P2_BOARD),p2edge32)
+P2_BOARD_ID := 2
+P2_BOARD_NAME := p2edge32
+P2_BOARD_HAS_PSRAM := 1
+P2_LED0_PIN := 38
+P2_LED1_PIN := 39
+else
+$(error Unsupported P2_BOARD '$(P2_BOARD)'; use auto, p2edge, or p2edge32)
+endif
+
+ifeq ($(P2_SILICON),a)
+P2_SILICON_ID := 1
+P2_SILICON_NAME := old
+else
+P2_SILICON_ID := 2
+P2_SILICON_NAME := latest
+endif
+
+ifeq ($(P2_PROFILE),xmm)
+ifneq ($(origin CATALINA_MODEL),command line)
+CATALINA_MODEL := LARGE
+endif
+endif
 
 ifeq ($(P2_PROFILE),xmm)
 P2_IMAGE_MAX_BYTES ?= $(P2_XMM_IMAGE_MAX_BYTES)
@@ -80,12 +133,6 @@ endif
 ifneq ($(filter edge32 xmm,$(P2_PROFILE)),)
 ifneq ($(origin CATALINA_SERIAL_LIB),command line)
 CATALINA_SERIAL_LIB := -lpsram
-endif
-endif
-
-ifeq ($(P2_PROFILE),xmm)
-ifeq ($(findstring -C PSRAM,$(CATALINA_CONFIG_FLAGS)),)
-override CATALINA_CONFIG_FLAGS += -C PSRAM
 endif
 endif
 
@@ -129,7 +176,20 @@ else
 $(error Unsupported TOOLCHAIN '$(TOOLCHAIN)'; use flexc or catalina)
 endif
 
-P2_CFLAGS ?= $(P2_PROFILE_DEFINE) $(P2_CODEGEN) -O1 --fcache=0
+ifeq ($(P2_PROFILE),xmm)
+ifeq ($(findstring -C PSRAM,$(CATALINA_CONFIG_FLAGS)),)
+override CATALINA_CONFIG_FLAGS += -C PSRAM
+endif
+endif
+
+ifeq ($(TOOLCHAIN),catalina)
+P2_DIRECT_SD_DEFINE := -D__BERRY_P2_DIRECT_SD_IO
+ifeq ($(findstring -C BERRY_P2_DIRECT_SD_IO,$(CATALINA_CONFIG_FLAGS)),)
+override CATALINA_CONFIG_FLAGS += -C BERRY_P2_DIRECT_SD_IO
+endif
+endif
+
+P2_CFLAGS ?= $(P2_PROFILE_DEFINE) $(P2_DIRECT_SD_DEFINE) $(P2_CODEGEN) -O1 --fcache=0
 P2_RUNTIME_SRCS := \
 	$(P2_RUNTIME_DIR)/berry_port.c \
 	$(P2_RUNTIME_DIR)/main_p2.c \
@@ -221,7 +281,7 @@ P2_SERIAL_PROBE_SRCS := $(P2_TEST_DIR)/serial_probe.c $(P2_RUNTIME_DIR)/berry_po
 P2_SERIAL_PROBE := $(P2_BUILD_DIR)/serial_probe.binary
 P2_PREBUILD_DEPS := $(COC) $(P2_CONFIG) $(P2_CONFIG_SOURCE) scripts/prebuild-p2.sh scripts/prebuild-p2.ps1 $(P2_IMAGE_SIZE_CHECK)
 
-.PHONY: p2 p2-minimal p2-full p2-edge32 p2-edge32-ram p2-edge32-flash p2-edge32-xmm p2-xmm p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-smoke p2-smoke-quick p2-smoke-edge32 p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run p2-sd-modules p2-sd-tests p2-sd-sync spin2 spin2-clean spin2-sd-loader spin2-sd-loader-host spin2-sd-put spin2-sd-sync spin2-load spin2-load-all run configure configure-reset show-config
+.PHONY: p2 p2-minimal p2-full p2-edge32 p2-edge32-ram p2-edge32-flash p2-edge32-xmm p2-xmm p2-xmm-tools p2-edge32-xmm-run p2-xmm-run p2-xmm-load p2-edge32-xmm-flash p2-xmm-flash p2-xmm-flash-run p2-xmm-flash-load p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-smoke p2-smoke-quick p2-smoke-edge32 p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run p2-sd-modules p2-sd-tests p2-sd-sync spin2 spin2-clean spin2-sd-loader spin2-sd-loader-host spin2-sd-put spin2-sd-sync spin2-load spin2-load-all run configure configure-reset show-config
 
 configure:
 	$(MSG) [Configure] $(P2_LOCAL_CONFIG)
@@ -232,6 +292,7 @@ configure:
 		'TOOLCHAIN := $(P2_CONFIG_TOOLCHAIN)', \
 		'PORT := $(P2_CONFIG_PORT)', \
 		'P2_SILICON := $(P2_CONFIG_SILICON)', \
+		'P2_BOARD := $(P2_CONFIG_BOARD)', \
 		'P2_PROFILE := $(P2_PROFILE)', \
 		'CATALINA_PLATFORM := $(P2_CONFIG_CATALINA_PLATFORM)', \
 		'CATALINA_MODEL := $(P2_CONFIG_CATALINA_MODEL)', \
@@ -255,6 +316,9 @@ show-config:
 	@echo "TOOLCHAIN=$(TOOLCHAIN)"
 	@echo "PORT=$(PORT)"
 	@echo "P2_SILICON=$(P2_SILICON)"
+	@echo "P2_BOARD=$(P2_BOARD)"
+	@echo "P2_LED0_PIN=$(P2_LED0_PIN)"
+	@echo "P2_LED1_PIN=$(P2_LED1_PIN)"
 	@echo "P2_PROFILE=$(P2_PROFILE)"
 	@echo "CATALINA_PLATFORM=$(CATALINA_PLATFORM)"
 	@echo "CATALINA_MODEL=$(CATALINA_MODEL)"
@@ -264,16 +328,24 @@ show-config:
 	@echo "CATALINA_DIR=$(CATALINA_DIR)"
 	@echo "LOADP2=$(LOADP2)"
 
-$(P2_GENERATED_CONFIG): $(P2_CONFIG_SOURCE) | $(P2_BUILD_DIR)
-	$(MSG) [Config] P2 profile $(P2_PROFILE)
+$(P2_GENERATED_CONFIG): FORCE $(P2_CONFIG_SOURCE) | $(P2_BUILD_DIR)
+	$(MSG) [Config] P2 profile $(P2_PROFILE), board $(P2_BOARD)
 	$(Q) { \
 		echo "/* Auto-generated by mk/p2.mk. */"; \
 		echo "#ifndef BERRY_CONF_P2_PROFILE_H"; \
 		echo "#define BERRY_CONF_P2_PROFILE_H"; \
 		echo "#define BE_P2_PROFILE $(P2_PROFILE_ID)"; \
+		echo "#define BE_P2_BOARD $(P2_BOARD_ID)"; \
+		echo "#define BE_P2_BOARD_NAME \"$(P2_BOARD_NAME)\""; \
+		echo "#define BE_P2_BOARD_HAS_PSRAM $(P2_BOARD_HAS_PSRAM)"; \
+		echo "#define BE_P2_BOARD_LED0_PIN $(P2_LED0_PIN)"; \
+		echo "#define BE_P2_BOARD_LED1_PIN $(P2_LED1_PIN)"; \
+		echo "#define BE_P2_SILICON $(P2_SILICON_ID)"; \
+		echo "#define BE_P2_SILICON_NAME \"$(P2_SILICON_NAME)\""; \
 		echo "#include \"../../../../$(P2_CONFIG_SOURCE)\""; \
 		echo "#endif"; \
-	} > "$@"
+	} > "$@.tmp"
+	$(Q) if ! cmp -s "$@.tmp" "$@"; then mv "$@.tmp" "$@"; else rm -f "$@.tmp"; fi
 
 p2-prebuild: $(GENERATE) $(P2_CONFIG)
 	$(MSG) [Prebuild] generate P2 resources for $(P2_PROFILE)
@@ -401,6 +473,11 @@ $(P2_BUILD_CONFIG_STAMP): FORCE | $(P2_BUILD_DIR)
 	$(Q) { \
 		echo "TOOLCHAIN=$(TOOLCHAIN)"; \
 		echo "P2_SILICON=$(P2_SILICON)"; \
+		echo "P2_BOARD=$(P2_BOARD)"; \
+		echo "P2_BOARD_ID=$(P2_BOARD_ID)"; \
+		echo "P2_BOARD_HAS_PSRAM=$(P2_BOARD_HAS_PSRAM)"; \
+		echo "P2_LED0_PIN=$(P2_LED0_PIN)"; \
+		echo "P2_LED1_PIN=$(P2_LED1_PIN)"; \
 		echo "P2_PROFILE=$(P2_PROFILE)"; \
 		echo "P2_PROFILE_ID=$(P2_PROFILE_ID)"; \
 		echo "P2_CODEGEN=$(P2_CODEGEN)"; \
@@ -416,6 +493,7 @@ $(P2_BUILD_CONFIG_STAMP): FORCE | $(P2_BUILD_DIR)
 		echo "P2_IMAGE_SIZE_LABEL=$(P2_IMAGE_SIZE_LABEL)"; \
 		echo "P2_IMAGE_LIMIT_NAME=$(P2_IMAGE_LIMIT_NAME)"; \
 		echo "P2_PROFILE_DEFINE=$(P2_PROFILE_DEFINE)"; \
+		echo "P2_DIRECT_SD_DEFINE=$(P2_DIRECT_SD_DEFINE)"; \
 		echo "P2_CFLAGS=$(P2_CFLAGS)"; \
 	} > "$@.tmp"
 	$(Q) if ! cmp -s "$@.tmp" "$@"; then mv "$@.tmp" "$@"; else rm -f "$@.tmp"; fi
@@ -427,7 +505,7 @@ ifeq ($(TOOLCHAIN),catalina)
 	$(Q) CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" \
 		CATALINA_INCLUDE="$(CATALINA_INCLUDEDIR)" CATALINA_TARGET="$(CATALINA_TARGETDIR)" \
 		CATALINA_LIBRARY="$(CATALINA_DIR)" PATH="$(CATALINA_BINDIR)$(HOST_PATHSEP)$$PATH" \
-		"$(CATALINA)" -C99 -p2 $(P2_PROFILE_DEFINE) $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) \
+		"$(CATALINA)" -C99 -p2 $(P2_PROFILE_DEFINE) $(P2_DIRECT_SD_DEFINE) $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) \
 		$(CATALINA_CONFIG_FLAGS) -I src -I $(P2_INCLUDE_DIR) -c $< -o $@
 else
 	$(Q) "$(FLEXCC)" $(P2_CFLAGS) $(P2_TOOLCHAIN_INCFLAGS) $(P2_INCFLAGS) -c $< -o $@
@@ -438,13 +516,13 @@ p2-catalina-host: $(P2_BUILD_DIR) $(P2_BUILD_INFO_HEADER)
 	$(MSG) [Build] $(P2_IMAGE)
 	$(Q) $(call RM_F,$(P2_IMAGE))
 	$(Q) $(call RM_F,$(P2_CATALINA_BASE).bin)
-	$(Q) CMD='CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" CATALINA_INCLUDE="$(CATALINA_INCLUDEDIR)" CATALINA_TARGET="$(CATALINA_TARGETDIR)" CATALINA_LIBRARY="$(CATALINA_DIR)" PATH="$(CATALINA_BINDIR)$(HOST_PATHSEP)$$PATH" "$(CATALINA)" -C99 -p2 $(P2_PROFILE_DEFINE) $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) $(CATALINA_CONFIG_FLAGS) -I src -I $(P2_BUILD_DIR) -I $(P2_INCLUDE_DIR) -o "$(P2_CATALINA_BASE)" $(P2_SRCS)'; \
+	$(Q) CMD='CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" CATALINA_INCLUDE="$(CATALINA_INCLUDEDIR)" CATALINA_TARGET="$(CATALINA_TARGETDIR)" CATALINA_LIBRARY="$(CATALINA_DIR)" PATH="$(CATALINA_BINDIR)$(HOST_PATHSEP)$$PATH" "$(CATALINA)" -C99 -p2 $(P2_PROFILE_DEFINE) $(P2_DIRECT_SD_DEFINE) $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) $(CATALINA_CONFIG_FLAGS) -I src -I $(P2_BUILD_DIR) -I $(P2_INCLUDE_DIR) -o "$(P2_CATALINA_BASE)" $(P2_SRCS)'; \
 		bash -lc "set -o pipefail; $$CMD 2>&1 | tee '$(P2_BUILD_INFO_LOG)'"
 	$(Q) "$(PYTHON)" "$(P2_IMAGE_SIZE_CHECK)" --image "$(P2_CATALINA_BASE).bin" --max-bytes "$(P2_IMAGE_MAX_BYTES)" --label "$(P2_IMAGE_SIZE_LABEL)" --limit-name "$(P2_IMAGE_LIMIT_NAME)"
 	$(Q) "$(PYTHON)" "$(P2_BUILD_INFO_SCRIPT)" --log "$(P2_BUILD_INFO_LOG)" --binary "$(P2_CATALINA_BASE).bin" --header "$(P2_BUILD_INFO_HEADER).tmp"
 	$(Q) if ! cmp -s "$(P2_BUILD_INFO_HEADER).tmp" "$(P2_BUILD_INFO_HEADER)"; then \
 		mv "$(P2_BUILD_INFO_HEADER).tmp" "$(P2_BUILD_INFO_HEADER)"; \
-		CMD='CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" CATALINA_INCLUDE="$(CATALINA_INCLUDEDIR)" CATALINA_TARGET="$(CATALINA_TARGETDIR)" CATALINA_LIBRARY="$(CATALINA_DIR)" PATH="$(CATALINA_BINDIR)$(HOST_PATHSEP)$$PATH" "$(CATALINA)" -C99 -p2 $(P2_PROFILE_DEFINE) $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) $(CATALINA_CONFIG_FLAGS) -I src -I $(P2_BUILD_DIR) -I $(P2_INCLUDE_DIR) -o "$(P2_CATALINA_BASE)" $(P2_SRCS)'; \
+		CMD='CATALINA_DIR="$(CATALINA_DIR)" FLEXPROP_DIR="$(FLEXPROP_DIR)" CATALINA_INCLUDE="$(CATALINA_INCLUDEDIR)" CATALINA_TARGET="$(CATALINA_TARGETDIR)" CATALINA_LIBRARY="$(CATALINA_DIR)" PATH="$(CATALINA_BINDIR)$(HOST_PATHSEP)$$PATH" "$(CATALINA)" -C99 -p2 $(P2_PROFILE_DEFINE) $(P2_DIRECT_SD_DEFINE) $(CATALINA_CLIB) $(CATALINA_SERIAL_LIB) $(CATALINA_MLIB) $(CATALINA_CONFIG_FLAGS) -I src -I $(P2_BUILD_DIR) -I $(P2_INCLUDE_DIR) -o "$(P2_CATALINA_BASE)" $(P2_SRCS)'; \
 		bash -lc "set -o pipefail; $$CMD 2>&1 | tee '$(P2_BUILD_INFO_LOG)'"; \
 	else \
 		rm -f "$(P2_BUILD_INFO_HEADER).tmp"; \
@@ -477,25 +555,73 @@ p2: p2-tools p2-prebuild $(P2_BUILD_DIR) $(P2_OBJS)
 endif
 
 p2-minimal:
-	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=minimal CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
+	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=minimal P2_BOARD=p2edge CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
 
 p2-full:
-	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=full CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
+	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=full P2_BOARD=p2edge CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
 
 p2-edge32:
-	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=edge32 P2_BOARD=p2edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
 
 p2-edge32-ram:
-	$(Q) $(MAKE) p2-ram TOOLCHAIN=catalina P2_PROFILE=edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+	$(Q) $(MAKE) p2-ram TOOLCHAIN=catalina P2_PROFILE=edge32 P2_BOARD=p2edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
 
 p2-edge32-flash:
-	$(Q) $(MAKE) p2-flash TOOLCHAIN=catalina P2_PROFILE=edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+	$(Q) $(MAKE) p2-flash TOOLCHAIN=catalina P2_PROFILE=edge32 P2_BOARD=p2edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
 
 p2-edge32-xmm:
-	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=xmm CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=xmm P2_BOARD=p2edge32 CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
 
 p2-xmm:
 	$(Q) $(MAKE) p2-edge32-xmm
+
+p2-xmm-tools:
+	$(MSG) [XMM Tools] Catalina payload and USB serial loader
+	$(Q) bash "$(P2_XMM_TOOLS_SCRIPT)" "$(CATALINA_DIR)" "$(P2_XMM_HOST_DIR)" "$(P2_XMM_LOADER_DIR)"
+	$(MSG) done
+
+p2-edge32-xmm-run:
+	$(Q) $(MAKE) p2-xmm-load TOOLCHAIN=catalina P2_PROFILE=xmm P2_BOARD=p2edge32 CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+
+p2-xmm-run: p2-edge32-xmm-run
+
+p2-xmm-load: $(P2_IMAGE) p2-xmm-tools $(P2_XMM_PAYLOAD_RUNNER)
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-xmm-run PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) bash "$(P2_XMM_PAYLOAD_RUNNER)" "$(P2_XMM_PAYLOAD)" "$(PORT)" "$(P2_BAUD)" "$(P2_XMM_LOADER_IMAGE)" "$(P2_IMAGE)" $(P2_XMM_PAYLOAD_FLAGS)
+
+ifeq ($(TOOLCHAIN),catalina)
+$(P2_XMM_FLASH_IMAGE): $(P2_IMAGE) $(P2_XMM_FLASH_SCRIPT) tools/p2/loader/catalina_xmm_flash_loader.c tools/p2/loader/flshboot_xmm_stage1.t tools/p2/loader/compose-catalina-xmm-flash.py | $(P2_BUILD_DIR)
+	$(MSG) [XMM Flash Image] $(P2_XMM_FLASH_IMAGE)
+	$(Q) P2_XMM_FLASH_LOADER_ADDR="$(P2_XMM_FLASH_LOADER_ADDR)" \
+		P2_XMM_FLASH_APP_ADDR="$(P2_XMM_FLASH_APP_ADDR)" \
+		PYTHON="$(PYTHON)" \
+		bash "$(P2_XMM_FLASH_SCRIPT)" "$(CATALINA_DIR)" "$(P2_IMAGE)" "$(P2_XMM_FLASH_IMAGE)" "$(P2_BUILD_DIR)/xmm-flash"
+	$(MSG) done
+endif
+
+p2-edge32-xmm-flash:
+	$(Q) $(MAKE) p2-xmm-flash-load TOOLCHAIN=catalina P2_PROFILE=xmm P2_BOARD=p2edge32 CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+
+p2-xmm-flash: p2-edge32-xmm-flash
+
+p2-xmm-flash-run:
+	$(Q) $(MAKE) p2-xmm-flash-load TOOLCHAIN=catalina P2_PROFILE=xmm P2_BOARD=p2edge32 CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+
+p2-xmm-flash-load: $(P2_XMM_FLASH_IMAGE)
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-xmm-flash PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) bash tools/p2/loader/run-loadp2.sh "$(LOADP2)" "$(PORT)" "$(P2_BAUD)" "-HIMEM=flash" "$(P2_XMM_FLASH_LOAD_SPEC)" "$(PYTHON)"
+	$(MSG) "[Flash] XMM image installed for standalone boot from SPI flash."
+	$(MSG) "[Flash] For P2 Edge dev boot-from-flash use boot DIP: FLASH=ON, △=OFF, ▽=OFF"
+	$(MSG) "[Flash] For P2 Edge fast flash-only boot use boot DIP: FLASH=ON, △=OFF, ▽=ON"
+	$(MSG) "[Flash] Attach with: tio -b $(P2_BAUD) $(PORT)"
 
 ifeq ($(TOOLCHAIN),catalina)
 $(P2_CATALINA_FLASH_IMAGE): $(P2_IMAGE) tools/p2/loader/build-catalina-flash-image.sh | $(P2_BUILD_DIR)

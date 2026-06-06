@@ -15,9 +15,19 @@ This note is the handoff for the next P2 porting session.
   - `make p2-flash`
   - `make p2-edge32`
   - `make p2-edge32-flash`
+  - `make p2-xmm`
+  - `make p2-xmm-run`
+  - `make p2-xmm-flash`
 - P2 silicon selection still supports:
   - `P2_SILICON=a` -> `-2a`
   - `P2_SILICON=latest|b|c` -> `-2`
+- P2 board pinout selection is separate from silicon and profile selection:
+  - `P2_BOARD=p2edge` -> no-PSRAM P2 Edge pinout, onboard LEDs on pins `56`
+    and `57`
+  - `P2_BOARD=p2edge32` -> P2 Edge 32 MB RAM pinout, onboard LEDs on pins `38`
+    and `39`, PSRAM interface reserved on pins `40..57`
+  - `P2_BOARD=auto` maps no-RAM profiles to `p2edge` and `edge32`/`xmm`
+    profiles to `p2edge32`; binary releases should set the board explicitly
 - The primary focus path is now macOS + Catalina + `P2_EDGE` + latest silicon (Rev C / current silicon path).
 - Other build paths should stay available as legacy/debugging support, but do not spend normal bring-up time trying to compile Berry with FlexC. Catalina is the verified path and the first one to validate.
 
@@ -32,23 +42,28 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - init: `7360` bytes
   - data: `210420` bytes
 - `make p2-edge32 CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds the P2 Edge 32 MB RAM profile:
-  - image: `485344` bytes
-  - code: `250652` bytes
-  - const: `18664` bytes
+  - image: `499008` bytes
+  - code: `260776` bytes
+  - const: `20644` bytes
   - init: `7440` bytes
-  - data: `194036` bytes
+  - data: `195592` bytes
 - `make p2-xmm CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds the experimental P2 Edge 32 MB RAM XMM profile:
   - Catalina model: `LARGE`
   - libraries/config: `-lcx -lpsram -lm` with explicit `-C PSRAM`
-  - image: `1057120` bytes under the `16 MiB` experimental XMM image limit
-  - code: `431212` bytes
-  - const: `18660` bytes
-  - init: `7468` bytes
-  - data: `587252` bytes
+  - image: `1225376` bytes under the `16 MiB` experimental XMM image limit
+  - code: `543352` bytes
+  - const: `20636` bytes
+  - init: `7564` bytes
+  - data: `587768` bytes
   - heap: `512 KiB`, reported as external-memory intent through `BE_P2_HEAP_USES_EXTERNAL_RAM`
   - memory split: Catalina can use the lower `16 MiB` of P2 Edge PSRAM as XMM memory; Berry exposes the upper `16 MiB` as the safe raw PSRAM block/cache window
-  - status: build-only; direct `loadp2` RAM load transferred the image but produced no REPL banner, which matches Catalina's note that XMM programs need the Catalina XMM load utilities
+  - status: hardware verified through Catalina's XMM serial loader and through standalone SPI-flash boot
   - note: `CATALINA_CLIB=-lci` compiled most C files but failed link with undefined Catalina DOSFS `__vi`, so Berry's filesystem path still needs `-lcx`
+- `make p2-xmm-run PORT=/dev/cu.usbserial-P97cvdxp ...` boots the XMM profile through Catalina's serial XMM loader and reaches the Berry prompt.
+- `make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp ...` creates a complete bootable XMM SPI-flash image and writes it with FlexProp `loadp2 -HIMEM=flash @80000000=...`.
+  - flash layout: stage-1 boot block at `0x00000`, size-prefixed stage-2 flash-to-PSRAM loader at `0x10000`, size-prefixed Berry XMM image at `0x40000`
+  - after reset, standalone XMM flash boot takes about `25-30` seconds before the Berry banner while the stage-2 loader copies the XMM image into PSRAM
+  - verified banner reports `[xmm profile]`, `Berry heap external`, `XMM 16777216 B`, and `block 16777216 B @ 16777216`
 - `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` flashed and booted from flash on the P2 Edge 32 MB RAM board. The boot banner reported `P2_EDGE, PSRAM`, `[edge32 profile]`, `131072 B` heap, and `33554432 B` PSRAM block API.
 - `make p2-run TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build PORT=/dev/cu.usbserial-P97cvdxp` RAM-loads and reaches the Berry prompt
 - Non-destructive SD smoke tests now live under `tests/p2/` and can be driven
@@ -82,7 +97,26 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
     Edge 32 MB RAM profile and live-verified on the P2 Edge 32 MB board
   - `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp ...` boots from flash,
     and the quick REPL smoke passes: `print(6*7)` -> `42`, string concat ->
-    `abcdef`, map lookup -> `7`, and SD-loaded `math.sqrt(81)` -> `9`
+    `abcdef`, and map lookup -> `7`
+  - standalone XMM flash boot passes core REPL checks:
+    `print(6*7)` -> `42`, string concat -> `abcdef`, map lookup -> `7`
+  - standalone XMM flash boot passes external allocator checks:
+    `p2.c_allocator_test(262144)["ok"]` -> `true` and
+    `p2.c_allocator_test(1048576)["ok"]` -> `true`
+  - SD/import status is hardware verified on the P2 Edge 32 MB board:
+    the current card has an invalid sector 0 signature, but its FAT boot sector
+    is at sector `2048`. Berry now falls back to common FAT starts when MBR
+    sector 0 is invalid, so `p2.fs_info("/")` reports
+    `mount_result_name == "ok"`, `partition_start == 2048`, and
+    `volinfo_result_name == "ok"`.
+  - `import math; print(math.sqrt(81))` prints `9` from both RAM-loaded edge32
+    and standalone flash-booted edge32 images with the current SD card.
+  - SD hang root fix is hardware verified: the Catalina patch wrapper is
+    `berry-p2-patch-v23`, direct SD sector stubs compile with the active
+    `CATALINA_MODEL` (COMPACT for edge32, LARGE for XMM), direct SD avoids the
+    PSRAM sector cache, Catalina `-lcx` SD auto-plugin is disabled for Berry's
+    direct-SD profile, stale service locks fail fast, and Berry uses a static
+    scratch-buffer mount path instead of Catalina `_mount()` stack allocation.
   - direct edge32 PSRAM/library-cache REPL checks pass:
     `p2.psram_test()["ok"]` -> `true`,
     `p2.psram_read(29*1024*1024, 5)` after writing `"cache"` -> `cache`, and
@@ -96,7 +130,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 - P2 pins on the no-PSRAM P2 Edge path:
   - `p2.pinmode(56,p2.OUTPUT); p2.low(56); print(p2.read(56))` -> `0`
   - `p2.high(56); print(p2.read(56))` -> `1`
-  - pin `57` must be tested with `CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, and no `-lpsram`; Catalina PSRAM builds reserve it as memory chip-select
+  - pin `57` must be tested with `P2_BOARD=p2edge`, `CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, and no `-lpsram`; Catalina PSRAM builds reserve it as memory chip-select
 - BMP180 on `SCL=25`, `SDA=24`:
   - `i2c.init(25,24,400)`
   - `print(i2c.scan())` -> `[119]`
@@ -179,7 +213,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   - pins `58..61` are the SD card interface
   - pins `62..63` are the serial console
   - pins `56..57` are intentionally left available for Berry GPIO use because they are exposed as LEDs on the tested board
-  - PSRAM P2 Edge builds reserve pins `40..57`
+  - PSRAM P2 Edge builds use `P2_BOARD=p2edge32`, move onboard LEDs to pins `38..39`, and reserve pins `40..57`
 - REPL input cleanup is improved enough that backspace now sends the normal erase sequence and prompts/newlines are no longer drifting the way they did earlier
 - interactive quit on the macOS Catalina path is now verified:
   - `Ctrl-C` or `Ctrl-D` at an empty `berry>` prompt makes Berry print `bye`
@@ -220,14 +254,13 @@ Known limitation:
   `32 MiB + 512 KiB` Berry heap would need a future VM object/handle/cache
   representation rather than ordinary C pointers alone.
 - `make p2-smoke-edge32` still depends on `/tests/p2` being present on the SD
-  card. `make p2-sd-sync` now uploads repo `modules/` and `tests/p2/` through
-  the Berry REPL, but the current live card presented an empty root and rejected
-  both `os.mkdir("/MODULES")` and `open("/ROOT.TXT", "w")`, so SD-backed
-  `import math` still needs a writable-card/provisioning pass before it can be
-  claimed live-verified again. On the current edge32 flash image,
-  `p2.fs_info(true)` reports `mounted: false`, `mount_result: -1`, and
-  `mount_result_name: "errmisc"` before any root directory or write probe is
-  attempted.
+  card. Manual REPL checks now verify SD mount fallback and `import math`; the
+  full scripted smoke suite still needs a fresh run against the provisioned
+  card.
+- The current SD card appears to have an invalid MBR/sector 0 but a valid FAT
+  volume at sector `2048`. Berry handles this with a read-only mount-discovery
+  fallback, but reformatting as MBR/FAT32 would still be cleaner for broad tool
+  compatibility.
 - The new `scripts/p2/repl_smoke.py` runner uses direct PySerial access with
   selectable line endings. Use `--no-wait-start` after `p2-edge32-flash`, because
   the flash helper has usually already consumed the boot prompt.

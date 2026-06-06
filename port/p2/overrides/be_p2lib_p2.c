@@ -15,6 +15,7 @@
 #include <propeller2.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -26,7 +27,15 @@
 #endif
 
 enum {
-    P2_PSRAM_TRANSFER_MAX = 8192
+    P2_PSRAM_TRANSFER_MAX = 8192,
+    P2_EDGE_SD_DO = 58,
+    P2_EDGE_SD_DI = 59,
+    P2_EDGE_SD_CS = 60,
+    P2_EDGE_SD_CLK = 61,
+    P2_EDGE_FLASH_DO = 58,
+    P2_EDGE_FLASH_DI = 59,
+    P2_EDGE_FLASH_CLK = 60,
+    P2_EDGE_FLASH_CS = 61
 };
 
 extern int m_clock_freq(bvm *vm);
@@ -126,6 +135,119 @@ static void p2_map_set_u32_hex(bvm *vm, const char *key, uint32_t value)
     p2_map_set_string(vm, key, buffer);
 }
 
+static uint8_t p2_sd_probe_transfer(uint8_t value)
+{
+    uint8_t in = 0;
+    int bit;
+
+    for (bit = 0; bit < 8; ++bit) {
+        if (value & 0x80u) {
+            _pinh(P2_EDGE_SD_DI);
+        } else {
+            _pinl(P2_EDGE_SD_DI);
+        }
+        value <<= 1;
+        _waitus(5);
+        _pinh(P2_EDGE_SD_CLK);
+        _waitus(5);
+        in = (uint8_t)((in << 1) | (_pinr(P2_EDGE_SD_DO) ? 1u : 0u));
+        _pinl(P2_EDGE_SD_CLK);
+    }
+    return in;
+}
+
+static uint8_t p2_flash_probe_transfer(uint8_t value)
+{
+    uint8_t in = 0;
+    int bit;
+
+    for (bit = 0; bit < 8; ++bit) {
+        if (value & 0x80u) {
+            _pinh(P2_EDGE_FLASH_DI);
+        } else {
+            _pinl(P2_EDGE_FLASH_DI);
+        }
+        value <<= 1;
+        _waitus(1);
+        _pinh(P2_EDGE_FLASH_CLK);
+        _waitus(1);
+        in = (uint8_t)((in << 1) | (_pinr(P2_EDGE_FLASH_DO) ? 1u : 0u));
+        _pinl(P2_EDGE_FLASH_CLK);
+    }
+    return in;
+}
+
+static void p2_flash_probe_command(uint8_t cmd)
+{
+    _pinl(P2_EDGE_FLASH_CS);
+    (void)p2_flash_probe_transfer(cmd);
+    _pinh(P2_EDGE_FLASH_CS);
+}
+
+static void p2_sd_probe_flash_powerdown(void)
+{
+    _pinh(P2_EDGE_FLASH_CS);
+    _pinl(P2_EDGE_FLASH_CLK);
+    _pinl(P2_EDGE_FLASH_DI);
+    _pinf(P2_EDGE_FLASH_DO);
+    p2_flash_probe_command(0x66u);
+    p2_flash_probe_command(0x99u);
+    _waitms(1);
+    p2_flash_probe_command(0xB9u);
+    _waitus(10);
+}
+
+static void p2_sd_probe_deselect(void)
+{
+    _pinh(P2_EDGE_SD_CS);
+    (void)p2_sd_probe_transfer(0xffu);
+}
+
+static void p2_sd_probe_idle(void)
+{
+    int i;
+
+    _pinh(P2_EDGE_SD_CS);
+    _pinl(P2_EDGE_SD_CLK);
+    _pinh(P2_EDGE_SD_DI);
+    _pinf(P2_EDGE_SD_DO);
+    _waitms(1);
+    for (i = 0; i < 10; ++i) {
+        (void)p2_sd_probe_transfer(0xffu);
+    }
+}
+
+static uint8_t p2_sd_probe_command(uint8_t cmd, uint32_t arg, uint8_t crc,
+    uint8_t *extra, int extra_len, int keep_selected)
+{
+    uint8_t response = 0xffu;
+    int i;
+
+    p2_sd_probe_deselect();
+    _pinl(P2_EDGE_SD_CS);
+    (void)p2_sd_probe_transfer(0xffu);
+    (void)p2_sd_probe_transfer((uint8_t)(0x40u | cmd));
+    (void)p2_sd_probe_transfer((uint8_t)(arg >> 24));
+    (void)p2_sd_probe_transfer((uint8_t)(arg >> 16));
+    (void)p2_sd_probe_transfer((uint8_t)(arg >> 8));
+    (void)p2_sd_probe_transfer((uint8_t)arg);
+    (void)p2_sd_probe_transfer(crc);
+
+    for (i = 0; i < 128; ++i) {
+        response = p2_sd_probe_transfer(0xffu);
+        if (response != 0xffu) {
+            break;
+        }
+    }
+    for (i = 0; i < extra_len; ++i) {
+        extra[i] = p2_sd_probe_transfer(0xffu);
+    }
+    if (!keep_selected) {
+        p2_sd_probe_deselect();
+    }
+    return response;
+}
+
 static const char *p2_fs_result_name(int result)
 {
     switch (result) {
@@ -149,6 +271,14 @@ static const char *p2_fs_result_name(int result)
         return "name_error";
     case 7:
         return "not_supported";
+    case 0x100:
+        return "sd_no_response";
+    case BERRY_P2_FS_RESULT_SD_TIMEOUT:
+        return "sd_timeout";
+    case BERRY_P2_FS_RESULT_SD_BUSY:
+        return "sd_busy";
+    case BERRY_P2_FS_RESULT_SD_NO_SERVICE:
+        return "sd_no_service";
     default:
         return "unknown";
     }
@@ -292,6 +422,198 @@ static int m_p2_heap_info(bvm *vm)
     be_return(vm);
 }
 
+static int m_p2_c_allocator_test(bvm *vm)
+{
+    bint requested = BE_P2_HEAP_USES_EXTERNAL_RAM ? (256 * 1024) : (8 * 1024);
+    bint grown;
+    unsigned char *buffer = NULL;
+    unsigned char *grown_buffer = NULL;
+    unsigned char *zeroed = NULL;
+    unsigned long checksum = 0;
+    const char *stage = "ok";
+    int ok = 1;
+    bint i;
+
+    if (be_top(vm) >= 1 && be_isint(vm, 1)) {
+        requested = be_toint(vm, 1);
+    }
+    if (requested < 1) {
+        requested = 1;
+    }
+    if (requested > (1024 * 1024)) {
+        requested = 1024 * 1024;
+    }
+    grown = requested + 1024;
+
+    buffer = (unsigned char *)malloc((size_t)requested);
+    if (!buffer) {
+        ok = 0;
+        stage = "malloc";
+        goto done;
+    }
+
+    for (i = 0; i < requested; ++i) {
+        buffer[i] = (unsigned char)((i * 31 + 7) & 0xff);
+    }
+
+    grown_buffer = (unsigned char *)realloc(buffer, (size_t)grown);
+    if (!grown_buffer) {
+        ok = 0;
+        stage = "realloc";
+        goto done;
+    }
+    buffer = NULL;
+
+    for (i = 0; i < requested; ++i) {
+        unsigned char expected = (unsigned char)((i * 31 + 7) & 0xff);
+        checksum += grown_buffer[i];
+        if (grown_buffer[i] != expected) {
+            ok = 0;
+            stage = "verify";
+            goto done;
+        }
+    }
+    for (i = requested; i < grown; ++i) {
+        grown_buffer[i] = (unsigned char)((i * 17 + 3) & 0xff);
+        checksum += grown_buffer[i];
+    }
+
+    zeroed = (unsigned char *)calloc(256u, 4u);
+    if (!zeroed) {
+        ok = 0;
+        stage = "calloc";
+        goto done;
+    }
+    for (i = 0; i < 1024; ++i) {
+        if (zeroed[i] != 0) {
+            ok = 0;
+            stage = "calloc_verify";
+            goto done;
+        }
+    }
+
+done:
+    free(zeroed);
+    free(grown_buffer);
+    free(buffer);
+
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "ok", ok);
+    p2_map_set_string(vm, "stage", stage);
+    p2_map_set_int(vm, "requested", requested);
+    p2_map_set_int(vm, "grown", grown);
+    p2_map_set_int(vm, "checksum", (bint)(checksum & 0x7fffffffUL));
+    p2_map_set_bool(vm, "external_heap", BE_P2_HEAP_USES_EXTERNAL_RAM);
+
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_sd_raw_probe(bvm *vm)
+{
+    uint8_t extra[4] = { 0xffu, 0xffu, 0xffu, 0xffu };
+    uint8_t cmd0;
+    uint8_t cmd8;
+    uint8_t cmd55 = 0xffu;
+    uint8_t acmd41 = 0xffu;
+    uint8_t cmd58;
+    uint8_t cmd16;
+    uint8_t cmd17 = 0xffu;
+    uint8_t token = 0xffu;
+    uint8_t first0 = 0xffu;
+    uint8_t first1 = 0xffu;
+    uint8_t sig0 = 0xffu;
+    uint8_t sig1 = 0xffu;
+    uint32_t cmd8_r7;
+    uint32_t ocr;
+    uint32_t sector = 0;
+    uint32_t read_arg;
+    int high_capacity;
+    int tries;
+    int i;
+
+    if (be_top(vm) >= 1 && be_isint(vm, 1)) {
+        bint value = be_toint(vm, 1);
+        if (value > 0) {
+            sector = (uint32_t)value;
+        }
+    }
+
+    p2_sd_probe_idle();
+
+    cmd0 = p2_sd_probe_command(0, 0, 0x95u, NULL, 0, 0);
+    extra[0] = extra[1] = extra[2] = extra[3] = 0xffu;
+    cmd8 = p2_sd_probe_command(8, 0x1aau, 0x87u, extra, 4, 0);
+    cmd8_r7 = ((uint32_t)extra[0] << 24)
+        | ((uint32_t)extra[1] << 16)
+        | ((uint32_t)extra[2] << 8)
+        | (uint32_t)extra[3];
+
+    for (tries = 0; tries < 1000; ++tries) {
+        cmd55 = p2_sd_probe_command(55, 0, 0x01u, NULL, 0, 1);
+        acmd41 = p2_sd_probe_command(41, 0x40000000u, 0x01u, NULL, 0, 0);
+        if (acmd41 == 0x00u || cmd55 > 0x01u) {
+            break;
+        }
+        _waitms(1);
+    }
+
+    extra[0] = extra[1] = extra[2] = extra[3] = 0xffu;
+    cmd58 = p2_sd_probe_command(58, 0, 0x01u, extra, 4, 0);
+    ocr = ((uint32_t)extra[0] << 24)
+        | ((uint32_t)extra[1] << 16)
+        | ((uint32_t)extra[2] << 8)
+        | (uint32_t)extra[3];
+    high_capacity = (extra[0] & 0x40u) ? 1 : 0;
+
+    cmd16 = p2_sd_probe_command(16, 512, 0x01u, NULL, 0, 0);
+
+    read_arg = high_capacity ? sector : (sector << 9);
+    cmd17 = p2_sd_probe_command(17, read_arg, 0x01u, NULL, 0, 1);
+    if (cmd17 == 0x00u) {
+        for (i = 0; i < 20000; ++i) {
+            token = p2_sd_probe_transfer(0xffu);
+            if (token == 0xfeu || (token & 0xf0u) == 0) {
+                break;
+            }
+        }
+        if (token == 0xfeu) {
+            first0 = p2_sd_probe_transfer(0xffu);
+            first1 = p2_sd_probe_transfer(0xffu);
+            for (i = 2; i < 510; ++i) {
+                (void)p2_sd_probe_transfer(0xffu);
+            }
+            sig0 = p2_sd_probe_transfer(0xffu);
+            sig1 = p2_sd_probe_transfer(0xffu);
+            (void)p2_sd_probe_transfer(0xffu);
+            (void)p2_sd_probe_transfer(0xffu);
+        }
+    }
+    p2_sd_probe_deselect();
+
+    be_newobject(vm, "map");
+    p2_map_set_int(vm, "sector", (bint)sector);
+    p2_map_set_int(vm, "cmd0", (bint)cmd0);
+    p2_map_set_int(vm, "cmd8", (bint)cmd8);
+    p2_map_set_u32_hex(vm, "cmd8_r7", cmd8_r7);
+    p2_map_set_int(vm, "cmd55", (bint)cmd55);
+    p2_map_set_int(vm, "acmd41", (bint)acmd41);
+    p2_map_set_int(vm, "acmd41_tries", (bint)(tries + 1));
+    p2_map_set_int(vm, "cmd58", (bint)cmd58);
+    p2_map_set_u32_hex(vm, "ocr", ocr);
+    p2_map_set_bool(vm, "high_capacity", high_capacity);
+    p2_map_set_int(vm, "cmd16", (bint)cmd16);
+    p2_map_set_int(vm, "cmd17", (bint)cmd17);
+    p2_map_set_int(vm, "token", (bint)token);
+    p2_map_set_int(vm, "first0", (bint)first0);
+    p2_map_set_int(vm, "first1", (bint)first1);
+    p2_map_set_int(vm, "sig0", (bint)sig0);
+    p2_map_set_int(vm, "sig1", (bint)sig1);
+    p2_map_set_int(vm, "signature", (bint)(((int)sig1 << 8) | (int)sig0));
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
 static int m_p2_fs_info(bvm *vm)
 {
     const char *path = "/";
@@ -327,6 +649,30 @@ static int m_p2_fs_info(bvm *vm)
     p2_map_set_int(vm, "root_entry_count", (bint)info.root_entry_count);
     p2_map_set_int(vm, "write_count", (bint)info.write_count);
     p2_map_set_int(vm, "read_count", (bint)info.read_count);
+    p2_map_set_int(vm, "sector0_signature", (bint)info.sector0_signature);
+    p2_map_set_int(vm, "sector0_byte0", (bint)info.sector0_byte0);
+    p2_map_set_int(vm, "sector0_byte1", (bint)info.sector0_byte1);
+    p2_map_set_int(vm, "sector0_byte2", (bint)info.sector0_byte2);
+    p2_map_set_int(vm, "sector0_byte3", (bint)info.sector0_byte3);
+    p2_map_set_int(vm, "sector0_sig0", (bint)info.sector0_sig0);
+    p2_map_set_int(vm, "sector0_sig1", (bint)info.sector0_sig1);
+    p2_map_set_int(vm, "sd_service_entry", (bint)info.sd_service_entry);
+    p2_map_set_int(vm, "sd_service_cog", (bint)info.sd_service_cog);
+    p2_map_set_int(vm, "sd_service_lock", (bint)info.sd_service_lock);
+    p2_map_set_int(vm, "sd_service_code", (bint)info.sd_service_code);
+    p2_map_set_int(vm, "sd_request", (bint)info.sd_request);
+    p2_map_set_int(vm, "sd_response", (bint)info.sd_response);
+    p2_map_set_int(vm, "fil_cog", (bint)info.fil_cog);
+    p2_map_set_int(vm, "fil_registered_type", (bint)info.fil_registered_type);
+    p2_map_set_int(vm, "partition_type", (bint)info.partition_type);
+    p2_map_set_int(vm, "partition_active", (bint)info.partition_active);
+    p2_map_set_int(vm, "partition_start", (bint)info.partition_start);
+    p2_map_set_int(vm, "partition_size", (bint)info.partition_size);
+    p2_map_set_int(vm, "filesystem_type", (bint)info.filesystem_type);
+    p2_map_set_fs_result(vm, "sd_init_result", info.sd_init_result);
+    p2_map_set_fs_result(vm, "raw_sector0_result", info.raw_sector0_result);
+    p2_map_set_fs_result(vm, "dfs_sector0_result", info.dfs_sector0_result);
+    p2_map_set_fs_result(vm, "volinfo_result", info.volinfo_result);
     p2_map_set_fs_result(vm, "mount_result", info.mount_result);
     p2_map_set_fs_result(vm, "resolve_result", info.resolve_result);
     p2_map_set_fs_result(vm, "root_open_result", info.root_open_result);
@@ -668,6 +1014,11 @@ static void p2_status_info_build(bvm *vm)
     p2_map_set_string(vm, "date", P2_BUILD_DATE_STR);
     p2_map_set_string(vm, "time", P2_BUILD_TIME_STR);
     p2_map_set_string(vm, "profile", BE_P2_PROFILE_NAME);
+    p2_map_set_string(vm, "board", BE_P2_BOARD_NAME);
+    p2_map_set_string(vm, "silicon", BE_P2_SILICON_NAME);
+    p2_map_set_int(vm, "led0_pin", (bint)BE_P2_BOARD_LED0_PIN);
+    p2_map_set_int(vm, "led1_pin", (bint)BE_P2_BOARD_LED1_PIN);
+    p2_map_set_int(vm, "board_has_psram", (bint)BE_P2_BOARD_HAS_PSRAM);
     p2_map_set_int(vm, "binary_bytes", (bint)P2_BUILD_BINARY_BYTES);
     p2_map_set_int(vm, "code_bytes", (bint)P2_BUILD_CODE_BYTES);
     p2_map_set_int(vm, "const_bytes", (bint)P2_BUILD_CONST_BYTES);
@@ -889,8 +1240,10 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "smartpin_clear")) be_pushntvfunction(vm, m_smartpin_clear);
     else if (!strcmp(name, "sbrk")) be_pushntvfunction(vm, m_p2_sbrk);
     else if (!strcmp(name, "heap_info")) be_pushntvfunction(vm, m_p2_heap_info);
+    else if (!strcmp(name, "c_allocator_test")) be_pushntvfunction(vm, m_p2_c_allocator_test);
     else if (!strcmp(name, "fs_info")) be_pushntvfunction(vm, m_p2_fs_info);
     else if (!strcmp(name, "sd_info")) be_pushntvfunction(vm, m_p2_fs_info);
+    else if (!strcmp(name, "sd_raw_probe")) be_pushntvfunction(vm, m_p2_sd_raw_probe);
     else if (!strcmp(name, "psram_info")) be_pushntvfunction(vm, m_p2_psram_info);
     else if (!strcmp(name, "psram_read")) be_pushntvfunction(vm, m_p2_psram_read);
     else if (!strcmp(name, "psram_write")) be_pushntvfunction(vm, m_p2_psram_write);

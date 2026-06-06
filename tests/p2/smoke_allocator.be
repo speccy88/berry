@@ -31,4 +31,7 @@ assert(after_free > after_alloc)
 assert(after_free >= baseline - 4096)
 assert(p2.sbrk() == after_free)
 
+var c_alloc = p2.c_allocator_test(p2.heap_info()["external_heap"] ? 262144 : 8192)
+assert(c_alloc["ok"])
+
 print("P2_SMOKE_PASS allocator")

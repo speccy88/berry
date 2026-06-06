@@ -9,8 +9,62 @@
 #define BE_P2_PROFILE_EDGE32            3
 #define BE_P2_PROFILE_XMM               4
 
+#define BE_P2_BOARD_P2EDGE              1
+#define BE_P2_BOARD_P2EDGE32            2
+
+#define BE_P2_SILICON_OLD               1
+#define BE_P2_SILICON_LATEST            2
+
 #ifndef BE_P2_PROFILE
 #define BE_P2_PROFILE                   BE_P2_PROFILE_FULL
+#endif
+
+#ifndef BE_P2_BOARD
+#if BE_P2_PROFILE == BE_P2_PROFILE_EDGE32 || BE_P2_PROFILE == BE_P2_PROFILE_XMM
+#define BE_P2_BOARD                     BE_P2_BOARD_P2EDGE32
+#else
+#define BE_P2_BOARD                     BE_P2_BOARD_P2EDGE
+#endif
+#endif
+
+#ifndef BE_P2_BOARD_NAME
+#if BE_P2_BOARD == BE_P2_BOARD_P2EDGE32
+#define BE_P2_BOARD_NAME                "p2edge32"
+#else
+#define BE_P2_BOARD_NAME                "p2edge"
+#endif
+#endif
+
+#ifndef BE_P2_BOARD_HAS_PSRAM
+#define BE_P2_BOARD_HAS_PSRAM           (BE_P2_BOARD == BE_P2_BOARD_P2EDGE32)
+#endif
+
+#ifndef BE_P2_BOARD_LED0_PIN
+#if BE_P2_BOARD == BE_P2_BOARD_P2EDGE32
+#define BE_P2_BOARD_LED0_PIN            38
+#else
+#define BE_P2_BOARD_LED0_PIN            56
+#endif
+#endif
+
+#ifndef BE_P2_BOARD_LED1_PIN
+#if BE_P2_BOARD == BE_P2_BOARD_P2EDGE32
+#define BE_P2_BOARD_LED1_PIN            39
+#else
+#define BE_P2_BOARD_LED1_PIN            57
+#endif
+#endif
+
+#ifndef BE_P2_SILICON
+#define BE_P2_SILICON                   BE_P2_SILICON_LATEST
+#endif
+
+#ifndef BE_P2_SILICON_NAME
+#if BE_P2_SILICON == BE_P2_SILICON_OLD
+#define BE_P2_SILICON_NAME              "old"
+#else
+#define BE_P2_SILICON_NAME              "latest"
+#endif
 #endif
 
 #if BE_P2_PROFILE == BE_P2_PROFILE_MINIMAL

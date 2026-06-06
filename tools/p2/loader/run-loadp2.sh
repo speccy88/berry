@@ -44,6 +44,21 @@ fi
 
 case " $FLAGS " in
     *" -t "*|*" -T "*|*" -xTERM "*)
+        if [ ! -t 0 ]; then
+            NONTERM_FLAGS=""
+            for flag in $FLAGS; do
+                case "$flag" in
+                    -t|-T|-xTERM)
+                        ;;
+                    *)
+                        NONTERM_FLAGS="${NONTERM_FLAGS} ${flag}"
+                        ;;
+                esac
+            done
+            echo "[Loader] stdin is not a TTY; loading without terminal attach."
+            echo "[Loader] Attach after boot with: tio -b ${BAUD} ${PORT}"
+            exec "$LOADP2" -p "$PORT" -b "$BAUD" $NONTERM_FLAGS "$IMAGE"
+        fi
         echo "[Loader] Press Ctrl-D or Ctrl-C at an empty berry prompt to quit Berry."
         echo "[Loader] Press Ctrl-] to disconnect from the serial terminal."
         exec "$PYTHON" tools/p2/loader/serial_terminal.py -- "$LOADP2" "$PORT" "$BAUD" "$FLAGS" "$IMAGE"

@@ -12,14 +12,14 @@ The normal board profile is the no-PSRAM P2 Edge build:
 
 ```sh
 make configure TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp \
-  P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT \
-  CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
+  P2_SILICON=latest P2_BOARD=p2edge CATALINA_PLATFORM=P2_EDGE \
+  CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
 ```
 
 Avoid P2 pins `58..61` for user I/O because Catalina uses them for the SD card,
-and avoid pins `62..63` because they are the serial console. Pins `56` and `57`
-are usable LEDs on the no-PSRAM P2 Edge profile. PSRAM builds reserve pins
-`40..57`.
+and avoid pins `62..63` because they are the serial console. `P2_BOARD=p2edge`
+uses onboard LEDs on pins `56` and `57`. `P2_BOARD=p2edge32` uses onboard LEDs
+on pins `38` and `39`; PSRAM builds reserve pins `40..57`.
 
 For a P2 Edge with the 32 MB RAM module, use the `edge32` profile:
 

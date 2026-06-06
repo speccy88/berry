@@ -1,5 +1,6 @@
 #include "berry.h"
 #include "be_sys.h"
+#include "berry_conf_p2.h"
 #include "berry_port.h"
 #include "p2_serial.h"
 #include "p2_smartserial.h"
@@ -7,20 +8,43 @@
 #if defined(__CATALINA__)
 #include <stdio.h>
 #include <fs.h>
+#include <plugin.h>
 #include <propeller2.h>
+#include <sd.h>
 extern VOLINFO __vi;
+extern unsigned int __pstart;
 #else
 #include <propeller2.h>
 #endif
+#include <stdint.h>
 #include <string.h>
 
 #if defined(__CATALINA__)
 #define P2_FS_PATH_MAX 256
 #define P2_FS_FILE_SLOTS 4
 #define P2_FS_DIR_SLOTS 2
-
+#define P2_SD_TIMEOUT_MS 3000u
+#define P2_EDGE_SD_DO 58
+#define P2_EDGE_SD_DI 59
+#define P2_EDGE_SD_CS 60
+#define P2_EDGE_SD_CLK 61
+#define P2_EDGE_FLASH_DO 58
+#define P2_EDGE_FLASH_DI 59
+#define P2_EDGE_FLASH_CLK 60
+#define P2_EDGE_FLASH_CS 61
+#define P2_EDGE_FLASH_RESET_ENABLE 0x66u
+#define P2_EDGE_FLASH_RESET_MEMORY 0x99u
+#define P2_EDGE_FLASH_DEEP_POWER_DOWN 0xB9u
+#ifndef P2_FS_TRACE
+#define P2_FS_TRACE 0
+#endif
 static int p2_fs_mounted;
+static int p2_sd_bus_prepared;
+static int p2_sd_initialized;
 static char p2_cwd[P2_FS_PATH_MAX] = "/";
+static uint8_t p2_mount_scratch[SECTOR_SIZE];
+
+static volatile long p2_sd_long_param;
 
 typedef struct {
     int used;
@@ -40,6 +64,190 @@ static p2_file_handle p2_file_slots[P2_FS_FILE_SLOTS];
 static p2_dir_handle p2_dir_slots[P2_FS_DIR_SLOTS];
 
 static int p2_resolve_path(const char *path, char *out, size_t size);
+
+static void p2_fs_trace(const char *stage)
+{
+#if P2_FS_TRACE
+    printf("[p2.fs] %s\r\n", stage);
+    fflush(stdout);
+#else
+    (void)stage;
+#endif
+}
+
+static uint8_t p2_edge_flash_transfer(uint8_t value)
+{
+    uint8_t in = 0;
+    int bit;
+
+    for (bit = 0; bit < 8; ++bit) {
+        if (value & 0x80u) {
+            _pinh(P2_EDGE_FLASH_DI);
+        } else {
+            _pinl(P2_EDGE_FLASH_DI);
+        }
+        value <<= 1;
+        _waitus(1);
+        _pinh(P2_EDGE_FLASH_CLK);
+        _waitus(1);
+        in = (uint8_t)((in << 1) | (_pinr(P2_EDGE_FLASH_DO) ? 1u : 0u));
+        _pinl(P2_EDGE_FLASH_CLK);
+    }
+    return in;
+}
+
+static void p2_edge_flash_command(uint8_t command)
+{
+    _pinh(P2_EDGE_FLASH_CS);
+    _pinl(P2_EDGE_FLASH_CLK);
+    _pinl(P2_EDGE_FLASH_DI);
+    _pinf(P2_EDGE_FLASH_DO);
+    _waitus(2);
+    _pinl(P2_EDGE_FLASH_CS);
+    (void)p2_edge_flash_transfer(command);
+    _pinh(P2_EDGE_FLASH_CS);
+    _waitus(2);
+}
+
+static void p2_prepare_sd_bus(void)
+{
+    int i;
+
+    /*
+     * On the P2 Edge, SD and boot flash share pins 58..61, but flash CS is
+     * the SD clock pin. Put flash into deep power-down before SD activity so
+     * SD clocks do not let flash drive MISO.
+     */
+    p2_edge_flash_command(P2_EDGE_FLASH_RESET_ENABLE);
+    p2_edge_flash_command(P2_EDGE_FLASH_RESET_MEMORY);
+    _waitms(1);
+    p2_edge_flash_command(P2_EDGE_FLASH_DEEP_POWER_DOWN);
+    _waitus(10);
+
+    _pinh(P2_EDGE_SD_CS);
+    _pinl(P2_EDGE_SD_CLK);
+    _pinh(P2_EDGE_SD_DI);
+    _pinf(P2_EDGE_SD_DO);
+    for (i = 0; i < 10; ++i) {
+        int bit;
+        for (bit = 0; bit < 8; ++bit) {
+            _pinh(P2_EDGE_SD_CLK);
+            _waitus(2);
+            _pinl(P2_EDGE_SD_CLK);
+            _waitus(2);
+        }
+    }
+    p2_sd_bus_prepared = 1;
+}
+
+static int p2_service_request_timed(int svc, void *param, uint32_t timeout_ms)
+{
+    unsigned short entry;
+    int code;
+    int cog;
+    int lock;
+    int have_lock = 0;
+    volatile request_t *request;
+    uint32_t spins;
+
+    entry = *SERVICE_POINTER(svc);
+    code = (int)(entry & 0x7Fu);
+    if (code == 0) {
+        return BERRY_P2_FS_RESULT_SD_NO_SERVICE;
+    }
+
+    cog = (int)((entry >> 12) & 0x0Fu);
+    lock = (int)((entry >> 7) & 0x1Fu);
+    request = REQUEST_BLOCK(cog);
+    if (!request) {
+        return BERRY_P2_FS_RESULT_SD_NO_SERVICE;
+    }
+    if (request->request != 0) {
+        return BERRY_P2_FS_RESULT_SD_BUSY;
+    }
+
+    if (lock < LOCK_MAX) {
+        if (!_locktry(lock)) {
+            return BERRY_P2_FS_RESULT_SD_BUSY;
+        }
+        have_lock = 1;
+    }
+
+    request->response = 0;
+    request->request = ((unsigned int)code << 24)
+        | ((unsigned int)(uintptr_t)param & 0x00FFFFFFu);
+
+    spins = timeout_ms * 10000u;
+    while (request->request != 0) {
+        if (--spins == 0) {
+            if (have_lock) {
+                _lockrel(lock);
+            }
+            return BERRY_P2_FS_RESULT_SD_TIMEOUT;
+        }
+    }
+
+    if (have_lock) {
+        _lockrel(lock);
+    }
+    return (int)request->response;
+}
+
+static int p2_long_service_timed(int svc, long par, uint32_t timeout_ms)
+{
+    p2_sd_long_param = par;
+    return p2_service_request_timed(svc, (void *)&p2_sd_long_param, timeout_ms);
+}
+
+static int p2_fs_init_sd(void)
+{
+#if !defined(__BERRY_P2_DIRECT_SD_IO)
+    int result;
+#endif
+
+    if (p2_sd_initialized) {
+        return 0;
+    }
+#if defined(__BERRY_P2_DIRECT_SD_IO)
+    p2_sd_initialized = 1;
+    return 0;
+#else
+    /*
+     * Catalina's SD plugin dispatch treats SD init as a long request.  The
+     * handler ignores the parameter contents, but the request still needs the
+     * same parameter-block shape as SD read/write so the cog decodes it
+     * consistently.
+     */
+    p2_prepare_sd_bus();
+    result = p2_long_service_timed(SVC_SD_INIT, 0, P2_SD_TIMEOUT_MS);
+    if (result == 0) {
+        p2_sd_initialized = 1;
+    }
+    return result;
+#endif
+}
+
+static void p2_decode_sd_service(berry_p2_fs_info *info)
+{
+    unsigned short entry;
+
+    if (!info) {
+        return;
+    }
+
+    entry = *SERVICE_POINTER(SVC_SD_INIT);
+    info->sd_service_entry = (int)entry;
+    info->sd_service_cog = (int)(entry >> 12);
+    info->sd_service_lock = (int)((entry >> 7) & 0x1Fu);
+    info->sd_service_code = (int)(entry & 0x7Fu);
+    if (info->sd_service_code != 0) {
+        volatile request_t *request = REQUEST_BLOCK(info->sd_service_cog);
+        if (request) {
+            info->sd_request = (int)request->request;
+            info->sd_response = (int)request->response;
+        }
+    }
+}
 
 static p2_file_handle *p2_file_alloc(void)
 {
@@ -86,17 +294,6 @@ static void p2_dir_free(p2_dir_handle *dir)
     if (dir) {
         memset(dir, 0, sizeof(*dir));
     }
-}
-
-static int p2_fs_ensure_mounted(void)
-{
-    if (!p2_fs_mounted) {
-        if (_mount(0, 0) != 0) {
-            return -1;
-        }
-        p2_fs_mounted = 1;
-    }
-    return 0;
 }
 
 static const char *p2_catalina_fs_path(const char *path)
@@ -294,6 +491,30 @@ static void p2_fs_info_init(berry_p2_fs_info *info)
         return;
     }
     memset(info, 0, sizeof(*info));
+    info->sd_init_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->raw_sector0_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->dfs_sector0_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->sd_service_entry = -1;
+    info->sd_service_cog = -1;
+    info->sd_service_lock = -1;
+    info->sd_service_code = -1;
+    info->sd_request = -1;
+    info->sd_response = -1;
+    info->fil_cog = -1;
+    info->fil_registered_type = -1;
+    info->sector0_signature = -1;
+    info->sector0_byte0 = -1;
+    info->sector0_byte1 = -1;
+    info->sector0_byte2 = -1;
+    info->sector0_byte3 = -1;
+    info->sector0_sig0 = -1;
+    info->sector0_sig1 = -1;
+    info->partition_type = -1;
+    info->partition_active = -1;
+    info->partition_start = -1;
+    info->partition_size = -1;
+    info->volinfo_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->filesystem_type = -1;
     info->mount_result = BERRY_P2_FS_RESULT_NOT_RUN;
     info->resolve_result = BERRY_P2_FS_RESULT_NOT_RUN;
     info->root_open_result = BERRY_P2_FS_RESULT_NOT_RUN;
@@ -305,6 +526,242 @@ static void p2_fs_info_init(berry_p2_fs_info *info)
     info->read_file_result = BERRY_P2_FS_RESULT_NOT_RUN;
     info->unlink_file_result = BERRY_P2_FS_RESULT_NOT_RUN;
     strncpy(info->cwd, p2_cwd, sizeof(info->cwd) - 1u);
+}
+
+static void p2_fs_probe_sector0(berry_p2_fs_info *info, uint8_t *scratch)
+{
+    uint8_t pactive = 0;
+    uint8_t ptype = 0;
+    uint32_t psize = 0;
+    uint32_t pstart = 0;
+
+    memset(scratch, 0, SECTOR_SIZE);
+    info->raw_sector0_result = (int)sd_sectread((char *)scratch, 0);
+    if (info->raw_sector0_result == 0) {
+        info->sector0_byte0 = (int)scratch[0];
+        info->sector0_byte1 = (int)scratch[1];
+        info->sector0_byte2 = (int)scratch[2];
+        info->sector0_byte3 = (int)scratch[3];
+        info->sector0_sig0 = (int)scratch[510];
+        info->sector0_sig1 = (int)scratch[511];
+        info->sector0_signature = ((int)scratch[511] << 8) | (int)scratch[510];
+    }
+
+    memset(scratch, 0, SECTOR_SIZE);
+    info->dfs_sector0_result = (int)DFS_ReadSector(0, scratch, 0, 1);
+    if (info->dfs_sector0_result == 0) {
+        info->sector0_signature = ((int)scratch[511] << 8) | (int)scratch[510];
+        pstart = DFS_GetPtnStart(0, scratch, 0, &pactive, &ptype, &psize);
+        if (pstart != DFS_ERRMISC) {
+            info->partition_start = (int)pstart;
+            info->partition_active = (int)pactive;
+            info->partition_type = (int)ptype;
+            info->partition_size = (int)psize;
+            info->volinfo_result = (int)DFS_GetVolInfo(0, scratch, pstart, &__vi);
+            if (info->volinfo_result == DFS_OK) {
+                info->filesystem_type = (int)__vi.filesystem;
+            }
+        }
+    }
+}
+
+static int p2_fs_sector_signature(const uint8_t *scratch)
+{
+    return ((int)scratch[511] << 8) | (int)scratch[510];
+}
+
+static int p2_fs_mount_start(uint32_t start, berry_p2_fs_info *info)
+{
+    int result;
+
+    memset(p2_mount_scratch, 0, sizeof(p2_mount_scratch));
+    result = (int)DFS_ReadSector(0, p2_mount_scratch, start, 1);
+    if (result != 0 || p2_fs_sector_signature(p2_mount_scratch) != 0xAA55) {
+        return -1;
+    }
+
+    result = (int)DFS_GetVolInfo(0, p2_mount_scratch, start, &__vi);
+    if (info) {
+        info->partition_start = (int)start;
+        info->volinfo_result = result;
+        if (result == DFS_OK) {
+            info->filesystem_type = (int)__vi.filesystem;
+        }
+    }
+    if (result != DFS_OK) {
+        return -1;
+    }
+
+    __pstart = start;
+    p2_fs_mounted = 1;
+    if (info) {
+        info->mount_result = 0;
+    }
+    return 0;
+}
+
+static int p2_fs_mount_fallback(berry_p2_fs_info *info)
+{
+    static const uint32_t candidates[] = {
+        2048u,
+        8192u,
+        32768u,
+        63u,
+        1u
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i) {
+        if (p2_fs_mount_start(candidates[i], info) == 0) {
+            return 0;
+        }
+    }
+
+    __pstart = (uint32_t)-1;
+    if (info) {
+        info->mount_result = -1;
+    }
+    return -1;
+}
+
+static int p2_fs_mount_core(berry_p2_fs_info *info)
+{
+    uint8_t pactive = 0;
+    uint8_t ptype = 0;
+    uint32_t psize = 0;
+    uint32_t pstart;
+    int result;
+
+    if (p2_fs_mounted) {
+        if (info) {
+            info->mount_result = 0;
+            info->filesystem_type = (int)__vi.filesystem;
+        }
+        return 0;
+    }
+
+    if (!p2_sd_bus_prepared) {
+        p2_prepare_sd_bus();
+    }
+    if (!p2_sd_initialized && p2_fs_init_sd() != 0) {
+        if (info) {
+            info->mount_result = -1;
+        }
+        return -1;
+    }
+
+    if (info) {
+        p2_fs_trace("raw sector0 begin");
+    }
+    memset(p2_mount_scratch, 0, sizeof(p2_mount_scratch));
+    result = (int)sd_sectread((char *)p2_mount_scratch, 0);
+    if (info) {
+        info->raw_sector0_result = result;
+        if (result == 0) {
+            info->sector0_byte0 = (int)p2_mount_scratch[0];
+            info->sector0_byte1 = (int)p2_mount_scratch[1];
+            info->sector0_byte2 = (int)p2_mount_scratch[2];
+            info->sector0_byte3 = (int)p2_mount_scratch[3];
+            info->sector0_sig0 = (int)p2_mount_scratch[510];
+            info->sector0_sig1 = (int)p2_mount_scratch[511];
+            info->sector0_signature = p2_fs_sector_signature(p2_mount_scratch);
+        }
+        p2_fs_trace("raw sector0 done");
+    }
+    if (result != 0) {
+        if (info) {
+            info->mount_result = -1;
+        }
+        return -1;
+    }
+
+    if (info) {
+        p2_fs_trace("dfs sector0 begin");
+    }
+    memset(p2_mount_scratch, 0, sizeof(p2_mount_scratch));
+    result = (int)DFS_ReadSector(0, p2_mount_scratch, 0, 1);
+    if (info) {
+        info->dfs_sector0_result = result;
+        if (result == 0) {
+            info->sector0_signature = p2_fs_sector_signature(p2_mount_scratch);
+        }
+        p2_fs_trace("dfs sector0 done");
+    }
+    if (result != 0) {
+        if (info) {
+            info->mount_result = -1;
+        }
+        return -1;
+    }
+
+    if (p2_fs_sector_signature(p2_mount_scratch) != 0xAA55) {
+        if (info) {
+            p2_fs_trace("fallback begin");
+        }
+        return p2_fs_mount_fallback(info);
+    }
+
+    if (info) {
+        p2_fs_trace("partition begin");
+    }
+    pstart = DFS_GetPtnStart(0, p2_mount_scratch, 0, &pactive, &ptype, &psize);
+    if (info) {
+        p2_fs_trace("partition done");
+    }
+    if (pstart == DFS_ERRMISC) {
+        if (info) {
+            p2_fs_trace("fallback begin");
+        }
+        return p2_fs_mount_fallback(info);
+    }
+
+    __pstart = pstart;
+    if (info) {
+        info->partition_start = (int)pstart;
+        info->partition_active = (int)pactive;
+        info->partition_type = (int)ptype;
+        info->partition_size = (int)psize;
+        p2_fs_trace("volinfo begin");
+    }
+    result = (int)DFS_GetVolInfo(0, p2_mount_scratch, pstart, &__vi);
+    if (info) {
+        info->volinfo_result = result;
+        if (result == DFS_OK) {
+            info->filesystem_type = (int)__vi.filesystem;
+        }
+        p2_fs_trace("volinfo done");
+    }
+    if (result != DFS_OK) {
+        if (info) {
+            p2_fs_trace("fallback begin");
+        }
+        return p2_fs_mount_fallback(info);
+    }
+
+    p2_fs_mounted = 1;
+    if (info) {
+        info->mount_result = 0;
+    }
+    return 0;
+}
+
+static int p2_fs_ensure_mounted(void)
+{
+    if (!p2_fs_mounted) {
+        /*
+         * Keep the mount path off the already tight C stack. Catalina's _mount()
+         * allocates another sector buffer; doing the same work with a static
+         * scratch buffer avoids a silent overflow on the P2 Hub image.
+         */
+        if (p2_fs_mount_core(NULL) != 0) {
+            (void)p2_fs_init_sd();
+            _waitms(50);
+            if (p2_fs_mount_core(NULL) != 0) {
+                return -1;
+            }
+        }
+    }
+    return 0;
 }
 
 void p2_fs_info(const char *path, int write_probe, berry_p2_fs_info *info)
@@ -323,29 +780,57 @@ void p2_fs_info(const char *path, int write_probe, berry_p2_fs_info *info)
         return;
     }
     info->available = 1;
+    p2_fs_trace("begin");
+    p2_decode_sd_service(info);
+    p2_fs_trace("service decoded");
+    info->fil_cog = _locate_plugin(LMM_FIL);
+    p2_fs_trace("file plugin located");
+    if (info->fil_cog >= 0) {
+        info->fil_registered_type = (int)REGISTERED_TYPE(info->fil_cog);
+    }
 
     if (write_probe && (!path || !*path || !strcmp(path, "/"))) {
         probe_path = "/P2FSPROB.TXT";
     }
 
     if (!p2_fs_mounted) {
-        info->mount_result = _mount(0, 0);
+        p2_fs_trace("mount 1 begin");
+        info->mount_result = p2_fs_mount_core(info);
+        p2_fs_trace("mount 1 done");
+        if (info->mount_result != 0) {
+            p2_fs_trace("sd init begin");
+            info->sd_init_result = p2_fs_init_sd();
+            p2_fs_trace("sd init done");
+            _waitms(50);
+            p2_fs_trace("mount 2 begin");
+            info->mount_result = p2_fs_mount_core(info);
+            p2_fs_trace("mount 2 done");
+        }
         if (info->mount_result == 0) {
-            p2_fs_mounted = 1;
+            info->mounted = 1;
         }
     } else {
+        info->sd_init_result = 0;
         info->mount_result = 0;
+        info->filesystem_type = (int)__vi.filesystem;
+        p2_fs_trace("sector0 probe begin");
+        p2_fs_probe_sector0(info, scratch);
+        p2_fs_trace("sector0 probe done");
     }
     info->mounted = p2_fs_mounted ? 1 : 0;
     if (info->mount_result != 0) {
+        p2_fs_trace("mount failed");
         return;
     }
 
+    p2_fs_trace("root open begin");
     memset(&dirinfo, 0, sizeof(dirinfo));
     dirinfo.scratch = scratch;
     info->root_open_result = (int)DFS_OpenDir(&__vi, (uint8_t *)"", &dirinfo);
+    p2_fs_trace("root open done");
     if (info->root_open_result == DFS_OK) {
         int scanned = 0;
+        p2_fs_trace("root scan begin");
         uint32_t result = DFS_GetNext(&__vi, &dirinfo, &entry);
         info->root_first_result = (int)result;
         while (result == DFS_OK && scanned < 64) {
@@ -357,23 +842,31 @@ void p2_fs_info(const char *path, int write_probe, berry_p2_fs_info *info)
             result = DFS_GetNext(&__vi, &dirinfo, &entry);
             ++scanned;
         }
+        p2_fs_trace("root scan done");
     }
 
+    p2_fs_trace("resolve begin");
     info->resolve_result = p2_resolve_path(probe_path, fullpath, sizeof(fullpath));
+    p2_fs_trace("resolve done");
     if (info->resolve_result != 0) {
         return;
     }
     strncpy(info->path, fullpath, sizeof(info->path) - 1u);
     strncpy(info->fs_path, p2_catalina_fs_path(fullpath), sizeof(info->fs_path) - 1u);
 
+    p2_fs_trace("path read begin");
     info->path_read_result = (int)DFS_OpenFile(&__vi,
         (uint8_t *)info->fs_path, DFS_READ, scratch, &fileinfo);
+    p2_fs_trace("path read done");
 
+    p2_fs_trace("path dir begin");
     memset(&dirinfo, 0, sizeof(dirinfo));
     dirinfo.scratch = scratch;
     info->path_dir_result = (int)DFS_OpenDir(&__vi, (uint8_t *)info->fs_path, &dirinfo);
+    p2_fs_trace("path dir done");
 
     if (!write_probe) {
+        p2_fs_trace("done");
         return;
     }
 

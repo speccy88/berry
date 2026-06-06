@@ -228,8 +228,8 @@ Reserved-pin note on the current Catalina `P2_EDGE` path:
 
 - pins `58..61` are reserved by the SD card interface
 - pins `62..63` are reserved by the serial console
-- on the tested no-PSRAM board, pins `56` and `57` are exposed as LEDs and are left available for Berry GPIO use
-- on PSRAM P2 Edge builds, pins `40..57` are reserved by the memory interface, and pin `57` is PSRAM chip-select
+- `P2_BOARD=p2edge` uses the no-PSRAM P2 Edge pinout, with onboard LEDs on pins `56` and `57`
+- `P2_BOARD=p2edge32` uses the P2 Edge 32 MB RAM pinout, with onboard LEDs on pins `38` and `39`; pins `40..57` are reserved by the memory interface, and pin `57` is PSRAM chip-select
 - Berry GPIO, `i2c`, and `spi` helpers should avoid the SD and serial pins
 
 Primary development focus from now on:
