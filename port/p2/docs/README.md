@@ -42,7 +42,7 @@ Current Catalina status on P2 Edge / latest silicon:
 - `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` reaches a working REPL with a `523904` byte full-profile image
 - `print()`, assignment, and basic arithmetic are live-verified
 - `for i:0..3`, `for e:list`, `for v:map`, and `for k:map.keys()` are live-verified
-- `import string`, `import math`, `import json`, `import bytes`, and `import os` are live-verified
+- `import string`, SD-loaded `import math`, `import json`, `import bytes`, and `import os` are live-verified
 - `import p2`, `import rtos`, `import i2c`, `import spi`, and `import spin2` are now live-verified
 - `import rtos` exposes process-style tasks, locks, queues, event flags, timers, deferred callbacks, and debug helpers
 - blank Enter presses no longer leak the REPL into an out-of-memory state
@@ -193,7 +193,8 @@ P2 configures `/modules` as a default import root during VM startup. This keeps
 optional Berry libraries on SD and loads them lazily when code imports them,
 without enabling the larger upstream `sys` module just to mutate `sys.path()`.
 
-`modules/libstore.be` reports the current library-store model:
+`modules/math.be` and `modules/taskspin.be` are SD-loaded libraries.
+`modules/libstore.be` reports the current SD-first library-store model:
 
 ```berry
 import libstore

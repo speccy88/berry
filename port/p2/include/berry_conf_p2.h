@@ -44,7 +44,7 @@
 #define BE_P2_PROFILE_NAME              "edge32"
 
 #define BE_USE_JSON                     1
-#define BE_USE_MATH                     1
+#define BE_USE_MATH                     0
 #define BE_USE_OS                       1
 #define BE_USE_FILE                     1
 #define BE_USE_INTROSPECT               0
@@ -71,7 +71,7 @@
 #define BE_P2_PROFILE_NAME              "full"
 
 #define BE_USE_JSON                     1
-#define BE_USE_MATH                     1
+#define BE_USE_MATH                     0
 #define BE_USE_OS                       1
 #define BE_USE_FILE                     1
 #define BE_USE_INTROSPECT               0

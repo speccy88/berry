@@ -10,7 +10,7 @@ import p2
 var libstore = module("libstore")
 
 libstore.paths = ["/modules"]
-libstore.known = ["binary_heap", "libstore", "taskspin", "wifi"]
+libstore.known = ["binary_heap", "libstore", "math", "taskspin", "wifi"]
 libstore.examples = ["examples/binary_heap_sort"]
 libstore.cache_base = 30 * 1024 * 1024
 libstore.cache_limit = 1024 * 1024

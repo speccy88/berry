@@ -422,6 +422,15 @@ print(libstore.exists("binary_heap"))
 print(libstore.info("binary_heap"))
 ```
 
+## `math`
+
+On P2, `math` is an SD-loaded Berry source module under `/modules/math.be`
+instead of a native Hub-resident module. This keeps the image smaller and avoids
+the Catalina/P2 native math-call path. The current SD module covers the P2 smoke
+surface: `pi`, `imax`, `imin`, `abs`, `sqrt`, `min`, `max`, `floor`, `ceil`,
+`round`, `pow` for positive integer exponents, `deg`, `rad`, `isnan`, `isinf`,
+`srand`, and `rand`.
+
 ## `taskspin`
 
 `taskspin` is a Berry source module under `/modules/taskspin.be`. It provides a
