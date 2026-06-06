@@ -113,9 +113,12 @@ Current implementation:
 
 - `rtos.newcog("name", ...int_args)` is the preferred process-facing API and is
   backed by the existing second Berry VM/cog.
-- `rtos.newcog(function, ...)` raises a deliberate runtime error until function
-  transfer semantics are implemented; it must not silently share main-VM
-  closure/proto/upvalue pointers with another cog.
+- `rtos.newcog(function, ...)` now supports named zero-upvalue Berry functions
+  by launching the same function name in the child VM after that source is
+  loaded there. This is the first safe function-object launch path; it does not
+  share closure/proto/upvalue pointers across VMs.
+- captured closures still raise a deliberate runtime error until function
+  transfer semantics are implemented.
 - `rtos.process_info()` reports the backend model and current limits so examples
   and tests can detect when true closure launch, multiple process slots, or a
   cog-local task switcher become available.

@@ -412,12 +412,24 @@ static int rtos_launch_named_task(bvm *vm, const char *name, int first_arg)
     return cog;
 }
 
-static void rtos_raise_closure_launch_pending(bvm *vm)
+static const char *rtos_closure_launch_name(bvm *vm, int index)
 {
-    be_raise(vm,
-        "runtime_error",
-        "rtos.newcog(function, ...) needs closure/proto transfer into a child VM; "
-        "load the task source and call rtos.newcog(\"name\", ...) for now");
+    bvalue *value = be_indexof(vm, index);
+    bclosure *closure;
+    const char *name;
+
+    closure = var_toobj(value);
+    if (!closure->proto || !closure->proto->name) {
+        be_raise(vm, "runtime_error", "bad task closure");
+    }
+    if (closure->nupvals != 0) {
+        be_raise(vm, "runtime_error", "captured closure launch is not ready");
+    }
+    name = str(closure->proto->name);
+    if (!name || !name[0]) {
+        be_raise(vm, "runtime_error", "bad task name");
+    }
+    return name;
 }
 
 static void rtos_push_process_info(bvm *vm)
@@ -430,7 +442,7 @@ static void rtos_push_process_info(bvm *vm)
     rtos_map_set_int(vm, "max_args", (bint)BERRY_WORKER_ARGS_MAX);
     rtos_map_set_int(vm, "cog", (bint)worker_cog);
     rtos_map_set_string(vm, "state", berry_worker_state_name(berry_worker_mailbox_state()));
-    rtos_map_set_bool(vm, "closure_launch", 0);
+    rtos_map_set_bool(vm, "closure_launch", 1);
     rtos_map_set_bool(vm, "multi_vm_slots", 0);
     rtos_map_set_bool(vm, "task_switcher", 0);
 }
@@ -478,8 +490,14 @@ static int m_rtos_newcog(bvm *vm)
         be_pushint(vm, (bint)cog);
         be_return(vm);
     }
+    if (be_isclosure(vm, 1)) {
+        const char *name = rtos_closure_launch_name(vm, 1);
+        cog = rtos_launch_named_task(vm, name, 2);
+        be_pushint(vm, (bint)cog);
+        be_return(vm);
+    }
     if (be_isfunction(vm, 1)) {
-        rtos_raise_closure_launch_pending(vm);
+        be_raise(vm, "runtime_error", "function cannot launch in child VM");
     }
     be_raise(vm, "type_error", "task must be a function or function name string");
     be_return_nil(vm);

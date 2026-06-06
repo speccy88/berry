@@ -207,9 +207,11 @@ spi.deselect()
 `rtos` owns the public concurrency and synchronization API. The current full
 profile supports the main VM plus one process VM/cog. Task source must be
 loaded into the child VM before launch. `rtos.newcog("name", ...int_args)` is
-the preferred spelling for new code; direct `rtos.newcog(function, ...)` closure
-launch is guarded until Berry functions can be serialized or recompiled safely
-inside the target VM.
+the most explicit spelling for new code. `rtos.newcog(function, ...int_args)`
+also works for named zero-upvalue Berry functions: the parent VM extracts the
+function name and asks the child VM to run its own loaded copy. Captured
+closures are still guarded until Berry functions can be serialized or
+recompiled safely inside the target VM.
 
 Process/cog task control:
 
@@ -218,6 +220,9 @@ Process/cog task control:
 - `rtos.load(source)`: compatibility alias for `rtos.load_str()`.
 - `rtos.newcog(name, ...int_args) -> int`: run a loaded child-VM function by
   name on the process cog.
+- `rtos.newcog(function, ...int_args) -> int`: run a named zero-upvalue Berry
+  function object by launching the same function name in the child VM. The
+  child VM must already have loaded a function with that name.
 - `rtos.process(name, ...int_args)`, `rtos.thread(name, ...int_args)`, and
   `rtos.new(name, ...int_args)`: aliases for `rtos.newcog()`.
 - `rtos.spawn(name, ...int_args) -> int`: compatibility spelling for named
@@ -279,6 +284,20 @@ import rtos
 rtos.channel("rx_packets")
 rtos.load_file("/examples/rtos/workers/packet_reader.be")
 rtos.newcog("packet_reader", 50)
+print(rtos.get("rx_packets", 250))
+rtos.stop()
+```
+
+Function-object launch for the safe subset:
+
+```berry
+import rtos
+
+def packet_reader(period_ms) end       # parent-side launch handle
+
+rtos.channel("rx_packets")
+rtos.load_file("/examples/rtos/workers/packet_reader.be")
+rtos.newcog(packet_reader, 50)         # launches child VM's packet_reader()
 print(rtos.get("rx_packets", 250))
 rtos.stop()
 ```

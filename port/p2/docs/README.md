@@ -102,10 +102,11 @@ print(rtos.get("rx_packets", 250))
 `rtos.load_file(path)` is the recommended form because the child task stays in a
 normal `.be` file. `rtos.load_str(source)` is still available for generated
 source strings, and `rtos.load(source)` remains as the compatibility alias for
-`rtos.load_str(source)`. Child code runs in its own Berry VM; direct
-`rtos.newcog(function, ...)` closure launch is intentionally rejected until the
-runtime can safely serialize or recompile the function into the target VM. Load
-the function into the child VM, then launch it by name.
+`rtos.load_str(source)`. Child code runs in its own Berry VM. Direct
+`rtos.newcog(function, ...)` works for named zero-upvalue Berry functions after
+the child VM has loaded a function with the same name; captured closures are
+still rejected until the runtime can safely serialize or recompile function
+state into the target VM.
 
 Examples:
 

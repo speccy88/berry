@@ -26,15 +26,15 @@ This note is the handoff for the next P2 porting session.
 On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 
 - `make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds a RAM image with Catalina 8.8.9:
-  - image: `523968` bytes
-  - code: `269272` bytes
-  - const: `19316` bytes
+  - image: `524224` bytes
+  - code: `269572` bytes
+  - const: `19292` bytes
   - init: `8052` bytes
   - data: `217144` bytes
 - `make p2-edge32 CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds the P2 Edge 32 MB RAM profile:
-  - image: `514304` bytes
-  - code: `271344` bytes
-  - const: `19520` bytes
+  - image: `514592` bytes
+  - code: `271644` bytes
+  - const: `19496` bytes
   - init: `8132` bytes
   - data: `200760` bytes
 - `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` flashed and booted from flash on the P2 Edge 32 MB RAM board. The boot banner reported `P2_EDGE, PSRAM`, `[edge32 profile]`, `131072 B` heap, and `33554432 B` PSRAM block API.
