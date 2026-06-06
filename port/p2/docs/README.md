@@ -169,6 +169,8 @@ Debug helpers:
 
 - `rtos.debug_tasks() -> list`: maps with `cog`, `state`, and `stack_free` keys.
 - `rtos.debug_regs(cog) -> map`: counter and selected current-cog P2 registers. Other cogs are reported as not directly readable from C.
+- `p2.status_info()` / `p2.debug_snapshot()`: structured build, runtime,
+  clock, heap, PSRAM, and cog diagnostics for tests and REPL inspection.
 
 RTOS examples live in `../../../examples/rtos/`:
 

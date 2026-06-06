@@ -118,6 +118,14 @@ static void p2_map_set_string(bvm *vm, const char *key, const char *value)
     be_pop(vm, 2);
 }
 
+static void p2_map_set_u32_hex(bvm *vm, const char *key, uint32_t value)
+{
+    char buffer[11];
+
+    snprintf(buffer, sizeof(buffer), "0x%08lX", (unsigned long)value);
+    p2_map_set_string(vm, key, buffer);
+}
+
 static int p2_require_pin_arg(bvm *vm, int index)
 {
     return berry_p2_bus_require_pin(vm, index, "pin must be an int");
@@ -567,6 +575,144 @@ static int m_p2_status(bvm *vm)
     be_return_nil(vm);
 }
 
+static void p2_status_info_build(bvm *vm)
+{
+    be_newobject(vm, "map");
+    p2_map_set_string(vm, "date", P2_BUILD_DATE_STR);
+    p2_map_set_string(vm, "time", P2_BUILD_TIME_STR);
+    p2_map_set_string(vm, "profile", BE_P2_PROFILE_NAME);
+    p2_map_set_int(vm, "binary_bytes", (bint)P2_BUILD_BINARY_BYTES);
+    p2_map_set_int(vm, "code_bytes", (bint)P2_BUILD_CODE_BYTES);
+    p2_map_set_int(vm, "const_bytes", (bint)P2_BUILD_CONST_BYTES);
+    p2_map_set_int(vm, "init_bytes", (bint)P2_BUILD_INIT_BYTES);
+    p2_map_set_int(vm, "data_bytes", (bint)P2_BUILD_DATA_BYTES);
+    p2_map_set_int(vm, "bytes_max", (bint)BE_BYTES_MAX_SIZE);
+    p2_map_set_int(vm, "stack_slots", (bint)BE_STACK_TOTAL_MAX);
+    be_pop(vm, 1);
+}
+
+static void p2_status_info_clock(bvm *vm)
+{
+    uint32_t mode = _clockmode();
+
+    be_newobject(vm, "map");
+    p2_map_set_int(vm, "frequency", (bint)_clockfreq());
+    p2_map_set_int(vm, "mode", (bint)mode);
+    p2_map_set_u32_hex(vm, "mode_hex", mode);
+    p2_map_set_int(vm, "ticks", (bint)_cnt());
+    be_pop(vm, 1);
+}
+
+static void p2_status_info_memory(bvm *vm)
+{
+    unsigned long image = (unsigned long)P2_BUILD_BINARY_BYTES;
+    unsigned long hub_total = (unsigned long)BE_P2_HUB_RAM_BYTES;
+    unsigned long main_total = (unsigned long)BE_P2_HEAP_BYTES;
+    unsigned long worker_total = (unsigned long)BE_P2_WORKER_HEAP_BYTES;
+    unsigned long main_free = (unsigned long)p2_heap_main_free_bytes();
+    unsigned long worker_free = (unsigned long)p2_heap_worker_free_bytes();
+
+    be_newobject(vm, "map");
+    p2_map_set_int(vm, "hub_total", (bint)hub_total);
+    p2_map_set_int(vm, "hub_image_used", (bint)(image <= hub_total ? image : hub_total));
+    p2_map_set_int(vm, "main_heap_total", (bint)main_total);
+    p2_map_set_int(vm, "main_heap_free", (bint)main_free);
+    p2_map_set_int(vm, "main_heap_used", (bint)(main_total > main_free ? main_total - main_free : 0u));
+    p2_map_set_int(vm, "worker_heap_total", (bint)worker_total);
+    p2_map_set_int(vm, "worker_heap_free", (bint)worker_free);
+    p2_map_set_int(vm, "worker_heap_used", (bint)(worker_total > worker_free ? worker_total - worker_free : 0u));
+    p2_map_set_int(vm, "current_heap_free", (bint)p2_heap_free_bytes());
+    p2_map_set_bool(vm, "external_heap", BE_P2_HEAP_USES_EXTERNAL_RAM);
+    be_pop(vm, 1);
+}
+
+static void p2_status_info_psram(bvm *vm)
+{
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "available", P2_HAS_CATALINA_PSRAM);
+    p2_map_set_int(vm, "bytes", (bint)BE_P2_EXTERNAL_RAM_BYTES);
+    p2_map_set_int(vm, "xmm_bytes", (bint)BE_P2_XMM_BYTES);
+    p2_map_set_int(vm, "block_base", (bint)BE_P2_PSRAM_BLOCK_BASE);
+    p2_map_set_int(vm, "block_bytes",
+        (bint)(BE_P2_EXTERNAL_RAM_BYTES - BE_P2_PSRAM_BLOCK_BASE));
+    p2_map_set_string(vm, "access",
+        P2_HAS_CATALINA_PSRAM
+            ? (BE_P2_HEAP_USES_EXTERNAL_RAM ? "xmm+block" : "block")
+            : "none");
+    p2_map_set_int(vm, "max_transfer", P2_HAS_CATALINA_PSRAM ? P2_PSRAM_TRANSFER_MAX : 0);
+    p2_map_set_bool(vm, "heap", BE_P2_HEAP_USES_EXTERNAL_RAM);
+    p2_map_set_int(vm, "reserved_pin_first", P2_HAS_CATALINA_PSRAM ? 40 : -1);
+    p2_map_set_int(vm, "reserved_pin_last", P2_HAS_CATALINA_PSRAM ? 57 : -1);
+    be_pop(vm, 1);
+}
+
+static void p2_status_info_cogs(bvm *vm)
+{
+    int cog;
+    int current = _cogid();
+
+    be_newobject(vm, "list");
+    for (cog = 0; cog < 8; ++cog) {
+        int raw = _cogchk(cog);
+
+        be_newobject(vm, "map");
+        p2_map_set_int(vm, "id", (bint)cog);
+        p2_map_set_bool(vm, "running", raw != 0);
+        p2_map_set_int(vm, "raw", (bint)raw);
+        p2_map_set_bool(vm, "current", cog == current);
+        p2_map_set_int(vm, "stack_bytes", (bint)-1);
+        be_pop(vm, 1);
+        be_data_push(vm, -2);
+        be_pop(vm, 1);
+    }
+    be_pop(vm, 1);
+}
+
+static int m_p2_status_info(bvm *vm)
+{
+    be_newobject(vm, "map");
+
+    be_pushstring(vm, "build");
+    p2_status_info_build(vm);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+
+    be_pushstring(vm, "runtime");
+    be_newobject(vm, "map");
+    p2_map_set_string(vm, "toolchain", "Catalina");
+    p2_map_set_string(vm, "platform", "P2_EDGE");
+    p2_map_set_string(vm, "memory_profile",
+        P2_HAS_CATALINA_PSRAM
+            ? (BE_P2_HEAP_USES_EXTERNAL_RAM ? "xmm+psram-block" : "psram-block")
+            : "hub");
+    be_pop(vm, 1);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+
+    be_pushstring(vm, "clock");
+    p2_status_info_clock(vm);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+
+    be_pushstring(vm, "memory");
+    p2_status_info_memory(vm);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+
+    be_pushstring(vm, "psram");
+    p2_status_info_psram(vm);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+
+    be_pushstring(vm, "cogs");
+    p2_status_info_cogs(vm);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
 static int m_p2_beep(bvm *vm)
 {
     int pin = p2_require_pin_arg(vm, 1);
@@ -661,6 +807,8 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "psram_write")) be_pushntvfunction(vm, m_p2_psram_write);
     else if (!strcmp(name, "psram_test")) be_pushntvfunction(vm, m_p2_psram_test);
     else if (!strcmp(name, "status")) be_pushntvfunction(vm, m_p2_status);
+    else if (!strcmp(name, "status_info")) be_pushntvfunction(vm, m_p2_status_info);
+    else if (!strcmp(name, "debug_snapshot")) be_pushntvfunction(vm, m_p2_status_info);
     else if (!strcmp(name, "beep")) be_pushntvfunction(vm, m_p2_beep);
     else if (!strcmp(name, "INPUT")) be_pushint(vm, P2_PINMODE_INPUT);
     else if (!strcmp(name, "OUTPUT")) be_pushint(vm, P2_PINMODE_OUTPUT);

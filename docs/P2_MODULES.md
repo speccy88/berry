@@ -154,6 +154,10 @@ Runtime status:
   pattern through Catalina's PSRAM block API. The default address is near the
   top of the 32 MB range.
 - `p2.status()`: print image size, heap bars, clock info, and cog states.
+- `p2.status_info() -> map`: return a structured runtime snapshot with build,
+  runtime, clock, memory, PSRAM, and cog fields. This is the machine-readable
+  companion to `p2.status()` for tests and diagnostics.
+- `p2.debug_snapshot() -> map`: alias for `p2.status_info()`.
 - `p2.beep(pin, freq, ms)`: generate a simple tone on a pin.
 
 ## `i2c`

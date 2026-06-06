@@ -165,7 +165,8 @@ make p2-smoke PORT=/dev/cu.usbserial-P97cvdxp
 The smoke suite covers:
 
 - core arithmetic, strings, maps, lists, ranges, and closures
-- `string`, SD-loaded `math`, `json`, `bytes`, and `p2` module basics
+- `string`, SD-loaded `math`, `json`, `bytes`, and `p2` module basics,
+  including structured `p2.status_info()` diagnostics
 - lazy SD library import from `/modules`, including `binary_heap` and
   `libstore`; on edge32, `libstore` also smoke-tests chunked PSRAM source-cache
   round trips, discovered-module `cache_all()` warmup, and loading SD modules

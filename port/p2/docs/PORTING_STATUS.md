@@ -72,6 +72,9 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   image.
 - P2 cached module loading is live-verified after the Catalina const native function hang fix:
   - `import p2`; `print(p2.cogid())` -> `0`
+  - `p2.status_info()` / `p2.debug_snapshot()` are added to the target smoke
+    suite for structured build, runtime, clock, memory, PSRAM, and cog
+    diagnostics; live board verification is still pending
   - `p2.psram_info()`, `p2.psram_test()`, bounded `p2.psram_read()` /
     `p2.psram_write()`, and `libstore.cache_source()` are now exposed for the P2
     Edge 32 MB RAM profile and live-verified on the P2 Edge 32 MB board
