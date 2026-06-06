@@ -26,22 +26,26 @@ This note is the handoff for the next P2 porting session.
 On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 
 - `make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds a RAM image with Catalina 8.8.9:
-  - image: `523904` bytes
-  - code: `269236` bytes
-  - const: `19304` bytes
+  - image: `523968` bytes
+  - code: `269272` bytes
+  - const: `19316` bytes
   - init: `8052` bytes
   - data: `217144` bytes
 - `make p2-edge32 CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds the P2 Edge 32 MB RAM profile:
-  - image: `514272` bytes
-  - code: `271308` bytes
-  - const: `19508` bytes
+  - image: `514304` bytes
+  - code: `271344` bytes
+  - const: `19520` bytes
   - init: `8132` bytes
   - data: `200760` bytes
 - `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` flashed and booted from flash on the P2 Edge 32 MB RAM board. The boot banner reported `P2_EDGE, PSRAM`, `[edge32 profile]`, `131072 B` heap, and `33554432 B` PSRAM block API.
 - `make p2-run TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build PORT=/dev/cu.usbserial-P97cvdxp` RAM-loads and reaches the Berry prompt
 - Non-destructive SD smoke tests now live under `tests/p2/` and can be driven
   from the host with `make p2-smoke`, `make p2-smoke-quick`, and
-  `make p2-smoke-edge32` once that directory has been copied to the SD card.
+  `make p2-smoke-edge32` once that directory and `modules/` have been copied to
+  the SD card.
+- P2 VMs add `/modules` as a default lazy import root, so optional `.be`
+  libraries can live on SD. `modules/libstore.be` reports the SD-first model and
+  the current non-active PSRAM cache status.
 - P2 cached module loading is live-verified after the Catalina const native function hang fix:
   - `import p2`; `print(p2.cogid())` -> `0`
   - `p2.psram_info()` and `p2.psram_test()` are now exposed for the P2 Edge 32 MB RAM profile; interactive PSRAM smoke verification is still pending

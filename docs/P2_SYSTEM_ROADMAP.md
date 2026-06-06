@@ -55,6 +55,8 @@ Short term:
 - use PSRAM as a large block cache or module store on 32 MB boards
 - add lazy source/module loading so rarely used libraries do not permanently
   occupy Hub RAM
+- default P2 imports now search `/modules` lazily, with `libstore.be` reporting
+  the SD-first model and the future PSRAM cache hook
 - keep the image under the 512 KiB Hub RAM guard for `p2-ram`
 
 Medium term:

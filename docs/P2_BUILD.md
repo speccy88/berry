@@ -40,8 +40,8 @@ the Berry module feature macros, P2-native module caching, heap sizes, stack
 slot limit, and maximum `bytes()` size.
 
 - `minimal`: core language and standard classes plus the `string` module. It disables filesystem, JSON, math, OS, P2 hardware modules, worker/thread/rtos/spin2 helpers, and low-level `prop2_*` globals. Current verified image: `426624` bytes with a `192 KiB` main heap.
-- `full`: the current no-PSRAM P2 Edge build. Current verified image: `523904` bytes with the existing `128 KiB` main heap, `32 KiB` worker heap, SD-backed `open()`/`os`, P2 hardware modules, `rtos`, `spin2`, and the WiFiNINA Berry skeleton available as source. Experimental `worker` and `threads` modules are folded under the public `rtos` API.
-- `edge32`: P2 Edge 32 MB RAM profile for the P2-EC32MB-style board. It enables Catalina `-lpsram`, reserves pins `40..57` for the memory interface, keeps Berry's object heap in Hub RAM, and exposes PSRAM through Catalina's block-transfer API for runtime smoke testing. Current verified image: `514272` bytes with a `128 KiB` main heap and `16 KiB` worker heap, leaving Hub RAM room for the PSRAM plugin.
+- `full`: the current no-PSRAM P2 Edge build. Current verified image: `523968` bytes with the existing `128 KiB` main heap, `32 KiB` worker heap, SD-backed `open()`/`os`, P2 hardware modules, `rtos`, `spin2`, and the WiFiNINA Berry skeleton available as source. Experimental `worker` and `threads` modules are folded under the public `rtos` API.
+- `edge32`: P2 Edge 32 MB RAM profile for the P2-EC32MB-style board. It enables Catalina `-lpsram`, reserves pins `40..57` for the memory interface, keeps Berry's object heap in Hub RAM, and exposes PSRAM through Catalina's block-transfer API for runtime smoke testing. Current verified image: `514304` bytes with a `128 KiB` main heap and `16 KiB` worker heap, leaving Hub RAM room for the PSRAM plugin.
 
 Convenience targets pin the intended Catalina board profile:
 
@@ -143,8 +143,9 @@ import p2; print(p2.psram_info()); print(p2.psram_test())
 ## P2 SD Smoke Suite
 
 The non-destructive on-target smoke tests live under `tests/p2/`. Copy that
-directory to the SD card root so the target sees paths such as
-`/tests/p2/smoke_all.be` and `/tests/p2/workers/smoke_counter.be`.
+directory and `modules/` to the SD card root so the target sees paths such as
+`/tests/p2/smoke_all.be`, `/tests/p2/workers/smoke_counter.be`, and
+`/modules/libstore.be`.
 
 After Berry is running at the `berry>` prompt, the host can drive the suite over
 serial with:
@@ -157,6 +158,8 @@ The smoke suite covers:
 
 - core arithmetic, strings, maps, lists, ranges, and closures
 - `string`, `math`, `json`, `bytes`, and `p2` module basics
+- lazy SD library import from `/modules`, including `binary_heap` and
+  `libstore`
 - SD create/read/readbytes/remove using only `/P2SMOKE.TXT`
 - `rtos` channels, events, timers, `process_info()`, guarded closure launch,
   and SD-loaded `rtos.newcog("name", ...)`

@@ -336,8 +336,8 @@ print(p2.psram_info())
 print(p2.psram_test())
 ```
 
-Repeatable SD smoke tests live under `tests/p2/`. Copy that directory to the SD
-card root, start Berry, then run:
+Repeatable SD smoke tests live under `tests/p2/`. Copy that directory and
+`modules/` to the SD card root, start Berry, then run:
 
 ```sh
 make p2-smoke PORT=/dev/cu.usbserial-P97cvdxp
@@ -346,6 +346,10 @@ make p2-smoke-edge32 PORT=/dev/cu.usbserial-P97cvdxp
 
 The edge32 target includes the general smoke suite plus PSRAM block-access
 assertions.
+
+The P2 runtime also adds `/modules` to the default lazy import path, so SD
+libraries such as `binary_heap.be`, `wifi.be`, and `libstore.be` can be imported
+without enabling the larger upstream `sys` module.
 
 #### Reliable Catalina RAM and Flash Flow
 

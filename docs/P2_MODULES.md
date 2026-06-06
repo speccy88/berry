@@ -3,7 +3,8 @@
 This document covers the P2-specific Berry surface in the `full` profile. The
 standard upstream modules (`string`, `math`, `json`, `bytes`, `os`, and the
 core classes) keep their normal Berry behavior unless a P2 note below says
-otherwise.
+otherwise. The P2 VM adds `/modules` as a default lazy import root so optional
+`.be` libraries can live on SD instead of consuming Hub image space.
 
 The normal board profile is the no-PSRAM P2 Edge build:
 
@@ -354,4 +355,26 @@ wifi.init({
 
 print(wifi.firmware_version())
 print(wifi.status())
+```
+
+## `libstore`
+
+`libstore` is a Berry source module under `/modules/libstore.be`. It documents
+and probes the current SD-first library store:
+
+- `libstore.paths`: current SD library roots. The firmware adds `/modules` to
+  Berry's import path at VM startup.
+- `libstore.status() -> map`: reports lazy SD loading, Hub-heap execution, and
+  whether PSRAM is available as a future cache backend.
+- `libstore.psram() -> map`: returns `p2.psram_info()`.
+- `libstore.exists(name) -> bool`: true when `/modules/<name>.be` exists.
+- `libstore.source_path(name) -> string or nil`: returns the SD source path.
+- `libstore.run(path)`: calls `run_file(path)`.
+
+Example:
+
+```berry
+import libstore
+print(libstore.status())
+print(libstore.exists("binary_heap"))
 ```

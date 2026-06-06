@@ -12,6 +12,18 @@ static void be_cache_builtin_value(bvm *vm, const char *module_name, const char 
     }
 }
 
+static void be_p2_configure_module_paths(bvm *vm)
+{
+#if BE_USE_FILE_SYSTEM
+    /* P2 keeps optional Berry libraries on SD. The upstream loader searches
+     * this path lazily on import, so source modules do not consume Hub image
+     * space until a program asks for them. */
+    be_module_path_set(vm, "/modules");
+#else
+    (void)vm;
+#endif
+}
+
 extern void be_load_baselib(bvm *vm);
 extern void be_load_listlib(bvm *vm);
 extern void be_load_maplib(bvm *vm);
@@ -97,4 +109,5 @@ void be_loadlibs(bvm *vm)
 #if BE_P2_USE_WORKER_MODULE
     be_cache_workermodule(vm);
 #endif
+    be_p2_configure_module_paths(vm);
 }

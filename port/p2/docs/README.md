@@ -75,8 +75,9 @@ Current hardware verification examples:
 - `run_file("/examples/core/qsort.be")` runs a `.be` file from the current VM, including from the REPL
 - `import spin2; print(spin2.path()); print(spin2.list())` -> `/spin2` and `[]` on the current SD-visible path
 
-Repeatable smoke tests live in `../../../tests/p2/`. Copy that directory to the
-SD card root and run from the host while Berry is sitting at `berry>`:
+Repeatable smoke tests live in `../../../tests/p2/`. Copy that directory and
+`../../../modules/` to the SD card root and run from the host while Berry is
+sitting at `berry>`:
 
 ```sh
 make p2-smoke PORT=/dev/cu.usbserial-P97cvdxp
@@ -84,8 +85,9 @@ make p2-smoke-edge32 PORT=/dev/cu.usbserial-P97cvdxp
 ```
 
 The target scripts print `P2_SMOKE_PASS ...` markers when complete. The general
-suite creates and removes only `/P2SMOKE.TXT`; the edge32 suite also asserts
-Catalina PSRAM block access through `p2.psram_info()` and `p2.psram_test()`.
+suite creates and removes only `/P2SMOKE.TXT`; it also verifies lazy library
+imports from `/modules`. The edge32 suite asserts Catalina PSRAM block access
+through `p2.psram_info()` and `p2.psram_test()`.
 
 Child-VM methods are loaded explicitly before `rtos.newcog()`, `rtos.spawn()`,
 or `rtos.cog_start()`:
@@ -183,6 +185,25 @@ RTOS examples live in `../../../examples/rtos/`:
 Files under `examples/rtos/workers/` are loaded by the main examples with
 `rtos.load_file()`. They intentionally define one worker-side function each so
 the code remains readable and the cross-cog boundary is explicit.
+
+## SD Library Store
+
+P2 configures `/modules` as a default import root during VM startup. This keeps
+optional Berry libraries on SD and loads them lazily when code imports them,
+without enabling the larger upstream `sys` module just to mutate `sys.path()`.
+
+`modules/libstore.be` reports the current library-store model:
+
+```berry
+import libstore
+print(libstore.status())
+print(libstore.exists("binary_heap"))
+```
+
+On edge32, `libstore.status()` reports PSRAM availability but keeps
+`psram_cache` false. Catalina COMPACT PSRAM is block-transfer storage today;
+future work can use the same module as the control plane for a PSRAM-backed
+source/bytecode cache.
 
 Reserved-pin note on the current Catalina `P2_EDGE` path:
 
