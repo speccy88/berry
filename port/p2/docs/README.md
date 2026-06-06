@@ -204,13 +204,15 @@ print(libstore.exists("binary_heap"))
 
 On edge32 and XMM-style profiles, `libstore.status()` reports PSRAM availability
 and the current safe block/cache window. `libstore.cache_source(name)` mirrors
-source text into that window as bounded chunks, and `libstore.load(name)` can
-compile a module after materializing the cached source back into active VM RAM.
-SD remains the canonical library store. On COMPACT edge32, compiled/live Berry
-objects still use Hub RAM because Catalina PSRAM is block-transfer storage
-rather than ordinary pointer-addressable heap. On XMM profiles, Catalina owns
-the lower PSRAM window for transparent VM memory, so `libstore` uses only the
-reported safe block window.
+source text into that window as bounded chunks. `libstore.modules()` scans
+available `.be` files under the configured module paths, and
+`libstore.cache_all()` can warm every discovered source module into the safe
+PSRAM cache. `libstore.load(name)` compiles a module after materializing cached
+source back into active VM RAM. SD remains the canonical library store. On
+COMPACT edge32, compiled/live Berry objects still use Hub RAM because Catalina
+PSRAM is block-transfer storage rather than ordinary pointer-addressable heap.
+On XMM profiles, Catalina owns the lower PSRAM window for transparent VM
+memory, so `libstore` uses only the reported safe block window.
 
 `modules/taskspin.be` is also SD-loaded. It implements a Spin2-shaped
 cooperative task API (`TASKSPIN`, `TASKNEXT`, `TASKSTOP`, `TASKHALT`,

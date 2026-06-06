@@ -56,4 +56,13 @@ var report = libstore.cache_report()
 assert(report["status"]["psram_cache_items"] == 2)
 assert(report["items"].size() >= 2)
 
+var all_cached = libstore.cache_all()
+assert(all_cached.size() >= libstore.modules().size())
+assert(libstore.status()["psram_cache_items"] >= libstore.modules().size())
+assert(libstore.cached("binary_heap"))
+assert(libstore.cached("libstore"))
+assert(libstore.cached("math"))
+assert(libstore.cached("taskspin"))
+assert(libstore.cached("wifi"))
+
 print("P2_SMOKE_PASS edge32")

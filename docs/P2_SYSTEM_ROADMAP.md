@@ -90,8 +90,9 @@ Short term:
 - add lazy source/module loading so rarely used libraries do not permanently
   occupy Hub RAM
 - default P2 imports now search `/modules` lazily, with `libstore.be` reporting
-  the SD-first model and exposing a PSRAM source-cache hook that follows the
-  safe block window on both edge32 and XMM-style profiles
+  the SD-first model, discovering available `.be` modules, and exposing PSRAM
+  source-cache hooks including `cache_all()` that follow the safe block window
+  on both edge32 and XMM-style profiles
 - `taskspin.be` is the first Spin2-shaped concurrency library kept entirely on
   SD: it adds cooperative `TASKSPIN`/`TASKNEXT`/`TASKSTOP`/`TASKHALT`/
   `TASKCONT`/`TASKCHK`/`TASKID` behavior without increasing the firmware image

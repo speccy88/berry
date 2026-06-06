@@ -168,7 +168,8 @@ The smoke suite covers:
 - `string`, SD-loaded `math`, `json`, `bytes`, and `p2` module basics
 - lazy SD library import from `/modules`, including `binary_heap` and
   `libstore`; on edge32, `libstore` also smoke-tests chunked PSRAM source-cache
-  round trips and loading SD modules back from the PSRAM cache
+  round trips, discovered-module `cache_all()` warmup, and loading SD modules
+  back from the PSRAM cache
 - SD-loaded cooperative `taskspin` tasks using a Spin2-shaped `TASK*` API
 - SD create/read/readbytes/remove using only `/P2SMOKE.TXT`
 - `rtos` channels, events, timers, `process_info()`, guarded closure launch,
@@ -189,8 +190,9 @@ make p2-smoke-edge32 PORT=/dev/cu.usbserial-P97cvdxp
 
 That target runs `/tests/p2/smoke_edge32_all.be`, which includes the general
 suite plus `p2.psram_info()`, `p2.psram_test()`, raw `p2.psram_read()` /
-`p2.psram_write()`, chunked `libstore.cache_source()` assertions, and
-`libstore.load("math")` from the PSRAM source cache.
+`p2.psram_write()`, chunked `libstore.cache_source()` assertions,
+`libstore.cache_all()` for discovered SD modules, and `libstore.load("math")`
+from the PSRAM source cache.
 
 Current flash note:
 

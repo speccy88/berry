@@ -8,6 +8,7 @@
 
 import os
 import p2
+import string
 
 var libstore = module("libstore")
 
@@ -19,6 +20,40 @@ libstore.cache_base = 0
 libstore.cache_limit = 0
 libstore.cache = {}
 libstore.cache_next = 0
+
+libstore.module_name = def(entry)
+    var lower = string.tolower(entry)
+    if size(lower) <= 3 || !string.endswith(lower, ".be")
+        return nil
+    end
+    return lower[0..(size(lower) - 4)]
+end
+
+libstore.add_unique = def(out, seen, name)
+    if name != nil && !seen.contains(name)
+        seen[name] = true
+        out.push(name)
+    end
+end
+
+libstore.scan = def()
+    var out = []
+    var seen = {}
+    for name : libstore.known
+        if libstore.exists(name)
+            libstore.add_unique(out, seen, name)
+        end
+    end
+    for base : libstore.paths
+        try
+            for entry : os.listdir(base)
+                libstore.add_unique(out, seen, libstore.module_name(entry))
+            end
+        except .. as e, m
+        end
+    end
+    return out
+end
 
 libstore.psram = def()
     return p2.psram_info()
@@ -104,17 +139,14 @@ libstore.status = def()
         "psram_cache_used": libstore.cache_next - libstore.cache_base,
         "psram_cache_free": libstore.cache_base + libstore.cache_limit - libstore.cache_next,
         "psram_cache_items": libstore.cache.size(),
+        "library_count": libstore.modules().size(),
         "psram_max_transfer": psram["max_transfer"],
         "heap": heap
     }
 end
 
 libstore.modules = def()
-    var out = []
-    for name : libstore.known
-        out.push(name)
-    end
-    return out
+    return libstore.scan()
 end
 
 libstore.source_path = def(name)
@@ -267,7 +299,7 @@ end
 
 libstore.cache_all = def()
     var out = []
-    for name : libstore.known
+    for name : libstore.modules()
         if libstore.exists(name)
             out.push(libstore.cache_source(name))
         end
@@ -277,7 +309,7 @@ end
 
 libstore.cache_report = def()
     var items = []
-    for name : libstore.known
+    for name : libstore.modules()
         if libstore.cache.contains(name)
             var item = libstore.cache[name]
             items.push({

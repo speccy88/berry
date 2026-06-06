@@ -416,12 +416,18 @@ and probes the current SD-first library store:
 
 - `libstore.paths`: current SD library roots. The firmware adds `/modules` to
   Berry's import path at VM startup.
-- `libstore.status() -> map`: reports lazy SD loading, current heap role,
-  PSRAM block/cache window, used/free cache bytes, and cached item count.
+- `libstore.status() -> map`: reports lazy SD loading, available library count,
+  current heap role, PSRAM block/cache window, used/free cache bytes, and cached
+  item count.
 - `libstore.strategy() -> map`: reports the storage model: SD is the canonical
   library home, PSRAM is a transfer/cache backend when available, and the
   object heap is Hub or external depending on the active P2 profile.
-- `libstore.modules() -> list`: return the known SD module names.
+- `libstore.module_name(entry) -> string or nil`: normalize an SD directory
+  entry such as `MATH.BE` into the import name `math`, or return `nil` for
+  non-source files.
+- `libstore.scan() -> list`: discover available `.be` source modules under
+  `libstore.paths`, preserving known module order and then adding SD entries.
+- `libstore.modules() -> list`: return the currently available SD module names.
 - `libstore.psram() -> map`: returns `p2.psram_info()`.
 - `libstore.exists(name) -> bool`: true when `/modules/<name>.be` exists.
 - `libstore.source_path(name) -> string or nil`: returns the SD source path.
@@ -445,7 +451,7 @@ and probes the current SD-first library store:
 - `libstore.load(name)`: load by module name, using the PSRAM source cache when
   available and falling back to `run_file()` from SD otherwise.
 - `libstore.cache_many(name, ...)`: cache a selected set of modules.
-- `libstore.cache_all()`: cache all known modules that exist under
+- `libstore.cache_all()`: cache all currently available modules under
   `libstore.paths`.
 - `libstore.cache_report() -> map`: return current cache status and per-module
   chunk/address metadata.

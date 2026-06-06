@@ -35,9 +35,13 @@ end
 
 var libstore = run_file("modules/libstore.be")
 libstore.paths = ["modules"]
+assert(libstore.module_name("MATH.BE") == "math")
+assert(libstore.module_name("notes.txt") == nil)
+assert(libstore.modules().size() >= 5)
 var window = libstore.cache_reset()
 assert(window["base"] == 32505856)
 assert(libstore.status()["heap"] == "hub")
+assert(libstore.status()["library_count"] >= 5)
 
 var cached = libstore.cache_source("math")
 assert(cached["chunk_count"] > 1)
@@ -52,6 +56,13 @@ assert(math.abs(-42) == 42)
 var report = libstore.cache_report()
 assert(report["status"]["psram_cache_items"] == 1)
 assert(report["items"][0]["chunks"] == cached["chunk_count"])
+
+var all_cached = libstore.cache_all()
+assert(all_cached.size() >= 5)
+assert(libstore.status()["psram_cache_items"] >= 5)
+assert(libstore.cached("binary_heap"))
+assert(libstore.cached("taskspin"))
+assert(libstore.cached("wifi"))
 
 p2.mem = {}
 p2.info = {
@@ -80,3 +91,6 @@ cached = libstore.cache_source("math")
 assert(cached["chunk_count"] > 1)
 assert(cached["address"] >= 16777216)
 assert(libstore.cached_source("math") == open("modules/math.be", "r").read())
+all_cached = libstore.cache_all()
+assert(all_cached.size() >= 5)
+assert(libstore.status()["psram_cache_items"] >= 5)
