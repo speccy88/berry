@@ -65,6 +65,14 @@ static void p2_print_banner(void)
         BE_STACK_TOTAL_MAX,
         BE_BYTES_MAX_SIZE);
     p2_serial_puts(buffer);
+
+    if (BE_P2_EXTERNAL_RAM_BYTES > 0) {
+        snprintf(buffer, sizeof(buffer),
+            "[external %lu B PSRAM block API | Berry heap %s]\n",
+            (unsigned long)BE_P2_EXTERNAL_RAM_BYTES,
+            BE_P2_HEAP_USES_EXTERNAL_RAM ? "PSRAM" : "Hub RAM");
+        p2_serial_puts(buffer);
+    }
 }
 
 static void berry_p2_main(void)

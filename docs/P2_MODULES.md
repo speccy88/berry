@@ -18,6 +18,15 @@ and avoid pins `62..63` because they are the serial console. Pins `56` and `57`
 are usable LEDs on the no-PSRAM P2 Edge profile. PSRAM builds reserve pins
 `40..57`.
 
+For a P2 Edge with the 32 MB RAM module, use the `edge32` profile:
+
+```sh
+make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp
+```
+
+This profile enables Catalina `-lpsram`. PSRAM is exposed to Berry as a
+Catalina block-transfer device, while Berry's object heap remains in Hub RAM.
+
 ## Files, SD Card, And `os`
 
 The P2 port wires Berry's normal file API to Catalina DOSFS. Paths are resolved
@@ -126,7 +135,14 @@ Math and smart pins:
 Runtime status:
 
 - `p2.sbrk() -> int`: current heap-space estimate.
-- `p2.heap_info() -> map`: heap details for diagnostics.
+- `p2.heap_info() -> map`: heap details for diagnostics, including whether the
+  Berry heap is external-RAM backed.
+- `p2.psram_info() -> map`: report whether the image was built with Catalina
+  PSRAM support, the expected external RAM size, the access mode, and the
+  reserved pin range.
+- `p2.psram_test(address=nil) -> map`: on PSRAM builds, write and read a short
+  pattern through Catalina's PSRAM block API. The default address is near the
+  top of the 32 MB range.
 - `p2.status()`: print image size, heap bars, clock info, and cog states.
 - `p2.beep(pin, freq, ms)`: generate a simple tone on a pin.
 

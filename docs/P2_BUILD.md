@@ -8,6 +8,8 @@ make show-config
 make p2 TOOLCHAIN=catalina
 make p2-minimal
 make p2-full
+make p2-edge32
+make p2-edge32-flash
 make p2-xmm
 make p2-run TOOLCHAIN=catalina PORT=COM5
 make p2-ram TOOLCHAIN=catalina PORT=/dev/ttyUSB0
@@ -27,7 +29,7 @@ specific task.
 
 - `TOOLCHAIN=catalina`
 - `PORT=...`
-- `P2_PROFILE=minimal|full|xmm` when not using a convenience profile target
+- `P2_PROFILE=minimal|full|edge32` when not using a convenience profile target
 - `CATALINA_DIR=...`
 - `LOADP2=...` for the loader from FlexProp
 
@@ -38,14 +40,15 @@ the Berry module feature macros, P2-native module caching, heap sizes, stack
 slot limit, and maximum `bytes()` size.
 
 - `minimal`: core language and standard classes plus the `string` module. It disables filesystem, JSON, math, OS, P2 hardware modules, worker/thread/rtos/spin2 helpers, and low-level `prop2_*` globals. Current verified image: `426624` bytes with a `192 KiB` main heap.
-- `full`: the current no-PSRAM P2 Edge build. Current verified image: `521376` bytes with the existing `128 KiB` main heap, `32 KiB` worker heap, SD-backed `open()`/`os`, P2 hardware modules, `rtos`, `spin2`, and the WiFiNINA Berry skeleton available as source. Experimental `worker` and `threads` modules are folded under the public `rtos` API.
-- `xmm`: placeholder for the future P2 Edge 32 MB RAM module. It currently uses the full feature set and the Catalina PSRAM library path; external-RAM placement and lazy loading are future work.
+- `full`: the current no-PSRAM P2 Edge build. Current verified image: `522720` bytes with the existing `128 KiB` main heap, `32 KiB` worker heap, SD-backed `open()`/`os`, P2 hardware modules, `rtos`, `spin2`, and the WiFiNINA Berry skeleton available as source. Experimental `worker` and `threads` modules are folded under the public `rtos` API.
+- `edge32`: P2 Edge 32 MB RAM profile for the P2-EC32MB-style board. It enables Catalina `-lpsram`, reserves pins `40..57` for the memory interface, keeps Berry's object heap in Hub RAM, and exposes PSRAM through Catalina's block-transfer API for runtime smoke testing. Current configured heap: `128 KiB` main heap and `16 KiB` worker heap, leaving Hub RAM room for the PSRAM plugin.
 
 Convenience targets pin the intended Catalina board profile:
 
 ```sh
 make p2-minimal
 make p2-full
+make p2-edge32
 make p2-xmm
 ```
 
@@ -53,6 +56,12 @@ Equivalent explicit form:
 
 ```sh
 make p2 TOOLCHAIN=catalina P2_PROFILE=minimal CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
+```
+
+P2 Edge 32 MB RAM explicit form:
+
+```sh
+make p2 TOOLCHAIN=catalina P2_PROFILE=edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
 ```
 
 ## Local Environment Defaults
@@ -99,7 +108,8 @@ Current macOS Catalina notes:
 - keep `COMPACT` for `make p2-ram`; `NATIVE` builds are larger than the Hub RAM load path can reliably start
 - `berry_p2.binary` is checked against the P2 Hub RAM limit of `524288` bytes; oversized builds fail before the target image is published
 - SD file and directory handles use small fixed pools in the P2 runtime (`4` files and `2` directory iterators). Avoiding Catalina libc heap allocation here is required for the full image near the Hub RAM limit.
-- for the PSRAM P2 Edge, build explicitly with `CATALINA_MODEL=COMPACT CATALINA_SERIAL_LIB=-lpsram`; that profile reserves pins `40..57` for memory, including pin `57` as PSRAM chip-select
+- for the PSRAM P2 Edge, use `make p2-edge32` or build explicitly with `P2_PROFILE=edge32 CATALINA_MODEL=COMPACT CATALINA_SERIAL_LIB=-lpsram`; that profile reserves pins `40..57` for memory, including pin `57` as PSRAM chip-select
+- Catalina's COMPACT `-lpsram` path gives Berry block access to the 32 MB PSRAM through `psram_read()` and `psram_write()`. It does not make PSRAM ordinary C pointer-addressable storage, so Berry's GC/object heap remains in Hub RAM on this profile.
 - `make p2-ram` is the normal interactive RAM-load command
 - `make p2-flash` now builds Catalina's `flshload.t` flash-programmer image, loads that to RAM, and waits until Berry boots back from SPI flash
 - `make p2-flash-run` uses the same Catalina flash-programmer image but keeps the terminal attached
@@ -111,6 +121,23 @@ Current macOS Catalina notes:
 
 ```sh
 tio -b 230400 /dev/cu.usbserial-P97cvdxp
+```
+
+For a P2 Edge Rev D with the 32 MB RAM module:
+
+```sh
+make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build
+tio -b 230400 /dev/cu.usbserial-P97cvdxp
+```
+
+Basic REPL smoke tests for that image:
+
+```berry
+print(6*7)
+s="abc"; print(s+"def")
+m={"a":2,"b":5}; print(m["a"]+m["b"])
+import math; print(math.sqrt(81))
+import p2; print(p2.psram_info()); print(p2.psram_test())
 ```
 
 Current flash note:

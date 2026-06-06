@@ -6,7 +6,8 @@
 
 #define BE_P2_PROFILE_MINIMAL           1
 #define BE_P2_PROFILE_FULL              2
-#define BE_P2_PROFILE_XMM               3
+#define BE_P2_PROFILE_EDGE32            3
+#define BE_P2_PROFILE_XMM               BE_P2_PROFILE_EDGE32
 
 #ifndef BE_P2_PROFILE
 #define BE_P2_PROFILE                   BE_P2_PROFILE_FULL
@@ -32,14 +33,15 @@
 #define BE_P2_USE_SPIN2_MODULE          0
 #define BE_P2_USE_WORKER_MODULE         0
 #define BE_P2_USE_XMM_PLACEHOLDER       0
+#define BE_P2_USE_EDGE32_PSRAM          0
 
 #define BE_P2_HEAP_SIZE                 (192 * 1024)
 #define BE_P2_WORKER_HEAP_SIZE          (4 * 1024)
 #define BE_P2_STACK_SLOTS               512
 #define BE_P2_BYTES_MAX                 2048
 
-#elif BE_P2_PROFILE == BE_P2_PROFILE_XMM
-#define BE_P2_PROFILE_NAME              "xmm"
+#elif BE_P2_PROFILE == BE_P2_PROFILE_EDGE32
+#define BE_P2_PROFILE_NAME              "edge32"
 
 #define BE_USE_JSON                     1
 #define BE_USE_MATH                     1
@@ -57,10 +59,11 @@
 #define BE_P2_USE_THREADS_MODULE        0
 #define BE_P2_USE_SPIN2_MODULE          1
 #define BE_P2_USE_WORKER_MODULE         0
-#define BE_P2_USE_XMM_PLACEHOLDER       1
+#define BE_P2_USE_XMM_PLACEHOLDER       0
+#define BE_P2_USE_EDGE32_PSRAM          1
 
 #define BE_P2_HEAP_SIZE                 (128 * 1024)
-#define BE_P2_WORKER_HEAP_SIZE          (32 * 1024)
+#define BE_P2_WORKER_HEAP_SIZE          (16 * 1024)
 #define BE_P2_STACK_SLOTS               1024
 #define BE_P2_BYTES_MAX                 (4 * 1024)
 
@@ -108,6 +111,18 @@
 
 #ifndef BE_P2_HUB_RAM_BYTES
 #define BE_P2_HUB_RAM_BYTES             (512 * 1024)
+#endif
+
+#ifndef BE_P2_EXTERNAL_RAM_BYTES
+#if BE_P2_PROFILE == BE_P2_PROFILE_EDGE32
+#define BE_P2_EXTERNAL_RAM_BYTES        (32 * 1024 * 1024)
+#else
+#define BE_P2_EXTERNAL_RAM_BYTES        0
+#endif
+#endif
+
+#ifndef BE_P2_HEAP_USES_EXTERNAL_RAM
+#define BE_P2_HEAP_USES_EXTERNAL_RAM    0
 #endif
 
 #ifndef BE_P2_ENABLE_EXTENDED_MODULES

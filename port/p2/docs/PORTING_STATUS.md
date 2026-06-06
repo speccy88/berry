@@ -13,6 +13,8 @@ This note is the handoff for the next P2 porting session.
   - `make p2-run TOOLCHAIN=catalina PORT=...`
   - `make p2-ram`
   - `make p2-flash`
+  - `make p2-edge32`
+  - `make p2-edge32-flash`
 - P2 silicon selection still supports:
   - `P2_SILICON=a` -> `-2a`
   - `P2_SILICON=latest|b|c` -> `-2`
@@ -24,14 +26,22 @@ This note is the handoff for the next P2 porting session.
 On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 
 - `make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds a RAM image with Catalina 8.8.9:
-  - image: `521376` bytes
-  - code: `267440` bytes
-  - const: `18552` bytes
+  - image: `522720` bytes
+  - code: `268444` bytes
+  - const: `18904` bytes
   - init: `8052` bytes
   - data: `217144` bytes
+- `make p2-edge32 CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds the P2 Edge 32 MB RAM profile:
+  - image: `513088` bytes
+  - code: `270516` bytes
+  - const: `19108` bytes
+  - init: `8132` bytes
+  - data: `200760` bytes
+- `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` flashed and booted from flash on the P2 Edge 32 MB RAM board. The boot banner reported `P2_EDGE, PSRAM`, `[edge32 profile]`, `131072 B` heap, and `33554432 B` PSRAM block API.
 - `make p2-run TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build PORT=/dev/cu.usbserial-P97cvdxp` RAM-loads and reaches the Berry prompt
 - P2 cached module loading is live-verified after the Catalina const native function hang fix:
   - `import p2`; `print(p2.cogid())` -> `0`
+  - `p2.psram_info()` and `p2.psram_test()` are now exposed for the P2 Edge 32 MB RAM profile; interactive PSRAM smoke verification is still pending
   - `import i2c`; `i2c.init(25,24,400)` returns to the prompt
   - `import spi`; `spi.init(10,11,12,13,0,1000)` returns to the prompt
   - `import rtos`; locks, queues, flags, timers, callbacks, debug helpers, and worker-backed spawn work
@@ -154,6 +164,8 @@ Current machine focus to preserve:
 Known limitation:
 
 - not every standard library module has been re-verified interactively yet on the cached-runtime-module path; `string`, `math`, `json`, `bytes`, `os`, and the P2 hardware modules have current or prior hardware coverage, but longer mixed-module sessions still need stress testing
+- `P2_PROFILE=edge32` enables Catalina `-lpsram` and PSRAM block access, but Berry's object heap remains in Hub RAM. Catalina's COMPACT PSRAM API is transfer-based, not ordinary C pointer-addressable memory; moving the GC/object heap to external RAM would require an XMM/large-memory object representation or a handle/cache layer.
+- Automated serial smoke after the edge32 flash boot reached the prompt but did not reliably deliver Enter through the Python/pty harness; manual `tio -b 230400 /dev/cu.usbserial-P97cvdxp` verification should be run next for `print(6*7)`, string concat, map lookup, `math.sqrt(81)`, and `p2.psram_test()`.
 - `p2.cog_start_c()` now builds but still needs a focused Berry FFI validation pass on hardware
 - `spin2.call()` needs an SD-card run with a copied compatible `berry_mailbox_demo.bin`; `make spin2` is build-verified, but the current live SD-visible `/spin2` path had no binaries
 - WiFiNINA/AirLift support is a Berry SPI transport skeleton. The ESP32-C6 board flashed with firmware `3.3.0` did not assert READY/BUSY during the last probe, so `wifi.firmware_version()` is not live-verified yet.
@@ -179,11 +191,13 @@ Known limitation:
 3. Start with:
    - `make p2-run`
    - or `make p2-ram`
+   - for the 32 MB RAM board, `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp`
 4. Re-verify:
    - `print(1+2)`
    - `a=6`
    - `print(a*7)`
    - `import p2; print(p2.clock_freq())`
+   - on the 32 MB RAM board: `import p2; print(p2.psram_info()); print(p2.psram_test())`
    - `print(p2.pin_read(38))`
    - `Ctrl-C` at an empty prompt should print `bye` and return cleanly to the shell
 5. Keep the secondary paths buildable:

@@ -38,8 +38,8 @@ hardware modules, and grow the multicog model in small safe layers.
 Current Catalina status on P2 Edge / latest silicon:
 
 - the default build targets the no-PSRAM P2 Edge: `CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, with no `-lpsram`
-- the default feature profile is `P2_PROFILE=full`; `make p2-minimal` builds the core-language/string-only footprint profile
-- `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` reaches a working REPL with a `521376` byte full-profile image
+- the default feature profile is `P2_PROFILE=full`; `make p2-minimal` builds the core-language/string-only footprint profile, and `make p2-edge32` builds the P2 Edge 32 MB RAM profile with Catalina `-lpsram`
+- `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` reaches a working REPL with a `522720` byte full-profile image
 - `print()`, assignment, and basic arithmetic are live-verified
 - `for i:0..3`, `for e:list`, `for v:map`, and `for k:map.keys()` are live-verified
 - `import string`, `import math`, `import json`, `import bytes`, and `import os` are live-verified
@@ -53,6 +53,7 @@ Current Catalina status on P2 Edge / latest silicon:
 - P2 helpers are exposed as `p2.*` for clock, counter, pin, smart-pin, CORDIC, lock, attention, and cog inspection
 - legacy `prop2_*` globals remain available for compatibility
 - `p2.status()` prints build size, heap usage bars, clock info, and all 8 cog states
+- `p2.psram_info()` and `p2.psram_test()` are available on the P2 hardware module; on the `edge32` profile they report and smoke-test Catalina PSRAM block access
 - native bus helpers are exposed as `i2c.*` and `spi.*`
 - worker-backed task/cog startup and queues are exposed as `rtos.*`
 - Spin2/PASM binary loading scaffolding is exposed as `spin2.*`
@@ -174,7 +175,14 @@ Primary development focus from now on:
 - `P2_EDGE`
 - latest silicon path (`P2_SILICON=latest`, targeting your Rev C board)
 - no-PSRAM P2 Edge defaults (`CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, no `-lpsram`)
-- profile defaults: `full` for normal work, `minimal` for footprint work, and `xmm` reserved for later PSRAM/XMM experiments
+- profile defaults: `full` for normal no-PSRAM work, `minimal` for footprint work, and `edge32` for P2 Edge boards with the 32 MB RAM module
+
+P2 Edge 32 MB RAM notes:
+
+- build with `make p2-edge32` or flash with `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp`
+- the profile uses `CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, and `CATALINA_SERIAL_LIB=-lpsram`
+- Catalina's COMPACT PSRAM support is a block-transfer API (`psram_read()` / `psram_write()`), so Berry's pointer-following GC/object heap remains in Hub RAM for now
+- use `import p2; print(p2.psram_info()); print(p2.psram_test())` as the quick runtime PSRAM smoke check
 
 Other toolchains and silicon paths should still be kept buildable, but this is
 the first path to validate when continuing the port. In particular, do not
@@ -193,3 +201,4 @@ Filesystem probe note:
 - [`../../../docs/P2_BUILD.md`](../../../docs/P2_BUILD.md)
 - [`../../../docs/P2_MODULES.md`](../../../docs/P2_MODULES.md)
 - [`../../../docs/P2_LAYOUT.md`](../../../docs/P2_LAYOUT.md)
+- [`../../../docs/P2_SYSTEM_ROADMAP.md`](../../../docs/P2_SYSTEM_ROADMAP.md)

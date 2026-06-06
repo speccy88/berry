@@ -54,7 +54,8 @@ P2 build profiles are selected with `P2_PROFILE` or with convenience targets:
 
 - `make p2-minimal` builds the smallest practical REPL profile: core language, standard classes, and `string`, with filesystem, JSON, math, OS, P2 hardware modules, and `prop2_*` globals disabled. The saved image uses the freed Hub RAM for the main Berry heap.
 - `make p2-full` builds the current no-PSRAM P2 Edge profile with the existing modules enabled.
-- `make p2-xmm` is a PSRAM/XMM placeholder for the future 32 MB P2 Edge module. It currently builds from the full feature set with Catalina `-lpsram`; deeper external-RAM placement and lazy-loading work is intentionally deferred until the board is available.
+- `make p2-edge32` builds the P2 Edge 32 MB RAM profile with Catalina `-lpsram`. This enables PSRAM block-transfer support and reserves pins `40..57`; Berry's object heap remains in Hub RAM because COMPACT PSRAM is not ordinary C pointer-addressable storage.
+- `make p2-xmm` remains as a compatibility alias for `make p2-edge32`.
 
 P2 app images are checked against the 512 KiB Hub RAM limit. Oversized builds fail before `berry_p2.binary` is published.
 
@@ -316,8 +317,24 @@ print(p2.pin_read(56))
 P2 module examples live under `examples/p2/`; other modules use their own directories such as `examples/i2c/`, `examples/spi/`, `examples/rtos/`, and `examples/spin2/`. General Berry examples such as quicksort, REPL, and string handling live under `examples/core/`.
 
 The fuller P2 module API reference lives in [`docs/P2_MODULES.md`](./docs/P2_MODULES.md).
+The longer-term P2 Berry system plan lives in [`docs/P2_SYSTEM_ROADMAP.md`](./docs/P2_SYSTEM_ROADMAP.md).
 
 On the tested no-PSRAM P2 Edge setup, keep Berry GPIO and bus examples off the SD pins `58..61` and serial pins `62..63`. Pins `56` and `57` are left available because they are exposed as LEDs on that board.
+
+On a P2 Edge with the 32 MB RAM module, build and flash with:
+
+```sh
+make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp
+tio -b 230400 /dev/cu.usbserial-P97cvdxp
+```
+
+Then verify PSRAM support from the REPL with:
+
+```berry
+import p2
+print(p2.psram_info())
+print(p2.psram_test())
+```
 
 #### Reliable Catalina RAM and Flash Flow
 

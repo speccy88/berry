@@ -17,6 +17,13 @@
 #include <stdio.h>
 #include <string.h>
 
+#if defined(__CATALINA_libpsram) || defined(__CATALINA_PSRAM)
+#include <psram.h>
+#define P2_HAS_CATALINA_PSRAM 1
+#else
+#define P2_HAS_CATALINA_PSRAM 0
+#endif
+
 extern int m_clock_freq(bvm *vm);
 extern int m_clock_mode(bvm *vm);
 extern int m_misc_random(bvm *vm);
@@ -80,6 +87,30 @@ static bint p2_require_int_arg(bvm *vm, int index, const char *message)
         be_raise(vm, "type_error", message);
     }
     return be_toint(vm, index);
+}
+
+static void p2_map_set_int(bvm *vm, const char *key, bint value)
+{
+    be_pushstring(vm, key);
+    be_pushint(vm, value);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+}
+
+static void p2_map_set_bool(bvm *vm, const char *key, int value)
+{
+    be_pushstring(vm, key);
+    be_pushbool(vm, value ? 1 : 0);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+}
+
+static void p2_map_set_string(bvm *vm, const char *key, const char *value)
+{
+    be_pushstring(vm, key);
+    be_pushstring(vm, value ? value : "");
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
 }
 
 static int p2_require_pin_arg(bvm *vm, int index)
@@ -202,20 +233,79 @@ static int m_p2_heap_info(bvm *vm)
 {
     be_newobject(vm, "map");
 
-    be_pushstring(vm, "current");
-    be_pushint(vm, (bint)p2_heap_free_bytes());
-    be_setindex(vm, -3);
-    be_pop(vm, 2);
+    p2_map_set_int(vm, "current", (bint)p2_heap_free_bytes());
+    p2_map_set_int(vm, "main", (bint)p2_heap_main_free_bytes());
+    p2_map_set_int(vm, "worker", (bint)p2_heap_worker_free_bytes());
+    p2_map_set_bool(vm, "external_heap", BE_P2_HEAP_USES_EXTERNAL_RAM);
 
-    be_pushstring(vm, "main");
-    be_pushint(vm, (bint)p2_heap_main_free_bytes());
-    be_setindex(vm, -3);
-    be_pop(vm, 2);
+    be_pop(vm, 1);
+    be_return(vm);
+}
 
-    be_pushstring(vm, "worker");
-    be_pushint(vm, (bint)p2_heap_worker_free_bytes());
-    be_setindex(vm, -3);
-    be_pop(vm, 2);
+static int m_p2_psram_info(bvm *vm)
+{
+    be_newobject(vm, "map");
+
+    p2_map_set_bool(vm, "available", P2_HAS_CATALINA_PSRAM);
+    p2_map_set_int(vm, "bytes", (bint)BE_P2_EXTERNAL_RAM_BYTES);
+    p2_map_set_string(vm, "access", P2_HAS_CATALINA_PSRAM ? "block" : "none");
+    p2_map_set_bool(vm, "heap", BE_P2_HEAP_USES_EXTERNAL_RAM);
+    p2_map_set_int(vm, "reserved_pin_first", P2_HAS_CATALINA_PSRAM ? 40 : -1);
+    p2_map_set_int(vm, "reserved_pin_last", P2_HAS_CATALINA_PSRAM ? 57 : -1);
+
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_psram_test(bvm *vm)
+{
+    enum {
+        P2_PSRAM_TEST_SIZE = 32
+    };
+    bint address = (31 * 1024 * 1024);
+
+    if (be_top(vm) >= 1 && be_isint(vm, 1)) {
+        address = be_toint(vm, 1);
+    }
+
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "available", P2_HAS_CATALINA_PSRAM);
+    p2_map_set_int(vm, "bytes", (bint)BE_P2_EXTERNAL_RAM_BYTES);
+    p2_map_set_int(vm, "address", address);
+    p2_map_set_int(vm, "size", P2_PSRAM_TEST_SIZE);
+
+#if P2_HAS_CATALINA_PSRAM
+    {
+        static const char pattern[] = "Berry P2 PSRAM smoke";
+        char readback[P2_PSRAM_TEST_SIZE];
+        int write_result;
+        int read_result = 0;
+        int ok = 0;
+
+        if (address < 0 || address + P2_PSRAM_TEST_SIZE > BE_P2_EXTERNAL_RAM_BYTES) {
+            p2_map_set_bool(vm, "ok", 0);
+            p2_map_set_string(vm, "error", "address outside PSRAM");
+        } else {
+            memset(readback, 0, sizeof(readback));
+            write_result = psram_write((void *)pattern,
+                (void *)(uintptr_t)address,
+                (int32_t)sizeof(pattern));
+            if (write_result >= 0) {
+                read_result = psram_read(readback,
+                    (void *)(uintptr_t)address,
+                    (int32_t)sizeof(readback));
+                ok = read_result >= 0 && strcmp(readback, pattern) == 0;
+            }
+            p2_map_set_int(vm, "write_result", (bint)write_result);
+            p2_map_set_int(vm, "read_result", (bint)read_result);
+            p2_map_set_bool(vm, "ok", ok);
+            p2_map_set_string(vm, "value", ok ? readback : "");
+        }
+    }
+#else
+    p2_map_set_bool(vm, "ok", 0);
+    p2_map_set_string(vm, "error", "not built with Catalina -lpsram");
+#endif
 
     be_pop(vm, 1);
     be_return(vm);
@@ -302,6 +392,7 @@ static int m_p2_status(bvm *vm)
     unsigned long init = (unsigned long)P2_BUILD_INIT_BYTES;
     unsigned long data = (unsigned long)P2_BUILD_DATA_BYTES;
     unsigned long hub_total = (unsigned long)BE_P2_HUB_RAM_BYTES;
+    unsigned long external_total = (unsigned long)BE_P2_EXTERNAL_RAM_BYTES;
     unsigned long main_total = (unsigned long)BE_P2_HEAP_BYTES;
     unsigned long worker_total = (unsigned long)BE_P2_WORKER_HEAP_BYTES;
     unsigned long main_free = (unsigned long)p2_heap_main_free_bytes();
@@ -338,6 +429,12 @@ static int m_p2_status(bvm *vm)
     p2_status_print_bar_line("main heap", main_used, main_total);
     p2_status_print_bar_line("worker heap", worker_used, worker_total);
     p2_status_writef("  current free %7lu B\n", current_free);
+    if (external_total > 0) {
+        p2_status_writef("  external     %7lu B PSRAM %s, Berry heap in %s\n",
+            external_total,
+            P2_HAS_CATALINA_PSRAM ? "block API" : "not linked",
+            BE_P2_HEAP_USES_EXTERNAL_RAM ? "PSRAM" : "Hub RAM");
+    }
     p2_status_print_size_line("code", code);
     p2_status_print_size_line("const", cnst);
     p2_status_print_size_line("init", init);
@@ -449,6 +546,8 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "smartpin_clear")) be_pushntvfunction(vm, m_smartpin_clear);
     else if (!strcmp(name, "sbrk")) be_pushntvfunction(vm, m_p2_sbrk);
     else if (!strcmp(name, "heap_info")) be_pushntvfunction(vm, m_p2_heap_info);
+    else if (!strcmp(name, "psram_info")) be_pushntvfunction(vm, m_p2_psram_info);
+    else if (!strcmp(name, "psram_test")) be_pushntvfunction(vm, m_p2_psram_test);
     else if (!strcmp(name, "status")) be_pushntvfunction(vm, m_p2_status);
     else if (!strcmp(name, "beep")) be_pushntvfunction(vm, m_p2_beep);
     else if (!strcmp(name, "INPUT")) be_pushint(vm, P2_PINMODE_INPUT);

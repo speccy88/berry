@@ -55,13 +55,21 @@ ifeq ($(P2_PROFILE),minimal)
 P2_PROFILE_ID := 1
 else ifeq ($(P2_PROFILE),full)
 P2_PROFILE_ID := 2
+else ifeq ($(P2_PROFILE),edge32)
+P2_PROFILE_ID := 3
 else ifeq ($(P2_PROFILE),xmm)
 P2_PROFILE_ID := 3
 else
-$(error Unsupported P2_PROFILE '$(P2_PROFILE)'; use minimal, full, or xmm)
+$(error Unsupported P2_PROFILE '$(P2_PROFILE)'; use minimal, full, edge32, or xmm)
 endif
 
 P2_PROFILE_DEFINE := -DBE_P2_PROFILE=$(P2_PROFILE_ID)
+
+ifeq ($(P2_PROFILE_ID),3)
+ifneq ($(origin CATALINA_SERIAL_LIB),command line)
+CATALINA_SERIAL_LIB := -lpsram
+endif
+endif
 
 ifeq ($(origin P2_COMPILER),command line)
 TOOLCHAIN := $(P2_COMPILER)
@@ -196,7 +204,7 @@ P2_SERIAL_PROBE_SRCS := $(P2_TEST_DIR)/serial_probe.c $(P2_RUNTIME_DIR)/berry_po
 P2_SERIAL_PROBE := $(P2_BUILD_DIR)/serial_probe.binary
 P2_PREBUILD_DEPS := $(COC) $(P2_CONFIG) $(P2_CONFIG_SOURCE) scripts/prebuild-p2.sh scripts/prebuild-p2.ps1 $(P2_IMAGE_SIZE_CHECK)
 
-.PHONY: p2 p2-minimal p2-full p2-xmm p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run spin2 spin2-clean spin2-sd-loader spin2-sd-loader-host spin2-sd-put spin2-sd-sync spin2-load spin2-load-all run configure configure-reset show-config
+.PHONY: p2 p2-minimal p2-full p2-edge32 p2-edge32-ram p2-edge32-flash p2-xmm p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run spin2 spin2-clean spin2-sd-loader spin2-sd-loader-host spin2-sd-put spin2-sd-sync spin2-load spin2-load-all run configure configure-reset show-config
 
 configure:
 	$(MSG) [Configure] $(P2_LOCAL_CONFIG)
@@ -431,8 +439,17 @@ p2-minimal:
 p2-full:
 	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=full CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
 
+p2-edge32:
+	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+
+p2-edge32-ram:
+	$(Q) $(MAKE) p2-ram TOOLCHAIN=catalina P2_PROFILE=edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+
+p2-edge32-flash:
+	$(Q) $(MAKE) p2-flash TOOLCHAIN=catalina P2_PROFILE=edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+
 p2-xmm:
-	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=xmm CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+	$(Q) $(MAKE) p2-edge32
 
 ifeq ($(TOOLCHAIN),catalina)
 $(P2_CATALINA_FLASH_IMAGE): $(P2_IMAGE) tools/p2/loader/build-catalina-flash-image.sh | $(P2_BUILD_DIR)
