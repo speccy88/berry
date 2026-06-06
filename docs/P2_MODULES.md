@@ -392,11 +392,11 @@ and probes the current SD-first library store:
 
 - `libstore.paths`: current SD library roots. The firmware adds `/modules` to
   Berry's import path at VM startup.
-- `libstore.status() -> map`: reports lazy SD loading, Hub-heap execution,
-  PSRAM cache availability, used/free cache bytes, and cached item count.
+- `libstore.status() -> map`: reports lazy SD loading, current heap role,
+  PSRAM block/cache window, used/free cache bytes, and cached item count.
 - `libstore.strategy() -> map`: reports the storage model: SD is the canonical
-  library home, PSRAM is a transfer/cache backend when available, and live Berry
-  objects still use the Hub heap.
+  library home, PSRAM is a transfer/cache backend when available, and the
+  object heap is Hub or external depending on the active P2 profile.
 - `libstore.modules() -> list`: return the known SD module names.
 - `libstore.psram() -> map`: returns `p2.psram_info()`.
 - `libstore.exists(name) -> bool`: true when `/modules/<name>.be` exists.
@@ -404,15 +404,18 @@ and probes the current SD-first library store:
 - `libstore.info(name) -> map`: return SD path/cache metadata for one module.
 - `libstore.cached(name) -> bool`: true when the module source is already in
   the current PSRAM cache directory.
+- `libstore.cache_window() -> map`: compute the safe PSRAM cache window from
+  `p2.psram_info()`. On XMM profiles this avoids the Catalina-owned lower PSRAM
+  region and allocates from the reported block window.
 - `libstore.cache_source(name) -> map or nil`: copy one module's source text
-  from SD into the reserved PSRAM cache area when PSRAM is available. Sources
-  are stored as PSRAM chunks, so the module can be larger than one Catalina
-  transfer even though each individual read/write remains bounded by
+  from SD into the safe PSRAM cache area when PSRAM is available. Sources are
+  stored as PSRAM chunks, so the module can be larger than one Catalina transfer
+  even though each individual read/write remains bounded by
   `p2.psram_info()["max_transfer"]`.
 - `libstore.cached_source(name) -> string or nil`: read cached source text back
   from PSRAM into a temporary Hub string.
 - `libstore.cache_reset()`: clear the in-memory cache directory and reset the
-  PSRAM allocation pointer.
+  PSRAM allocation pointer from the current safe cache window.
 - `libstore.run_cached(name)`: compile and call a cached source module. This is
   mainly a diagnostic path; normal `import` still loads lazily from SD.
 - `libstore.load(name)`: load by module name, using the PSRAM source cache when

@@ -57,9 +57,11 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
   the SD card.
 - P2 VMs add `/modules` as a default lazy import root, so optional `.be`
   libraries can live on SD. `modules/libstore.be` reports the SD-first model,
-  mirrors source text into PSRAM as bounded chunks on edge32, and can load a
-  cached module by materializing source back into Hub RAM only when requested.
-  Live Berry objects and bytecode still remain in Hub RAM.
+  mirrors source text into the safe PSRAM block/cache window as bounded chunks,
+  and can load a cached module by materializing source back into active VM RAM
+  only when requested. On COMPACT edge32, live Berry objects and bytecode still
+  remain in Hub RAM; on XMM, Catalina owns the lower PSRAM window for the
+  external-memory heap and `libstore` uses the upper block window.
 - `modules/math.be` now provides the P2 `math` smoke-test surface from SD,
   avoiding the Catalina/P2 native math path and saving Hub image space.
 - `modules/taskspin.be` provides a 32-slot Spin2-shaped cooperative task API
