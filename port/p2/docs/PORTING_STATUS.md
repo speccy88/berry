@@ -26,17 +26,17 @@ This note is the handoff for the next P2 porting session.
 On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 
 - `make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds a RAM image with Catalina 8.8.9:
-  - image: `524224` bytes
-  - code: `269572` bytes
-  - const: `19292` bytes
-  - init: `8052` bytes
-  - data: `217144` bytes
+  - image: `505888` bytes
+  - code: `258772` bytes
+  - const: `18476` bytes
+  - init: `8048` bytes
+  - data: `210420` bytes
 - `make p2-edge32 CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` builds the P2 Edge 32 MB RAM profile:
-  - image: `514592` bytes
-  - code: `271644` bytes
-  - const: `19496` bytes
-  - init: `8132` bytes
-  - data: `200760` bytes
+  - image: `496256` bytes
+  - code: `260844` bytes
+  - const: `18680` bytes
+  - init: `8128` bytes
+  - data: `194036` bytes
 - `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build` flashed and booted from flash on the P2 Edge 32 MB RAM board. The boot banner reported `P2_EDGE, PSRAM`, `[edge32 profile]`, `131072 B` heap, and `33554432 B` PSRAM block API.
 - `make p2-run TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build PORT=/dev/cu.usbserial-P97cvdxp` RAM-loads and reaches the Berry prompt
 - Non-destructive SD smoke tests now live under `tests/p2/` and can be driven
@@ -46,6 +46,8 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 - P2 VMs add `/modules` as a default lazy import root, so optional `.be`
   libraries can live on SD. `modules/libstore.be` reports the SD-first model and
   the current non-active PSRAM cache status.
+- `modules/taskspin.be` provides a 32-slot Spin2-shaped cooperative task API
+  from SD, keeping this experiment out of the Hub firmware image.
 - P2 cached module loading is live-verified after the Catalina const native function hang fix:
   - `import p2`; `print(p2.cogid())` -> `0`
   - `p2.psram_info()` and `p2.psram_test()` are now exposed for the P2 Edge 32 MB RAM profile; interactive PSRAM smoke verification is still pending

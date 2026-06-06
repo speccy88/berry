@@ -4,7 +4,9 @@ This document covers the P2-specific Berry surface in the `full` profile. The
 standard upstream modules (`string`, `math`, `json`, `bytes`, `os`, and the
 core classes) keep their normal Berry behavior unless a P2 note below says
 otherwise. The P2 VM adds `/modules` as a default lazy import root so optional
-`.be` libraries can live on SD instead of consuming Hub image space.
+`.be` libraries can live on SD instead of consuming Hub image space. On edge32,
+PSRAM is available as a block-transfer backing store/cache; current code keeps
+the active Berry object heap in Hub RAM.
 
 The normal board profile is the no-PSRAM P2 Edge build:
 
@@ -396,4 +398,52 @@ Example:
 import libstore
 print(libstore.status())
 print(libstore.exists("binary_heap"))
+```
+
+## `taskspin`
+
+`taskspin` is a Berry source module under `/modules/taskspin.be`. It provides a
+Spin2-shaped cooperative task vocabulary without adding to the P2 firmware
+image. This is callback-step scheduling inside the current Berry VM, not
+stackful frame switching: each task is a closure that retains its own state and
+is called once by `TASKNEXT()`.
+
+Constants:
+
+- `taskspin.FREE`, `taskspin.RUNNING`, `taskspin.HALTED`: task status values.
+- `taskspin.STOP`, `taskspin.RUN`, `taskspin.HALT`: return values a task step
+  can use after being called by `TASKNEXT()`.
+- `taskspin.MAX_TASKS`: fixed at `32`, matching the Spin2 task vocabulary.
+
+Functions:
+
+- `taskspin.TASKSPIN(task, step, state) -> int`: create a task. Use `task=-1`
+  for the first free slot, or `0..31` for a fixed slot. `step(id, state)` is
+  called by `TASKNEXT()`.
+- `taskspin.TASKNEXT() -> int`: run the next unhalted task step and return its
+  task ID, or `-1` if no task can run.
+- `taskspin.TASKSTOP(task) -> bool`: stop/free a task. Use `-1` for current.
+- `taskspin.TASKHALT(task) -> bool`: halt a task. Use `-1` for current.
+- `taskspin.TASKCONT(task) -> bool`: continue a halted task.
+- `taskspin.TASKCHK(task) -> int`: return `FREE`, `RUNNING`, or `HALTED`.
+- `taskspin.TASKID() -> int`: current task ID, or `-1` before any task step.
+- `taskspin.reset()`: clear all slots.
+- `taskspin.info() -> map`: scheduler status and model information.
+
+Example:
+
+```berry
+import taskspin
+
+var state = {"n": 0}
+
+def blink_step(id, state)
+    state["n"] += 1
+    # do one small piece of work here
+    return state["n"] >= 10 ? taskspin.STOP : taskspin.RUN
+end
+
+taskspin.TASKSPIN(-1, blink_step, state)
+while taskspin.TASKNEXT() >= 0
+end
 ```

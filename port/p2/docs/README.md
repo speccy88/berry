@@ -206,6 +206,12 @@ On edge32, `libstore.status()` reports PSRAM availability but keeps
 future work can use the same module as the control plane for a PSRAM-backed
 source/bytecode cache.
 
+`modules/taskspin.be` is also SD-loaded. It implements a Spin2-shaped
+cooperative task API (`TASKSPIN`, `TASKNEXT`, `TASKSTOP`, `TASKHALT`,
+`TASKCONT`, `TASKCHK`, and `TASKID`) for closure-based state machines in the
+current VM. This keeps the API experiment out of the Hub image while the
+lower-level cog-local switcher design matures.
+
 Reserved-pin note on the current Catalina `P2_EDGE` path:
 
 - pins `58..61` are reserved by the SD card interface

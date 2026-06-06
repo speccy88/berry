@@ -129,7 +129,6 @@ P2_OVERRIDE_SRCS += \
 	$(P2_OVERRIDES_DIR)/be_rtoslib_p2.c \
 	$(P2_OVERRIDES_DIR)/be_spilib_p2.c \
 	$(P2_OVERRIDES_DIR)/be_spin2lib_p2.c \
-	$(P2_OVERRIDES_DIR)/be_threadslib_p2.c \
 	$(P2_OVERRIDES_DIR)/be_workerlib_p2.c
 endif
 P2_LIB_SRCS := \

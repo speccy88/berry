@@ -57,6 +57,9 @@ Short term:
   occupy Hub RAM
 - default P2 imports now search `/modules` lazily, with `libstore.be` reporting
   the SD-first model and the future PSRAM cache hook
+- `taskspin.be` is the first Spin2-shaped concurrency library kept entirely on
+  SD: it adds cooperative `TASKSPIN`/`TASKNEXT`/`TASKSTOP`/`TASKHALT`/
+  `TASKCONT`/`TASKCHK`/`TASKID` behavior without increasing the firmware image
 - keep the image under the 512 KiB Hub RAM guard for `p2-ram`
 
 Medium term:
@@ -122,6 +125,9 @@ Current implementation:
 - `rtos.process_info()` reports the backend model and current limits so examples
   and tests can detect when true closure launch, multiple process slots, or a
   cog-local task switcher become available.
+- `/modules/taskspin.be` provides a same-VM cooperative task scheduler with
+  32 task slots and Spin2-style names. It is useful now for cooperative state
+  machines and also gives the future cog-local task switcher an API target.
 
 ## Feature Coverage Plan
 

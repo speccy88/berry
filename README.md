@@ -348,8 +348,10 @@ The edge32 target includes the general smoke suite plus PSRAM block-access
 assertions.
 
 The P2 runtime also adds `/modules` to the default lazy import path, so SD
-libraries such as `binary_heap.be`, `wifi.be`, and `libstore.be` can be imported
-without enabling the larger upstream `sys` module.
+libraries such as `binary_heap.be`, `wifi.be`, `libstore.be`, and
+`taskspin.be` can be imported without enabling the larger upstream `sys`
+module. On edge32, PSRAM is exposed as block-transfer storage for future library
+cache work; the active Berry heap remains in Hub RAM.
 
 #### Reliable Catalina RAM and Flash Flow
 
