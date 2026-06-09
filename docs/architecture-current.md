@@ -33,10 +33,10 @@ make p2-xmm-run
 make p2-xmm-flash
 ```
 
-The current verified Docker/source-built Catalina cache path is:
+The current verified native macOS Catalina path is:
 
 ```sh
-make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build
+make p2 TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
 ```
 
 Important profile split:
@@ -172,7 +172,7 @@ Current verified image sizes from docs:
 ## Current known limitations
 
 - Full Berry standard-library coverage is not complete.
-- Full `.bec` loading, freshness checks, and compile-to-cache behavior are not complete.
+- Full `.bec` execution and compile-to-cache behavior are not complete; sidecar freshness manifest metadata is staged but does not enable bytecode execution.
 - `libstore` currently proves a source-cache strategy, not a complete compiled bytecode/module cache tier.
 - COMPACT `edge32` still keeps live Berry VM objects in Hub RAM.
 - The low-level grouped `p2.clock`, `p2.cog`, `p2.lock`, `p2.pin`, `p2.smart`, `p2.cordic`, `p2.math`, and `p2.rng` API now exists as aliases over current helpers, but the high-level wrapper API requested in `goal.md` is not complete.

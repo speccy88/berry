@@ -68,7 +68,6 @@ assert(libstore.status()["psram_cache_items"] >= libstore.modules().size())
 assert(libstore.cached("binary_heap"))
 assert(libstore.cached("libstore"))
 assert(libstore.cached("math"))
-assert(libstore.cached("taskspin"))
 assert(libstore.cached("wifi"))
 
 var switched = libstore.set_policy(libstore.POLICY_SD_LAZY)

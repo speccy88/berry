@@ -7,7 +7,7 @@ Catalina is the preferred and verified P2 toolchain. Use FlexC only when the tas
 Known-good validation build:
 
 ```sh
-make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build
+make p2 TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
 ```
 
 ## Profiles
@@ -46,7 +46,7 @@ make p2-xmm TOOLCHAIN=catalina
 Standalone XMM flash install uses:
 
 ```sh
-make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build
+make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
 ```
 
 If the bundled `loadp2` does not support `-FLASHRAW`, the make target uses the equivalent `-HIMEM=flash @80000000=...` raw-image path.
@@ -61,7 +61,7 @@ These P2 flags are documented policy gates. A flag being documented here does no
 - `BE_P2_TRACE_IMPORTS=0/1`: reserved import-tracing flag. Import tracing should be silent by default and must not add noisy boot prints unless explicitly enabled.
 - `BE_P2_TRACE_GC=0/1`: reserved GC-tracing flag. GC tracing should stay off by default because serial output can perturb memory and timing.
 - `BE_P2_TRACE_COGS=0/1`: reserved cog-tracing flag. Cog tracing should report through structured diagnostics where possible.
-- `BE_P2_TRACE_TASKS=0/1`: reserved task-tracing flag. Current `task` and `taskspin` diagnostics are query based.
+- `BE_P2_TRACE_TASKS=0/1`: reserved task-tracing flag. Current `task` diagnostics are query based.
 - `BE_P2_ENABLE_UNSAFE_ASM=0/1`: unsafe assembly gate. Current `p2.asm` exposes only safe intrinsics; arbitrary assembly text/blob execution must remain absent or fail unless this future flag is deliberately enabled.
 
 ## Image-size rule

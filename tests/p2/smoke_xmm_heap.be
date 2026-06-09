@@ -1,8 +1,29 @@
 print("P2_SMOKE_BEGIN xmm_heap")
 
 import p2
+import json
+import introspect
+import math
 
 var info = p2.heap_info()
+var status = p2.status_info()
+var psram = p2.psram_info()
+var fs = p2.fs_info("/")
+
+assert(status["build"]["profile"] == "xmm")
+assert(status["runtime"]["toolchain"] == "Catalina")
+assert(status["memory"]["external_heap"] == true)
+assert(status["memory"]["main_heap_total"] >= 15 * 1024 * 1024)
+assert(status["psram"]["xmm_bytes"] == 16 * 1024 * 1024)
+assert(status["psram"]["block_base"] == 16 * 1024 * 1024)
+assert(status["psram"]["block_bytes"] == 16 * 1024 * 1024)
+assert(psram["xmm_bytes"] == 16 * 1024 * 1024)
+assert(psram["block_base"] == 16 * 1024 * 1024)
+assert(psram["block_bytes"] == 16 * 1024 * 1024)
+assert(fs["mount_result_name"] == "ok")
+assert(fs["partition_start"] == 0 || fs["partition_start"] == 1 || fs["partition_start"] == 32 || fs["partition_start"] == 63 || fs["partition_start"] == 128 || fs["partition_start"] == 256 || fs["partition_start"] == 512 || fs["partition_start"] == 1024 || fs["partition_start"] == 2048 || fs["partition_start"] == 4096 || fs["partition_start"] == 8192 || fs["partition_start"] == 16384 || fs["partition_start"] == 32768 || fs["partition_start"] == 65536)
+assert(type(introspect.members(math)) == "list")
+assert(math.sqrt(81) == 9)
 
 if info["external_heap"]
     assert(info["main_ready"])

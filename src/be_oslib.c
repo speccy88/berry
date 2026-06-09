@@ -16,6 +16,10 @@
 
 #define FNAME_BUF_SIZE 512
 
+#if defined(__CATALINA__) && defined(BE_P2_PROFILE)
+extern void p2_request_exit(void);
+#endif
+
 #if BE_USE_OS_MODULE
 
 #if !BE_USE_FILE_SYSTEM
@@ -129,6 +133,9 @@ static int m_exit(bvm *vm)
             status = -1;
         }
     }
+#if defined(__CATALINA__) && defined(BE_P2_PROFILE)
+    p2_request_exit();
+#endif
     be_exit(vm, status);
     be_return_nil(vm);
 }
@@ -153,23 +160,60 @@ static int m_path_isfile(bvm *vm)
     be_return(vm);
 }
 
+static void path_split_bounds(const char *path, const char **split_out, size_t *dir_len_out)
+{
+    const char *split = be_splitpath(path);
+    size_t len = split - path;
+    if (split > path + 1 && split[-1] == '/') {
+        const char *p = split - 1;
+        for (; p >= path && *p == '/'; --p);
+        if (p >= path) {
+            len = p - path + 1;
+        }
+    }
+    *split_out = split;
+    *dir_len_out = len;
+}
+
 static int m_path_split(bvm *vm)
 {
     if (be_top(vm) >= 1 && be_isstring(vm, 1)) {
+        const char *split;
+        size_t len;
         const char *path = be_tostring(vm, 1);
-        const char *split = be_splitpath(path);
-        size_t len = split - path;
-        if (split > path + 1 && split[-1] == '/') {
-            const char *p = split - 1;
-            for (; p >= path && *p == '/'; --p);
-            if (p >= path) {
-                len = p - path + 1;
-            }
-        }
+        path_split_bounds(path, &split, &len);
         be_getbuiltin(vm, "list");
         be_pushnstring(vm, path, len);
         be_pushstring(vm, split);
         be_call(vm, 2);
+        be_return(vm);
+    }
+    be_return_nil(vm);
+}
+
+static int m_path_basename(bvm *vm)
+{
+    if (be_top(vm) >= 1 && be_isstring(vm, 1)) {
+        const char *split;
+        size_t len;
+        const char *path = be_tostring(vm, 1);
+        path_split_bounds(path, &split, &len);
+        (void)len;
+        be_pushstring(vm, split);
+        be_return(vm);
+    }
+    be_return_nil(vm);
+}
+
+static int m_path_dirname(bvm *vm)
+{
+    if (be_top(vm) >= 1 && be_isstring(vm, 1)) {
+        const char *split;
+        size_t len;
+        const char *path = be_tostring(vm, 1);
+        path_split_bounds(path, &split, &len);
+        (void)split;
+        be_pushnstring(vm, path, len);
         be_return(vm);
     }
     be_return_nil(vm);
@@ -255,6 +299,8 @@ void be_cache_osmodule(bvm *vm)
     os_module_set_func(vm, "isfile", m_path_isfile);
     os_module_set_func(vm, "exists", m_path_exists);
     os_module_set_func(vm, "split", m_path_split);
+    os_module_set_func(vm, "basename", m_path_basename);
+    os_module_set_func(vm, "dirname", m_path_dirname);
     os_module_set_func(vm, "splitext", m_path_splitext);
     os_module_set_func(vm, "join", m_path_join);
     be_setmember(vm, -2, "path");
@@ -271,6 +317,8 @@ be_native_module_attr_table(path) {
     be_native_module_function("isfile", m_path_isfile),
     be_native_module_function("exists", m_path_exists),
     be_native_module_function("split", m_path_split),
+    be_native_module_function("basename", m_path_basename),
+    be_native_module_function("dirname", m_path_dirname),
     be_native_module_function("splitext", m_path_splitext),
     be_native_module_function("join", m_path_join)
 };
@@ -297,6 +345,8 @@ module path (scope: local, file: os_path, depend: BE_USE_OS_MODULE) {
     isfile, func(m_path_isfile)
     exists, func(m_path_exists)
     split, func(m_path_split)
+    basename, func(m_path_basename)
+    dirname, func(m_path_dirname)
     splitext, func(m_path_splitext)
     join, func(m_path_join)
 }

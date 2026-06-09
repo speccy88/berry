@@ -1,5 +1,4 @@
 import p2
-import rtos
 
 print("clock")
 print(p2.clock_freq())
@@ -27,15 +26,6 @@ print(p2.cog_id())
 print(p2.cog_states())
 print(p2.cog_check(p2.cogid()))
 print(p2.cog_stack_bytes(p2.cogid()))
-
-print("locks")
-var lock = rtos.new_lock()
-print(lock)
-if lock >= 0
-    print(rtos.try_lock(lock))
-    rtos.unlock(lock)
-    rtos.delete_lock(lock)
-end
 
 print("attention")
 p2.attention_signal(1 << p2.cogid())

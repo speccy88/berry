@@ -1,11 +1,13 @@
-# P2 Edge32 SD/XMM TODO
+# P2 Edge32 Berry TODO
 
 Date created: 2026-06-06
+Last priority pass: 2026-06-07
 
 Source documents:
 
 - `port/p2/goal.md`
 - `port/p2/docs/P2_EDGE32_SD_XMM_HANDOFF.md`
+- `port/p2/DONE.md`
 
 Maintenance rule:
 
@@ -13,366 +15,193 @@ Maintenance rule:
 - Update this file and `port/p2/DONE.md` in the same change whenever a feature is added, verified, or intentionally declared unsupported.
 - Keep partially implemented work here until the implementation has tests, examples, documentation, and honest coverage notes.
 - Move only verified facts to `DONE.md`; do not count a stub or placeholder API as done.
+- Preserve first, migrate second, extend third.
 
-## Migration priorities
+Priority rule:
 
-- [ ] Preserve the implemented Edge32 memory architecture as the first priority: Catalina/XMM owns the lower pointer-safe PSRAM window for active Berry VM heap, and the upper PSRAM window is cache/storage/block-transfer space.
-- [ ] Preserve the working Edge32 SD/direct-SD path, including FAT volume fallback at sector `2048`, while the lower-XMM heap plus upper-PSRAM cache architecture is hardened.
-- [ ] Preserve working pins, I2C, SPI, SD-backed files, SD module imports, and existing Berry library behavior while migrating architecture.
-- [ ] Archive the current Spin2 native module path out of the default build; replace it later with real closure-based cog/VM support.
-- [ ] Archive the current worker native module path out of the default build; replace it later with real closure-based cog/VM support.
-- [ ] Keep roadmap-shaped/native facades opt-in until they compile, boot, and prove they do not destabilize the working Edge32 baseline.
+- P0 keeps the current working board/toolchain/SD/XMM baseline safe.
+- P1 and P2 are the most basic useful work for a MicroPython-class Berry system: standard Berry compatibility, SD imports, `.be`/`.bec`, and PSRAM cache/staging.
+- P3 and P4 expose useful Propeller 2 hardware and tests without destabilizing the VM.
+- P5 and later are hard/high-risk or lower immediate value: PASM bridges, real closure-per-cog execution, cooperative tasks, video/USB, advanced debug, and performance experiments.
 
-## XMM heap plus upper-PSRAM cache architecture
+## Alignment with `goal.md`
 
-- [ ] Keep the accepted lower-XMM/upper-cache memory split documented and enforced in the build, runtime diagnostics, and P2 smoke tests.
-- [ ] Continue validating the lower Catalina/XMM pointer-safe Berry VM heap with normal allocation, GC mark/sweep, strings, lists, maps, closures, and modules on hardware.
-- [ ] Continue integrating the upper PSRAM block/cache window for module/source storage, bytecode staging, large buffers, inactive data, and explicit block transfers.
-- [ ] Rebuild and hardware-verify the explicit pointer/cache split diagnostics through the updated `xmm-vm-probe` suite: `p2.heap_info()` should report `pointer_window_bytes == 16777216`, `psram_block_base == 16777216`, `psram_block_bytes == 16777216`, and `main_inside_pointer_window == true`; `p2.psram_info()` should report matching `pointer_window_bytes`, `cache_base`, and `cache_bytes` values on the XMM Edge32 profile.
-- [ ] Rebuild and hardware-verify the new native upper-PSRAM cache reservation API through `xmm-vm-probe`: `p2.psram_cache_reset()` should reset the reservation cursor, `p2.psram_cache_info()` should reserve the bottom of the upper 16 MiB block/cache window, stop before the existing top-1-MiB `libstore` source-cache convention, and support a `p2.psram_cache_reserve(64)` plus bounded `p2.psram_cache_write/read` round trip.
-- [ ] Run deeper GC stress across the chunked XMM heap, including allocation/free cycles that cross segment boundaries.
-- [ ] Repair the generic native `gc` module call path on XMM if the upstream-style `import gc` module is needed: enabling `BE_USE_GC_MODULE` made `import gc` work, but calling `gc.allocated()` wedged the REPL before the P2 module-entry trace printed. The P2-specific `p2.gc()` entrypoint is the working collector path for current XMM heap stress.
-- [ ] Run `/tests/p2/smoke_xmm_heap.be` through the normal SD-backed `smoke_all` flow after the XMM SD test upload/filesystem path is repaired.
-- [ ] Run a longer duration-based `xmm-heap-cross` soak, beyond the current verified two-iteration repeat, before treating external XMM heap GC as fully soaked.
-- [ ] Continue proving GC correctness with XMM PSRAM-backed objects before enabling real-cog concurrent Berry VM execution by default.
-- [ ] Preserve the current COMPACT Edge32 Hub-heap plus PSRAM block-cache image as the recovery fallback while XMM/cache work is experimental.
-- [ ] Measure the actual largest stable XMM Berry heap arena size around the current chunked `15 MiB` target while preserving the upper block/cache window.
-- [ ] Tune the final lower-XMM split between Berry VM heap and Catalina C allocator headroom: the capped build preserves the upper block/cache window and leaves a roughly `15.2 MiB` Berry heap, but `p2.c_allocator_test(262144)` now fails at the realloc stage because the C heap is intentionally capped below `16 MiB`.
-- [ ] Use `p2.heap_info()` `vm_partition_*` capacity diagnostics to tune production per-VM heap partition sizing after the current independent child `bvm` partition prototype is rebuilt and reverified.
-- [ ] Rework real-cog child VM execution with proper runtime isolation before enabling it by default: the first `p2.vm_cog_start(...)` prototype compiled and booted, but hardware smoke showed the REPL could not execute the next command after the child cog ran Berry VM code.
-- [ ] Rework real-cog child VM execution beyond the Catalina hardware-lock guardrail: the opt-in `BE_P2_ENABLE_EXPERIMENTAL_VM_COG=1` diagnostic build still leaves the next REPL command with no output after `p2.vm_cog_start(...)`, so the remaining problem is likely Catalina/Berry runtime isolation, cog stack/runtime setup, VM ownership, or service/stdio state rather than a simple shared-section race.
-- [ ] Investigate Catalina XMM C-cog startup before retrying Berry VM execution in another cog: the opt-in C-only `p2.vm_cog_ping(...)` diagnostic also leaves the next REPL command with no output, so `_cogstart_C` with the current XMM stack/runtime setup is not safe enough yet. Focus next on Hub/LUT stack placement, Catalina-supported thread/cog APIs, C runtime registration, and whether secondary C cogs can safely execute from the standalone XMM image.
-- [ ] Investigate the proper Catalina XMM threading link/runtime path before using `_threadstart_C`: simply adding `-lthreads` through `CATALINA_MLIB` for the opt-in cog diagnostic emitted Catalina linker `ERROR:` lines for undefined thread symbols, so that path is not a valid diagnostic firmware yet.
-- [ ] Verify the new Catalina build-log guard with an intentionally failing non-flash build before relying on it as a final safety gate for all future experimental profiles.
-- [ ] Use the lower-XMM multiple-VM heap partition model as the foundation for real closure-per-cog execution.
+- [ ] Keep the current architecture: SD card stores libraries/programs, imports are lazy, active VM execution stays in safe VM memory, and PSRAM is used as cache/storage/staging where safe.
+- [ ] Keep the accepted Edge32 memory split: Catalina/XMM lower pointer-safe PSRAM window for the active Berry VM heap, upper PSRAM window for cache/storage/block transfers.
+- [ ] Do not reintroduce broad rewrites, eager hub-RAM library loading, fake workers, or silent stubs.
+- [ ] Archive old Spin2/worker-style paths out of the default build; replace them later with real closure/VM-cog architecture.
+- [ ] Keep unsupported or experimental APIs behind explicit modules/build flags and make them fail loudly.
+- [ ] Keep `docs/coverage-matrix.md` honest whenever APIs move from TODO to DONE or are declared unsupported.
 
-## Immediate next steps
+## P0 - Protect the working baseline
 
-- [ ] Re-run the full scripted SD smoke suite against the provisioned P2 Edge 32 MB SD card after the latest XMM/cache changes are rebuilt.
-- [ ] Keep `p2.fs_info("/")`, FAT sector-`2048` fallback, SD-backed `import math`, and `math.sqrt(81)` in the scripted regression path.
-- [ ] Re-run SD test upload on the latest XMM image and repair only if the previous `/tests/p2/host_libstore_chunk.be` write failure still reproduces.
-- [ ] Keep the existing no-external-RAM P2 Edge Catalina profile working while Edge32/XMM work continues.
+- [ ] Add scripted regression coverage for the now-verified SD/file/os/os.path checklist on standalone XMM and non-XMM Edge32 so future work does not silently break it.
+- [ ] Keep `p2.fs_info("/")`, FAT sector-`2048` fallback, `sd_response == 0`, and FAT32 mount evidence in the scripted regression path.
+- [ ] Keep `make p2-edge32-ram`, `make p2-edge32-flash`, and `make p2-xmm-flash` working with native macOS Catalina at `/Users/fred/Documents/Code/catalina-speccy88`.
+- [ ] Keep the standalone XMM flash-loader and Catalina `cogsd.t` shared flash/SD pin ordering documented for RossH/upstream review.
+- [ ] Preserve the COMPACT Edge32 Hub-heap plus PSRAM block-cache image as a safe recovery fallback while XMM/cache/concurrency work continues.
+- [ ] Keep generated Catalina XMM `cx` libraries and indexes synchronized whenever Catalina SD/DOSFS sources are changed.
+- [ ] Review remaining native Catalina/Cake warnings for upstream merge quality, especially target-width warnings, but do not hide warnings unless they correspond to real bugs.
+- [ ] Verify the Catalina build-log guard with an intentionally failing build before relying on it as a safety gate for experimental profiles.
+- [ ] Keep SD-card write tests small, sequential, and cleanup-oriented; if corruption is observed again, stop SD writes and require host/card confirmation before continuing. Progress: newer P1 smoke additions use tiny temporary files/directories and cleanup paths, layout/import/app/example/PASM/file/config smokes refuse to pre-delete pre-existing temp paths before staging their checks, `/tests/p2/smoke_configstore.be` also proves its missing-config negative path is absent before calling `remove`, `/tests/p2/smoke_import_cwd.be`, `/tests/p2/smoke_libstore_paths.be`, and `/tests/p2/smoke_package_paths.be` remove temporary directories only when the smoke created them, and each smoke cleans up only files it stages.
 
-## Architecture and documentation
+## Closure-cog next steps
 
-The initial source research summary exists in `docs/source-research.md`. Keep refining it as deeper implementation choices need source-specific detail.
+- [ ] Replace the p38/p39 native-blinker fast path with true isolated Berry closure execution when the runtime can safely transfer executable closure state to a per-cog VM.
+- [ ] Investigate a bytecode/source transfer model for zero-upvalue and captured closures: default firmware cannot directly clone live `bclosure` pointers because closures reference per-VM proto/upvalue/GC state.
+- [ ] Revisit opt-in `BE_P2_ENABLE_EXPERIMENTAL_VM_COG` diagnostics on a smaller profile or XMM/flash target; the no-PSRAM full RAM image with this flag is currently too large for Hub RAM.
+- [ ] Fix the opt-in `BE_P2_ENABLE_EXPERIMENTAL_COG_PING` stack allocation path: the no-PSRAM full RAM image fits with this flag, but `p2.vm_cog_ping(41)` currently raises `memory_error: failed to allocate cog ping stack` before `_cogstart_C`, even though `p2.heap_info()` reports free P2 heap space.
+- [ ] Keep the unsafe shared-VM closure dispatcher disabled in default firmware; use `BE_P2_ENABLE_UNSAFE_SHARED_VM_COG` only for diagnostics.
+- [ ] Keep `/tests/p2/smoke_cog_closure.be` aligned with the default public contract: accepted p38/p39 `native_blink` closure-spawn shape plus loud rejection for unsupported shapes.
 
-## Coverage tracking
+## P1 - Berry compatibility and standard libraries
 
-The initial coverage matrix exists in `docs/coverage-matrix.md`. Keep expanding it as implementation evidence improves.
+Deferred out of current P1: exhaustive included/upstream Berry language-feature verification will be revisited in a later stage instead of blocking this P1 pass.
 
-## Berry compatibility
-
-- [ ] Verify and test all included/upstream Berry language features for this repository version.
 - [ ] Verify and test all included/upstream Berry libraries and modules.
-- [ ] Rebuild and hardware-verify the newly enabled native `introspect` module on P2 full/Edge32/XMM profiles, including the expanded `smoke_compat.be` coverage.
-- [ ] Add coverage for `input`.
-- [ ] Rebuild and hardware-verify the expanded finite `math` module surface on P2: `exp`, `log`, `log10`, `pow` with fractional/negative exponents, trig, inverse trig, and hyperbolic helpers.
-- [ ] Add native-compatible `math.nan`, `math.inf`, and invalid-result behavior for the SD-loaded P2 `math` module without using Berry division-by-zero expressions that raise `divzero_error`.
-- [ ] Run or adapt the upstream `tests/math.be` expectations for the P2 SD-loaded `math` module once `nan`/`inf` behavior is solved.
-- [ ] Add coverage for any other included Berry modules in this repository/version.
-- [ ] For each Berry module, add a normal test.
-- [ ] For each Berry module, add an SD import test.
-- [ ] For each Berry module, add a repeated import/cache test.
-- [ ] For each relevant Berry module, add a PSRAM-cache import test.
-- [ ] For each relevant Berry module, add a low-memory behavior test.
+- [ ] Add or update tests for built-ins and core features: `print`, `input`, `classname`, `classof`, `str`, `number`, `int`, `real`, `bool`, `type`, `size`, `super`, `assert`, `compile`, `module`, `issubclass`, `isinstance`, `call`, `list`, `map`, `range`, and `bytes`. Progress: `/tests/p2/smoke_compat.be` now covers the non-interactive built-ins in this list more explicitly plus map values, closures/upvalues, loop-variable closure capture, `break`/`continue`, varargs, richer `call()` expansion, `/tests/p2/smoke_call.be` now adds dedicated compact `call()` coverage for non-callable rejection, fixed-argument functions, bound instance methods, captured closures, varargs functions, varargs-only functions, terminal list expansion including explicit nil arguments and nested-list preservation, non-terminal list preservation, native function calls, moderate argument-list expansion, and class constructor calls including terminal-list expansion, `/tests/p2/smoke_vararg.be` now adds focused direct vararg, direct rest-list freshness, closure-vararg, escaped rest-list capture and mutation persistence, vararg list mutation isolation, and method-vararg and method rest-list freshness coverage, `/tests/p2/smoke_compile_module.be` now adds dedicated compact `assert`, `compile`, and `module` coverage for assert pass/fail behavior, compile success/failure, compiled closure return/capture and retained-state behavior, compiled local list/map collection mutation, compiled global lookup, compiled module-member mutation, normal module member mutation, and introspect-assisted module metadata, `/tests/p2/smoke_conversions.be` now adds dedicated compact conversion/type coverage including range type classification for `str`, `number`, `int`, `real`, numeric passthrough, negative-exponent and negative-real string conversion, invalid `int`/`real` conversion fallbacks, `bool` including bytes length truthiness, `type`, `size`, custom conversion hooks including edge values, `classname`, `classof`, `super`, `issubclass`, and `isinstance`, `/tests/p2/smoke_collections.be` now adds dedicated compact list/map/range coverage for indexing, slicing, iteration, mutation, copy/concat/find/clear, map insert/remove/keys/values snapshot isolation including post-mutation snapshots, range accessors/setrange/iteration, and selected error paths, `/tests/p2/smoke_list_core.be` now adds focused list method API shape including `size()`, iterator ordering/exhaustion, concat/keys/list-index ordering, reverse in-place behavior, bidirectional copy-isolation, and negative-mutation coverage, `/tests/p2/smoke_map_core.be` now adds focused plain-map method API shape including `keys()`/`values()`, keys/values snapshot isolation, remove/stringify/boolean-key/mixed-type-key/nil-value insert/iteration/bulk-removal coverage, `/tests/p2/smoke_range.be` now adds focused advanced range method API shape plus increment/string/setrange/error coverage including negative-increment `setrange()` retargeting, positive and negative iterator isolation and exhaustion across retargeting, and independent iterator state/exhaustion, and the non-precompiled range registration table now exports the existing native `incr()` helper so this coverage is reachable on the P2 RAM build, `/tests/p2/smoke_map_keys.be` now adds dedicated map key coverage for real keys, instance keys with custom `hash()`/`==` including equivalent-key replacement and removal, instances keys without `hash()`, and invalid hash return errors, `/tests/p2/smoke_bytes.be` now adds dedicated compact bytes coverage for method API shape including `size()`, construction, add/get endianness, resize/clear, equality/concat/append including empty-append no-op behavior, appendhex, indexing/ranges, range-slice copy isolation, mutation/index errors, bidirectional copy isolation, string conversion, and hex conversion, `/tests/p2/smoke_bytes_b64_fixed.be` now adds focused base64 API shape, one-, two-, four-, five-byte padding plus three- and six-byte no-padding quanta, plus fixed-size bytes coverage, `/tests/p2/smoke_bytes_extra.be` now adds focused extra method API shape plus float/fromhex/setbytes source preservation/reverse/length-based truthiness/fromstring-copy-isolation, shortened-string replacement and empty-string reset/appendb64/type-error coverage, and `scripts/p2/repl_smoke.py --suite compat` now stages an explicit interactive `input()` prompt/response handshake; re-running `smoke_range.be` on P2 RAM remains pending.
+- [ ] Rebuild and hardware-verify the native `introspect` module on P2 full/Edge32/XMM profiles, including expanded `smoke_compat.be` coverage. Progress: `/tests/p2/smoke_introspect.be` now adds dedicated source-level P2 smoke coverage for module/API shape, module/class/instance member lookup and mutation, method classification, pointer conversion/round-trip behavior, `solidified()`, `members()` edge cases, fallback reads, and missing-module handling, and `/tests/p2/smoke_introspect_ismethod.be` now adds focused `ismethod()` non-closure/native/static/instance, saved-bound-member, saved function-valued member, saved inherited lookup, and inherited lookup edge coverage; hardware verification remains pending.
+- [ ] Rebuild and hardware-verify the expanded finite `math` module surface on P2: `exp`, `log`, `log10`, `pow` with fractional/negative exponents, trig, inverse trig, hyperbolic helpers, rounding helpers, and angle conversion. Progress: `/tests/p2/smoke_modules.be` now covers finite trig/log/pow/hyperbolic helpers, `floor`, `ceil`, `round`, `deg`, and `rad`; hardware verification remains pending.
+- [ ] Use P2 CORDIC where it is correct and measurable for `math` acceleration, but keep Berry semantics and finite/error behavior compatible. Progress: SD `math.be` uses P2 CORDIC for compatible scaled trig/polar paths (`sin`, `cos`, `tan`, `atan2`, and indirect `asin`/`acos`) when `p2.polxy()` / `p2.xypol()` are available, keeps pure-Berry fallbacks otherwise, and now exposes `math.accel_info()` so smokes can assert the active backend without claiming unsafe acceleration for `sqrt`, `exp`, or `log`; hardware timing/measurement remains pending.
+- [ ] Add native-compatible `math.nan`, `math.inf`, and invalid-result behavior for the SD-loaded P2 `math` module without relying on Berry division-by-zero expressions that raise `divzero_error`. Progress: `modules/math.be` now creates `math.nan` and `math.inf` with `real("nan")` / `real("inf")`, updates `math.isinf()`, and `/tests/p2/smoke_modules.be` covers special constants plus invalid finite operations returning `nil`; hardware verification remains pending.
+- [ ] Run or adapt upstream `tests/math.be` expectations for the P2 SD-loaded `math` module once `nan`/`inf` behavior is solved. Progress: P2 smoke now covers the first `nan`/`inf` and invalid-result subset, and `/tests/p2/smoke_math_parity.be` now adds focused adapted upstream coverage for `nan`/`inf` JSON dumping, `round` including half-boundaries around zero, `abs` sign/type behavior, `min`/`max` value/type/error behavior, no-argument fallbacks, deterministic `srand`/`rand`, and core constants; broader hardware verification remains pending.
+- [ ] Verify and document `json`, `string`, `time`, `global`, `solidify`, `strict`, `debug`, `sys`, file/open, `os`, `os.path`, and any other included modules in this repository/version. Progress: `configstore` now adds a P2 source module that uses `json` for `/berry/config/*.json`, `/tests/p2/smoke_stdlib.be` adds expanded compact behavior coverage for `string`, `json`, `time`, `global`, `solidify`, and `strict`, including string prefix/suffix negatives, multiplication behavior, JSON parse freshness after caller-side mutation, caller-owned dump-state preservation, deterministic fixed-epoch and leap-day time dumps, compact `time.dump()` snapshot freshness, invalid time input, and strict-mode compile errors, `/tests/p2/smoke_global.be` now adds dedicated cleanup-oriented native global-module coverage for API/helper shape, contains/listing/member lookup, compile visibility, mutation, list- and map-valued globals, non-string edge cases including bool and nil, idempotent undef cleanup, global table view after create/remove, and undef/redefine behavior, `/tests/p2/smoke_string.be` now adds dedicated compact native string-module coverage for module/API shape, find/count including empty-subject boundaries, no-match, and adjacent multi-character behavior/split, escape/translate/replace including adjacent-match and expanding replacement semantics, format conversions, range indexing, prefix/suffix helpers including empty-subject negatives, and string multiplication, `/tests/p2/smoke_string_format_extra.be` now adds focused format conversion edge, repeated `%i`/`%c` custom conversion-hook invocation, adjacent literal, and invalid string-multiplication coverage, `/tests/p2/smoke_json.be` now adds dedicated compact native JSON coverage for module/API shape, scalar/exponent parsing, escape and Unicode decoding, empty container load/dump behavior, malformed input and trailing-token rejection, nested object/list parsing, whitespace-tolerant object/list/top-level array and scalar parsing, formatted dumps including nested-list indentation, map subclass dumps, and round trips, `/tests/p2/smoke_json_advanced.be` now adds compact advanced JSON coverage for Unicode expansion including escaped object-key and multi-entry array-value decoding, invalid escapes/control characters, long strings, and nested Unicode structures, `/tests/p2/smoke_json_stack.be` now adds compact generated-object, wrapped generated-object, generated-list, generated matrix, and mixed object/list JSON stack/growth coverage, `/tests/p2/smoke_time.be` now adds dedicated native time-module coverage for module/API shape, `clock()`, deterministic `dump()` maps including leap-day epoch conversion, integer dump-field shape, dump-map mutation isolation, invalid scalar including bool-false and empty/non-empty collection dump inputs, and `time()`/`dump(time())` consistency, `/tests/p2/smoke_solidify.be` now adds dedicated low-noise native solidify coverage for API shape, introspected helper discovery, no-argument behavior, invalid-type errors for dump and compact, repeated compact idempotence, compacting tiny classes, repeated compaction idempotence, inherited method behavior after compaction, static member/method read and mutation behavior after compaction, and optional `nocompact()` including invalid inputs when present, `/tests/p2/smoke_debug.be` now adds dedicated debug-module coverage for API shape, introspected helper discovery, class and instance `attrdump()` no-crash behavior, zero-depth and too-deep `caller()` boundary handling, and direct, wrapped, and nested `caller()` stack introspection with `introspect.name()`, `/tests/p2/smoke_sys.be` now adds dedicated native `sys` coverage for module/API shape, `path()` fresh-list identity plus list shape/copy and element-mutation isolation, `path_add()` invalid-argument errors including nil and list inputs, direct native path append, import-root snapshot isolation, and importing a tiny module from that appended root, `/tests/p2/smoke_strict.be` now adds dedicated strict compiler-mode coverage for side-effect checks, missing-global rejection, function-scope missing-global rejection, known-global compile visibility, function-scope known-global visibility, method-body plus branch-, loop-, and conditional-expression known-global visibility, and cleanup-after-undef rejection, and `/tests/p2/smoke_sd.be` now covers compact file/open append-create and append plus `r+`, `w+`, and `a+` read/write modes plus `os`/`os.path` file, missing-path, basename/dirname/split/splitext including local no-extension paths, join helper, directory listing, cwd-relative file, and directory cleanup behavior; hardware verification remains pending.
+- [ ] For each Berry module, add a normal test, SD import test, repeated import/cache test, and low-memory behavior test where meaningful. Progress: `/tests/p2/smoke_stdlib.be` adds normal behavior coverage for selected standard modules, `/tests/p2/smoke_import_all_libs.be` adds safe import coverage for the current SD module set including `p2compat`, `p2ipc`, `p2mem`, and `task`, and now verifies each module reports this smoke as its SD import metadata anchor plus behavior-smoke metadata while keeping `wifi` hardware-deferred and matching `libstore.info()` / `source_stats()` source size/hash metadata, `/tests/p2/smoke_module_inventory.be` checks metadata coverage for the full current SD module set, returned inventory/source_stats source path/size/hash parity, and compiled-summary mutation isolation, `libstore.info()` / `libstore.inventory()` now expose per-module coverage metadata for behavior, SD import, repeated import/cache, PSRAM source-cache, low-memory churn, metadata, and hardware-deferred cases, `/tests/p2/smoke_import_cache.be` adds read-only repeated-import/module-identity coverage for the full current SD module set plus native `json`, and now verifies each module reports the repeated-import, cache, SD-import, and low-memory smoke metadata anchors consistently plus matching `libstore.info()` / `source_stats()` source size/hash metadata, `/tests/p2/smoke_import_churn.be` adds bounded allocation/GC/import-churn coverage for the full current SD module set plus native `json`, and now verifies each module reports the low-memory, repeated-import, cache, and SD-import smoke metadata anchors consistently plus matching `libstore.info()` / `source_stats()` source size/hash metadata, and optional `libstore.cache_source("math")` PSRAM source-cache coverage runs when the active policy supports it; broader hardware verification remains pending.
+- [ ] For each relevant Berry module, add a PSRAM-cache import test once the cache path is wired to real users. Progress: `/tests/p2/smoke_import_cache.be` conditionally exercises `libstore.cache_source(name)` and `libstore.cached_source(name)` for the full current SD module set when PSRAM source-cache policy is available; broader bytecode/cache-user integration and hardware verification remain pending.
+- [ ] Document host-like APIs that cannot be provided on bare-metal P2 instead of pretending they work. Progress: `modules/p2compat.be` now exposes declarative capability metadata for supported, staged, partial, and unsupported bare-metal features, including supported package-style SD imports, supported native `sys` path helpers, staged `.bec` manifest/cache metadata, valid status discovery, `items_by_status(status)` filtered capability queries, name-list helpers, `report()` snapshots for tooling, `audit()` self-checks for duplicate names, unknown statuses, and count consistency, and concise `audit_problems()` / `audit_ok()` helpers; record-returning helpers now copy capability records before returning them; `/tests/p2/smoke_p2compat.be` checks unsupported host-like capabilities such as environment variables, subprocesses, generic sockets, and native host threads plus capability summary/inventory consistency, status discovery, status-filter behavior, name-list behavior, report consistency, audit consistency, audit-problem behavior, returned-list mutation isolation, returned-record mutation isolation, summary snapshot mutation isolation, report nested-summary mutation isolation, and bytecode snapshot mutation isolation; hardware verification remains pending.
 
-## SD layout and import system
+## P1 - SD layout and import system
 
-- [ ] Support `/berry/main.be`.
-- [ ] Support `/berry/lib/*.be`.
-- [ ] Support `/berry/lib/*.bec`.
-- [ ] Support `/berry/app/*.be`.
-- [ ] Support `/berry/app/*.bec`.
-- [ ] Support `/berry/cache/*.bec`.
-- [ ] Support `/berry/config/*.json`.
-- [ ] Support `/berry/examples/*`.
-- [ ] Support `/berry/pasm/*`.
-- [ ] Preserve native-module-first import resolution.
-- [ ] Preserve current-directory import resolution.
-- [ ] Add or verify configured `sys.path` import resolution.
-- [ ] Prefer valid and newer `.bec` files over `.be`.
-- [ ] Fall back to `.be` when `.bec` is missing, invalid, or stale.
-- [ ] Add optional compile-to-cache behavior.
-- [ ] Add or verify the global module cache.
-- [ ] Preserve lazy loading.
-- [ ] Use PSRAM-backed inactive module/cache storage where safe.
+- [ ] Support `/berry/main.be` as a default application entry path. Progress: startup now attempts `/berry/main.be` once after VM creation and falls through to REPL when it is absent or fails; `/tests/p2/smoke_sd_main.be` stages import-capable path coverage, refuses to overwrite a pre-existing `/berry/main.be`, verifies the staged file appears before `run_file()` and is gone after cleanup, and removes only the test main file it created. Hardware boot verification is still pending.
+- [ ] Support `/berry/lib/*.be` and `/berry/app/*.be` as source import/application paths. Progress: the P2 VM default module roots now include `/BERRY/LIB` and `/BERRY/APP`, `libstore.paths` mirrors `/berry/lib` and `/berry/app`, `/tests/p2/smoke_import_layout.be` stages tiny flat `/berry/lib` and `/berry/app` imports plus a nested `/berry/lib` package import, pins matching `libstore.source_path()` / `info()` diagnostics, then removes only the temporary source files/directories it created, `/tests/p2/smoke_import_alias.be` checks `import name as alias` for native and SD-loaded modules plus repeated SD alias imports preserving the cached module object and matching `libstore.source_path()` / `info()` diagnostics, `/tests/p2/smoke_import_order.be` checks `/MODULES` remains ahead of `/BERRY/LIB` and `/BERRY/APP`, `/BERRY/LIB` remains ahead of `/BERRY/APP`, repeated aliased imports keep the selected module cached, and `libstore.source_path()` plus `libstore.info()` mirror the winning roots, `libstore` maps dotted names like `pkg.mod` and `pkg.other` to nested source paths like `pkg/mod.be` and `pkg/other.be` for diagnostics/loading, the native importer now maps string imports such as `import "pkg.mod" as mod`, bare dotted imports such as `import pkg.mod`, and comma-separated dotted imports such as `import pkg.mod, pkg.other` to nested filesystem paths, and `libstore.app_path/app_exists/run_app` provide explicit `/berry/app` application helpers including dotted nested app paths and missing-app path/existence/run fallbacks; hardware verification remains pending.
+- [ ] Support `/berry/lib/*.bec`, `/berry/app/*.bec`, and `/berry/cache/*.bec` when compiled bytecode/cache support is ready. Progress: `libstore.compiled_path(name)`, `libstore.compiled_stats(name)`, `libstore.compiled_manifest_path(name)`, and `libstore.compiled_freshness(name)` now detect staged `.bec` candidates and `<module>.bec.json` sidecar freshness manifests under `/berry/cache`, `/berry/lib`, and `/berry/app` with size/hash/freshness metadata; `BE_P2_ENABLE_BYTECODE_LOADER` gates an opt-in bytecode-loader build flag, `BE_P2_ENABLE_BYTECODE_EXECUTION` gates the separate execution policy, `p2.status_info()["build"]` reports saver/loader/execution flags, and `libstore.compiled_execution_probe()` reports loader/validator/execution state while default firmware keeps `compiled_supported == false` / `compiled_usable == false`.
+- [ ] Support `/berry/config/*.json`, `/berry/examples/*`, and `/berry/pasm/*` as documented SD layout locations. Progress: `scripts/p2/repl_upload.py` can now create empty target directories with `--mkdir`, opt-in make targets `p2-sd-berry-dirs`, `p2-sd-berry-examples`, and `p2-sd-berry-sync` provision the staged `/berry/...` layout without changing conservative `p2-sd-sync`, `modules/configstore.be` plus `/tests/p2/smoke_configstore.be` add JSON config coverage for `/berry/config/*.json` including case-insensitive `.json` suffix normalization, filename-only name/path validation, missing-load fallback pass-through, and fresh reload behavior after caller-side mutation, `libstore.example_path/example_exists/run_example` plus `/tests/p2/smoke_example_paths.be` add `/berry/examples` source helper coverage including dotted nested example paths and missing-example path/existence/run behavior, and `libstore.pasm_path/pasm_exists/pasm_info` plus `/tests/p2/smoke_pasm_layout.be` add non-executing `/berry/pasm/*.bin` detection coverage including dotted nested blob paths and missing-blob path/existence/info behavior; PASM execution remains deferred and hardware provisioning/smoke verification remain pending.
+- [ ] Preserve native-module-first import resolution. Progress: the new source roots are appended after `/MODULES`, leaving native module cache/lookup order untouched, and `/tests/p2/smoke_import_native_first.be` now stages fake `/berry/lib/json.be` and `/berry/app/json.be` shadows, refuses to overwrite pre-existing files, verifies native `json` wins across repeated aliased imports, and pins repeated native import cache identity with `introspect.toptr()`; hardware regression is still pending.
+- [ ] Preserve current-directory import resolution. Progress: `/tests/p2/smoke_import_cwd.be` now stages a tiny module in the active SD working directory plus a same-name `/berry/app` shadow, verifies the active directory wins, restores the previous directory, re-imports through an alias to confirm cached cwd module identity with both mutation visibility and `introspect.toptr()`, and removes the temporary source files and working directory; hardware verification remains pending.
+- [ ] Add or verify configured `sys.path` import resolution. Progress: P2 uses the Berry VM module path list via `be_module_path_set()` rather than enabling a host-like mutable list object; `/MODULES`, `/BERRY/LIB`, and `/BERRY/APP` are configured at VM startup. `sys.path_add(path)` now appends a deliberate import root to the VM module search path, `libstore.path_add(path)` bridges to it for source-loader diagnostics/cache/loading without duplicating VM roots on repeated calls, `/tests/p2/smoke_libstore_paths.be` exercises a scoped temporary custom root without mutating the default `/berry/app` root, pins matching `libstore.source_path()` / `info()` diagnostics, and checks `libstore.path_list()` snapshot mutation isolation, and `/tests/p2/smoke_sys_path_add.be` stages a tiny module under a new root, verifies duplicate-safe append behavior, pins matching `libstore.source_path()` / `info()` diagnostics, and imports it through the native importer; removal/reordering of VM import paths remains unsupported.
+- [ ] Prefer valid/newer `.bec` over `.be` when possible. Progress: `libstore.source_stats(name)`, `libstore.compiled_stats(name)`, `libstore.compiled_freshness(name)`, `libstore.compiled_validation(name)`, `libstore.compiled_status(name)`, `libstore.compiled_status_text(name)`, `libstore.compiled_inventory()`, `libstore.compiled_inventory_text()`, `libstore.compiled_summary()`, `libstore.compiled_summary_text()`, `libstore.compiled_loadable()`, `libstore.compiled_loadable_text()`, `libstore.compiled_emittable()`, `libstore.compiled_emittable_text()`, `libstore.compiled_blocked()`, `libstore.compiled_blocked_text()`, `libstore.compiled_provision_plan()`, and `libstore.compiled_provision_plan_text()` now provide source/staged-bytecode size/hash/freshness metadata plus explicit validator/load/emit diagnostics, aggregate readiness counts, blocker-reason histograms, JSON exports, and provisioning candidate lists/plans, with `/tests/p2/smoke_bec_fallback.be` pinning staged `info()` parity against `source_stats()` and `compiled_stats()`; `libstore.compiled_execution_probe()` now reports snapshot-safe execution policy diagnostics, and `libstore.compiled_load_plan(name)` plus loud-failing `libstore.load_compiled(name)` expose the future `.bec` execution hook without changing source fallback; and `libstore.resolve(name)` exposes selected path/kind/reason plus `compiled_preferred` and `compiled_blocked_reason` metadata. `.bec` execution remains off in default firmware and staged bytecode is marked usable only when an opt-in loader build and `BE_P2_ENABLE_BYTECODE_EXECUTION` policy both report support; build/hardware validation of that opt-in path remains pending.
+- [ ] Fall back to `.be` when `.bec` is missing, invalid, stale, or unsupported. Progress: `.bec` is currently marked unsupported, `libstore.resolve(name)` reports `compiled_unsupported_source_fallback` when a `.bec` and matching `.be` both exist, `libstore.compiled_manifest(name)` now validates sidecar format/module/hash fields, and `/tests/p2/smoke_bec_fallback.be` stages dummy matched, invalid JSON, invalid format, module-mismatch, missing-hash, fresh-manifest-but-execution-disabled, stale-manifest, compiled-only, and fully-missing cases to prove source fallback and negative planning reasons remain explicit; hardware verification remains pending.
+- [ ] Add optional compile-to-cache behavior for `.be` to `.bec` where feasible. Progress: `libstore.compile_cache_plan(name)` reports the future `.bec` target path, sidecar manifest target, manifest format, manifest template data when source and staged bytecode both exist, source/compiled metadata, required validator/execution support, and explicit `emit_blocked_reason`; `libstore.compile_cache_plan_many(names)`, `compile_cache_plan_many_text(names)`, `compile_cache_plan_all()`, `compile_cache_plan_all_text()`, `compile_cache_provision_plan(names)`, `compile_cache_provision_plan_text(names)`, `compile_cache_provision_plan_all()`, `compile_cache_provision_plan_all_text()`, `compile_cache_emittable(names)`, `compile_cache_emittable_text(names)`, `compile_cache_blocked(names)`, `compile_cache_blocked_text(names)`, `compile_cache_emittable_all()`, `compile_cache_emittable_all_text()`, `compile_cache_blocked_all()`, `compile_cache_blocked_all_text()`, `compile_cache_emit_many(names)`, and `compile_cache_emit_all()` provide explicit bulk planning/emission helpers, dry-run provisioning plans, blocker-reason histograms, candidate filters, and JSON exports for opt-in provisioning; `libstore.compiled_manifest_text(name)` previews the JSON sidecar content; `BE_P2_ENABLE_BYTECODE_SAVER` now gates an opt-in P2 bytecode-saver build, and `libstore.compile_cache_probe()` / `libstore.compile_cache_emit(name)` can emit a `.bec` plus sidecar manifest only when that saver is present. Default P2 firmware still reports `bytecode_emit_unavailable`; loader execution is separately gated by `BE_P2_ENABLE_BYTECODE_LOADER` and still needs build/hardware validation before it can leave TODO.
+- [ ] Add or verify global module cache behavior. Progress: `/tests/p2/smoke_import_cache.be` checks repeated imports preserve module identity for native and SD-loaded modules and now verifies deterministic source metadata plus PSRAM source-cache hit/miss accounting for SD modules, `/tests/p2/smoke_package_paths.be` checks string, bare dotted, default-binding, and comma-separated dotted package imports reuse the same cached module object, and `/tests/p2/smoke_import_missing.be` verifies repeated missing imports fail catchably, do not create bogus selected/compiled-status metadata, and do not poison the cache when a previously missing SD module is staged, imported, mutated, reimported, and reported through recovered source metadata; hardware verification is still pending.
+- [ ] Preserve lazy loading and avoid eager hub-RAM loading of all libraries. Progress: `/tests/p2/smoke_libraries.be` asserts `libstore.status()["lazy"] == true`, SD-backed library storage, zero eager PSRAM-cache items before explicit cache use, no direct PSRAM execution, honest `.bec` fallback/freshness metadata, and caller-mutation isolation for `libstore.status()`, `libstore.policy()`, `libstore.strategy()`, and `libstore.modules()` diagnostics; recent P2 RAM parser feedback was folded back into parser-safe strategy assertions; hardware verification of the latest expanded smoke remains pending.
+- [ ] Upload/provision SD module tests such as `/modules/math.be` and verify SD-backed `import math` on XMM and non-XMM profiles.
+- [ ] Re-run the full scripted SD smoke suite against the provisioned P2 Edge32 SD card after import/cache changes, including the new `/tests/p2/smoke_vm_ops.be`, `/tests/p2/smoke_vm_error_paths.be`, `/tests/p2/smoke_be_api_edges.be`, `/tests/p2/smoke_debug.be`, `/tests/p2/smoke_operator_overload.be`, `/tests/p2/smoke_function_capture.be`, `/tests/p2/smoke_closure.be`, `/tests/p2/smoke_vararg.be`, `/tests/p2/smoke_compiler_parser.be`, `/tests/p2/smoke_for_loop.be`, `/tests/p2/smoke_errors.be`, `/tests/p2/smoke_exception_assert.be`, `/tests/p2/smoke_classes.be`, `/tests/p2/smoke_member_indirect.be`, `/tests/p2/smoke_static_classes.be`, `/tests/p2/smoke_static_decls.be`, `/tests/p2/smoke_static_super_member.be`, `/tests/p2/smoke_class_const.be`, `/tests/p2/smoke_module_system.be`, `/tests/p2/smoke_module_attrs.be`, `/tests/p2/smoke_int_numeric.be`, `/tests/p2/smoke_super.be`, `/tests/p2/smoke_subobject.be`, `/tests/p2/smoke_list_core.be`, `/tests/p2/smoke_range.be`, `/tests/p2/smoke_map_core.be`, `/tests/p2/smoke_map_keys.be`, `/tests/p2/smoke_bytes_b64_fixed.be`, `/tests/p2/smoke_bytes_extra.be`, `/tests/p2/smoke_introspect_ismethod.be`, `/tests/p2/smoke_virtual_members.be`, `/tests/p2/smoke_virtual_setmember.be`, `/tests/p2/smoke_syntax.be`, `/tests/p2/smoke_walrus_edges.be`, `/tests/p2/smoke_lexer.be`, `/tests/p2/smoke_cond_expr.be`, `/tests/p2/smoke_compound.be`, `/tests/p2/smoke_assignment.be`, `/tests/p2/smoke_reference.be`, `/tests/p2/smoke_suffix.be`, `/tests/p2/smoke_bool.be`, `/tests/p2/smoke_relop.be`, `/tests/p2/smoke_divzero.be`, `/tests/p2/smoke_import_layout.be`, `/tests/p2/smoke_import_alias.be`, `/tests/p2/smoke_import_cwd.be`, `/tests/p2/smoke_import_native_first.be`, `/tests/p2/smoke_import_missing.be`, `/tests/p2/smoke_import_order.be`, `/tests/p2/smoke_libstore_paths.be`, `/tests/p2/smoke_sys_path_add.be`, `/tests/p2/smoke_package_paths.be`, `/tests/p2/smoke_app_paths.be`, `/tests/p2/smoke_example_paths.be`, `/tests/p2/smoke_pasm_layout.be`, `/tests/p2/smoke_sd_main.be`, `/tests/p2/smoke_import_cache.be`, `/tests/p2/smoke_import_churn.be`, `/tests/p2/smoke_import_all_libs.be`, `/tests/p2/smoke_module_inventory.be`, `/tests/p2/smoke_bec_fallback.be`, `/tests/p2/smoke_configstore.be`, `/tests/p2/smoke_stdlib.be`, `/tests/p2/smoke_string_format_extra.be`, `/tests/p2/smoke_json_advanced.be`, `/tests/p2/smoke_json_stack.be`, `/tests/p2/smoke_math_parity.be`, and `/tests/p2/smoke_p2compat.be` coverage.
+- [x] Run the XMM external-heap GC stress smoke on the P2 Edge 32 MB board. Result: `/tests/p2/smoke_xmm_gc_stress.be` passed on the standalone XMM image. The smoke reported an external Berry heap, kept retained lists/maps/strings/closures alive across GC, reclaimed temporary churn back to the same free-heap level on four rounds, stayed inside the pointer-addressable lower PSRAM window, and finished with only `800` bytes below its baseline free heap.
 
-## PSRAM cache and memory model
+## P2 - PSRAM cache, module cache, and memory model
 
-- [ ] Use PSRAM aggressively as a cache/storage tier for inactive modules, bytecode, source cache, compiled cache, large buffers, and inactive data.
-- [ ] Keep active VM heap, stacks, executing bytecode/pages, prototypes, and live GC-managed objects in safe VM memory.
+- [ ] Continue validating the lower Catalina/XMM pointer-safe Berry VM heap with allocation, GC mark/sweep, strings, lists, maps, closures, and modules on hardware.
+- [ ] Run deeper GC stress across the chunked XMM heap, including allocation/free cycles that cross segment boundaries.
+- [ ] Run longer duration-based `xmm-heap-cross` soak beyond the current short repeat before treating external XMM heap GC as fully soaked.
+- [ ] Keep active VM heap, active stacks, executing bytecode/pages, prototypes, and live GC-managed objects in safe VM memory.
 - [ ] Stage active code/data from PSRAM into hub RAM only when needed.
 - [ ] Do not store arbitrary live Berry GC objects in PSRAM unless safe pointer-like random access is proven by tests.
-- [ ] Add low-memory behavior tests.
-- [ ] Track hub RAM high-water marks.
-- [ ] Track PSRAM usage.
-- [ ] Add cache eviction behavior.
-- [ ] Add source hash tracking.
-- [ ] Add compiled hash tracking.
-- [ ] Add module/cache metadata tracking.
+- [ ] Use the upper PSRAM block/cache window for inactive modules, bytecode, source cache, compiled cache, large buffers, inactive data, and explicit block transfers.
 - [ ] Replace the temporary native PSRAM cache bump cursor with coordinated cache metadata/ownership once module cache, large-buffer cache, and compiled-cache users share the same upper-PSRAM window.
 - [ ] Replace the fixed-size native PSRAM cache reservation table with reusable/freeable cache records once eviction and ownership policies are implemented.
-- [ ] Replace the temporary LIFO-only `p2.psram_cache_release(index)` policy with real free/reuse/eviction semantics when non-stack-like cache lifetimes are needed.
-- [ ] Decide whether final native PSRAM cache users should use entry-index handles, named handles, or owner-scoped handles before wiring module bytecode/source caches to the table.
-- [ ] Integrate the existing owner-scoped native PSRAM cache helper APIs into real module/source/bytecode users once the facade is rebuilt and hardware-verified.
-- [ ] Decide whether final module/source/bytecode cache users should use the current LIFO-safe `p2mem.native_cache_replace(owner, data)` helper, keep stack-like owner history, or forbid repeated owner reservations.
-- [ ] Add negative coverage for native PSRAM cache bounds: `p2.psram_cache_read/write` should reject lower-XMM addresses and the top-1-MiB `libstore` reserve.
-- [ ] Add negative coverage for native PSRAM cache reservations: `p2.psram_cache_read/write` should reject addresses inside the native cache window that have not been reserved yet.
-- [ ] Add capacity/error coverage for the fixed native PSRAM cache reservation table when more than 16 entries are requested.
-- [ ] Add negative coverage for `p2.psram_cache_read_entry/write_entry`: invalid index, offset beyond entry size, and transfer crossing entry bounds.
-- [ ] Add negative coverage for `p2.psram_cache_release(index)` when attempting to release a non-latest reservation.
-- [ ] Add broader coverage for repeated owners in `p2.psram_cache_find(owner)` when more than two reservations share an owner tag.
-- [ ] Add negative coverage for `p2mem.native_cache_replace(owner, data)` when the latest owner match is not the newest global cache reservation and therefore cannot be safely released by the LIFO policy.
-- [ ] Add negative coverage for `p2mem.native_cache_release_owner(owner)` when the owner is missing or the latest owner match is not the newest global cache reservation.
-- [ ] Add negative coverage for `p2mem.native_cache_release_owner_chain(owner)` when another owner has a newer reservation and blocks full owner-history pruning.
-- [ ] Add module cache hit and miss counts.
-- [ ] Add refcount or pinned-state tracking.
-- [ ] Add last-used timestamp tracking where available.
+- [ ] Replace temporary LIFO-only `p2.psram_cache_release(index)` with real free/reuse/eviction semantics when non-stack-like cache lifetimes are needed.
+- [ ] Decide whether final native PSRAM cache users should use entry-index handles, named handles, or owner-scoped handles.
+- [ ] Integrate owner-scoped native PSRAM cache helper APIs into real module/source/bytecode users after XMM smoke suites pass.
+- [ ] Add cache eviction behavior, cache hit/miss counts, refcount or pinned-state tracking, last-used tracking, source hash tracking, compiled hash tracking, and module/cache metadata. Progress: `libstore` now tracks source hash, source size, compiled hash, compiled size, compiled freshness/usable reason, source-cache hit/miss counts, and last-used counters for the current PSRAM source-cache path, `libstore.status()`, `libstore.strategy()` including module-path list content, `libstore.info()`, `libstore.inventory()`, `libstore.source_stats()`, and `libstore.compiled_stats()` expose per-module source/compiled/cache metadata with snapshot mutation-isolation coverage, with parser-safe policy support checks after the P2 RAM smoke feedback, `p2mem.module(name)` provides a single-module diagnostics lookup, and `/tests/p2/smoke_libraries.be` now checks `p2mem.stats()`, `p2mem.module(name)`, `p2mem.modules()`, `p2mem.cache()` status/item-list, `p2mem.gc()`, and `p2mem.evict()` diagnostics snapshot mutation isolation, with cache-item shape checks using a fresh post-mutation snapshot; eviction, refcount/pinned state, and broader cache policy remain open.
+- [ ] Add negative coverage for native PSRAM cache bounds, invalid reservations, invalid indexes, over-capacity, transfer crossing entry bounds, and blocked LIFO releases while temporary policies remain.
+- [ ] Add low-memory behavior tests, hub RAM high-water mark tracking, and PSRAM usage tracking.
+- [ ] Keep `p2mem` diagnostics aligned with actual cache users: stats, modules, cache, GC/evict hooks, native cache status, and compiled path/hash/mtime once `.bec` exists.
 
-## Diagnostics modules
+## P2 - Documentation and coverage tracking
 
-- [ ] Add real compiled path/hash/mtime tracking to `p2mem` once `.bec` support exists.
-- [ ] Add real module cache hit/miss, refcount, pinned, and last-used tracking to `p2mem`.
-- [ ] Rebuild and verify `p2mem.native_cache()`, `p2mem.stats()["native_cache"]`, and `p2mem.cache()["native"]` on XMM after the native upper-PSRAM cache reservation table is compiled into the firmware and `/modules/p2mem.be` is available on SD.
-- [ ] Rebuild and verify the `p2mem` native-cache facade helpers on XMM through the new `xmm-p2mem-native-cache` smoke suite: `native_cache_reset`, `native_cache_reserve`, `native_cache_find`, `native_cache_write`, `native_cache_read`, and `native_cache_release`.
-- [ ] Rebuild and verify native PSRAM cache payload-size tracking and the `p2mem.native_cache_put/get` helpers on XMM through the `xmm-p2mem-native-cache` smoke suite.
-- [ ] Rebuild and verify native PSRAM cache write metadata (`write_count`, `last_write_offset`, and `last_write_size`) on XMM through `xmm-vm-probe` and `xmm-p2mem-native-cache`.
-- [ ] Rebuild and verify native PSRAM cache simple write checksums (`last_write_checksum`) on XMM through `xmm-vm-probe` and `xmm-p2mem-native-cache`.
-- [ ] Rebuild and verify native PSRAM cache checksum read-back verification (`p2.psram_cache_verify_entry` and `p2mem.native_cache_verify_owner`) on XMM through `xmm-vm-probe` and `xmm-p2mem-native-cache`.
-- [ ] Rebuild and verify `p2mem.native_cache_get_verified(owner)` on XMM through `xmm-p2mem-native-cache`.
-- [ ] Rebuild and verify `p2mem.native_cache_status(owner)` on XMM through `xmm-p2mem-native-cache`.
-- [ ] Rebuild and verify `p2mem.native_cache_put_verified(owner, data)` on XMM through `xmm-p2mem-native-cache`.
-- [ ] Rebuild and verify `p2mem.native_cache_replace_verified(owner, data)` on XMM through `xmm-p2mem-native-cache`.
-- [ ] Rebuild and verify source-namespaced native cache helpers (`native_source_put_verified`, `native_source_status`, `native_source_get_verified`, `native_source_release`) on XMM through `xmm-p2mem-native-cache`.
-- [ ] Rebuild and verify module-source native cache helpers (`native_module_source_put_verified`, `native_module_source_status`, `native_module_source_get_verified`, `native_module_source_release`) on XMM through `xmm-p2mem-native-cache`.
-- [ ] Rebuild and verify `p2mem.native_module_sources_plan(names)` on XMM through `xmm-p2mem-native-cache`.
-- [ ] Add negative planning coverage where `p2mem.native_module_sources_plan(names)` reports `will_fit == false` because sources are missing or native cache free space is insufficient.
-- [ ] Rebuild and verify aligned native-cache reservation accounting in `p2mem.native_module_sources_plan(names)` on XMM through `xmm-p2mem-native-cache`.
-- [ ] Rebuild and verify `p2mem.native_module_sources_warm_verified(names)` on XMM through `xmm-p2mem-native-cache`.
-- [ ] Rebuild and verify `p2mem.native_module_sources_warm_if_fits(names)` on XMM through `xmm-p2mem-native-cache`.
-- [ ] Rebuild and verify `p2mem.native_module_sources_status(names)` and `p2mem.native_module_sources_release(names)` on XMM through `xmm-p2mem-native-cache`.
-- [ ] Wire source-namespaced native cache helpers into actual module/source import caching only after the SD import path and native cache smoke suites are hardware-verified.
-- [ ] Wire native PSRAM cache write metadata into real module/source/bytecode cache hit/miss accounting once those cache users exist.
+- [ ] Keep `docs/architecture-current.md` current with build system, port state, SD loader, PSRAM behavior, hardware bindings, tests, examples, memory map, and limitations.
+- [ ] Keep `docs/source-research.md` refined as deeper Berry, Catalina, P2, smart pin, and RTOS implementation choices are made.
+- [ ] Keep `docs/coverage-matrix.md` updated for Berry language/library coverage, SD loader, PSRAM cache, P2 APIs, smart pins, PASM, multicog, task, debug, examples, and tests.
+- [ ] Keep `docs/roadmap.md` aligned with the actual milestone order and current hardware evidence.
+- [ ] Create or update user-facing docs as features stabilize: `docs/getting-started.md`, `docs/building.md`, `docs/board-support.md`, `docs/sd-layout.md`, `docs/psram-loader.md`, `docs/berry-compatibility.md`, `docs/p2-api.md`, `docs/smartpins.md`, `docs/cogs.md`, `docs/tasks.md`, `docs/pasm.md`, `docs/debugging.md`, `docs/testing.md`, `docs/performance.md`, and `docs/limitations.md`.
+- [ ] Keep RossH-facing Catalina SD notes in one direct-change markdown file and avoid patch-script drift.
 
-## Low-level P2 native API
+## P3 - Repeatable tests and examples
+
+- [ ] Create/repair `make test-host` coverage for Berry standard libraries, fake SD, fake PSRAM, import cache behavior, module eviction, error paths, closure copy rules, and host-simulatable task logic.
+- [ ] Create/repair `make test-p2 PORT=/dev/ttyUSB0 BOARD=p2edge` coverage for boot, REPL/main launch, SD mount, PSRAM detection, `.be` load, `.bec` load/cache, import-all, GPIO, raw smart pin, PWM, ADC, DAC, UART loopback, SPI loopback, timer/counter, CORDIC, locks, cog spawn/join, IPC, task scheduler, VGA/USB demos where hardware allows, PASM blob launcher, and debug stats.
+- [ ] Add `make soak-p2 PORT=/dev/ttyUSB0 HOURS=1` to repeatedly import/evict modules, run GC, use SD/PSRAM, spawn/stop cogs, use channels/tasks, exercise GPIO/smart pins, and report leaks/failures.
+- [ ] Document P2 hardware test wiring: pins, loopbacks, resistors, board variant, and skipped tests.
+- [ ] Keep examples aligned with real implemented APIs: `blink.be`, `repl_sd.be`, `import_all_libs.be`, `json_sd.be`, `file_sd.be`, `adc_read.be`, `dac_write.be`, `pwm_fade.be`, `uart_loopback.be`, `spi_loopback.be`, `quadrature_counter.be`, `vga_test_pattern.be`, `usb_keyboard_mouse.be`, `cog_closure.be`, `cog_channel.be`, `task_scheduler.be`, `pasm_direct.be`, `cordic_demo.be`, `psram_cache_stats.be`, and `debug_report.be`.
+
+## P3 - Low-level P2 native API
 
 - [ ] Raise clear errors for unsupported build or board combinations.
+- [ ] Validate pin range `0..63`, cog range, lock range, integer bounds, reserved pins, and unsupported feature/build combinations across all low-level APIs.
+- [ ] Complete and test `p2.clock`: `freq`, `mode`, `set`, `cnt`, `cnth`, `waitx`, `waitus`, `waitms`, `waitsec`, `waitcnt`, and `hubset`.
+- [ ] Complete and test `p2.cog`: `id`, `check`, `stop`, `attention`, `poll_attention`, and `wait_attention`.
+- [ ] Complete and test `p2.lock`: `new`, `ret`, `try`, `release`, and `check`.
+- [ ] Complete and test `p2.pin`: `dir_low`, `dir_high`, `write`, `low`, `high`, `toggle`, `float`, and `read`.
+- [ ] Complete and test `p2.cordic`, `p2.math`, and `p2.rng`: `rotxy`, `polxy`, `xypol`, `isqrt`, `muldiv64`, `rev`, `encod`, and `rnd`.
+- [ ] Add tests/examples for all implemented low-level P2 APIs before removing them from TODO.
 
-## Smart pins and high-level wrappers
+## P3 - Smart pins and high-level hardware wrappers
 
 - [ ] Research and define constants for all relevant smart pin mode families.
-- [ ] Cover normal/dumb pin mode.
-- [ ] Cover repository mode.
-- [ ] Cover DAC noise mode.
-- [ ] Cover DAC random dither mode.
-- [ ] Cover DAC PWM dither mode.
-- [ ] Cover pulse/cycle output.
-- [ ] Cover transition output.
-- [ ] Cover NCO frequency output.
-- [ ] Cover NCO duty output.
-- [ ] Cover PWM triangle mode.
-- [ ] Cover PWM sawtooth mode.
-- [ ] Cover PWM SMPS mode.
-- [ ] Cover quadrature encoder mode.
-- [ ] Cover register up counter mode.
-- [ ] Cover register up/down counter mode.
-- [ ] Cover rise counting.
-- [ ] Cover high counting.
-- [ ] Cover state ticks.
-- [ ] Cover high ticks.
-- [ ] Cover event ticks.
-- [ ] Cover period ticks.
-- [ ] Cover period highs.
-- [ ] Cover counter ticks.
-- [ ] Cover counter highs.
-- [ ] Cover counter periods.
-- [ ] Cover ADC internal mode.
-- [ ] Cover ADC external mode.
-- [ ] Cover ADC scope/capture mode.
-- [ ] Cover USB pin pair modes.
-- [ ] Cover synchronous serial TX.
-- [ ] Cover synchronous serial RX.
-- [ ] Cover asynchronous serial TX.
-- [ ] Cover asynchronous serial RX.
+- [ ] Cover normal/dumb pin mode, repository mode, DAC noise/random/PWM dither, pulse/cycle output, transition output, NCO frequency/duty, PWM triangle/sawtooth/SMPS, quadrature encoder, register counters, rise/high/state/event/period/counter tick modes, ADC internal/external/scope, USB pin-pair modes, synchronous serial TX/RX, and asynchronous serial TX/RX.
+- [ ] Complete raw smart pin access: `wrpin`, `wxpin`, `wypin`, `akpin`, `rdpin`, `rqpin`, `start`, and `clear`.
 - [ ] Add high-level GPIO input/output classes.
 - [ ] Add high-level PWM wrapper.
 - [ ] Add high-level ADC wrapper.
 - [ ] Add high-level DAC wrapper.
-- [ ] Add high-level timer wrapper.
+- [ ] Add high-level timer/counter wrapper.
 - [ ] Add high-level quadrature wrapper.
 - [ ] Add high-level UART wrapper.
 - [ ] Add high-level SPI/synchronous serial wrapper.
-- [ ] Add high-level USB pair wrapper where possible.
+- [ ] Add high-level USB pair wrapper only if it can be real on the selected hardware/build.
+- [ ] Add loopback/hardware tests and examples for each wrapper before claiming support.
 
-## PASM2 and assembly integration
+## P4 - PASM2 and assembly integration
 
-- [ ] Implement PASM blob loading.
+- [ ] Implement safe native intrinsics such as `p2.asm.getrnd`, `getct`, `waitx`, and `hubset`.
+- [ ] Implement PASM blob loading from SD, especially `/berry/pasm/*.bin`.
 - [ ] Implement PASM cog launching.
-- [ ] Implement PASM function bridge.
-- [ ] Consider optional inline assembler only if reasonable.
-- [ ] Gate unsafe arbitrary assembly behind `BE_P2_ENABLE_UNSAFE_ASM`.
+- [ ] Implement a PASM function bridge with documented argument/return conventions.
+- [ ] Consider optional inline assembler only if reasonable and useful.
+- [ ] Gate unsafe arbitrary assembly behind `BE_P2_ENABLE_UNSAFE_ASM` or an explicit unsafe module.
+- [ ] Document the PASM ABI: argument passing, return value, clobbers, hub pointers, PSRAM pointers, cog/LUT rules, interrupt assumptions, stack assumptions, and cleanup rules.
+- [ ] Add tests and examples for safe intrinsics, blob launcher, and function bridge.
 
-## Multicore Berry closures
+## P5 - Real multicore Berry closures and multiple VMs
 
+- [x] Add an interim `p2.cog.spawn(closure, ...primitive_args)` closure-cog API that accepts a live Berry closure from the REPL, runs it from a separate cog while the REPL is idle at the prompt, lets the closure return the next delay in milliseconds, returns integer handles, and stops/cleans handles with `p2.cog.stop(handle)`. This is a safety-stepped proof path, not yet independent per-cog VM/GC isolation.
+- [x] Add a hardware-safe p38/p39 GPIO blinker fast path for `p2.cog.spawn(closure, pin, rate_ms)` so two spawned cog handles can blink independently and later stop cleanly from the REPL.
 - [ ] Build this on top of proven pointer-safe XMM PSRAM-backed independent VM heaps, not the archived Spin2/worker paths.
-- [ ] Implement real closure-based cog spawning.
-- [ ] Ensure `p2.cog.spawn(closure, ...args)` runs in another cog, not a fake worker queue.
-- [ ] Host each cog Berry process in its own VM state, stack, heap, and GC model.
-- [ ] Define safe sharing of read-only code, prototypes, and modules.
-- [ ] Define mutable capture behavior.
-- [ ] Add copy-by-value semantics or explicit rejection for non-serializable captures.
-- [ ] Add explicit sharing through `p2.shared` if needed.
-- [ ] Prevent blind native pointer transfer.
-- [ ] Prevent blind file handle transfer.
-- [ ] Add hardware resource manager behavior.
-- [ ] Return parent handles.
-- [ ] Propagate child return values to `join()`.
-- [ ] Propagate child errors to `join()`.
-- [ ] Make child VM cleanup deterministic.
-- [ ] Implement `handle.id()`.
-- [ ] Implement `handle.status()`.
-- [ ] Implement `handle.join()`.
-- [ ] Implement `handle.stop()`.
-- [ ] Implement `handle.kill()`.
-- [ ] Implement `handle.result()`.
-- [ ] Implement `handle.error()`.
-- [ ] Add stress tests for closure spawning and cleanup.
+- [ ] Continue proving GC correctness with XMM PSRAM-backed objects before enabling real-cog concurrent Berry VM execution by default.
+- [ ] Use `p2.heap_info()` `vm_partition_*` capacity diagnostics to tune production per-VM heap partition sizing.
+- [ ] Rework real-cog child VM execution with proper runtime isolation before enabling it by default.
+- [ ] Investigate Catalina XMM C-cog startup and supported thread/cog runtime paths before retrying Berry VM execution in another cog.
+- [ ] Evolve `p2.cog.spawn(closure, ...args)` from the REPL-idle shared-VM proof into always-running independent VM execution.
+- [ ] Give each cog-hosted Berry process its own VM state, stack, heap, and GC.
+- [ ] Define capture/argument behavior: copy primitives/serializable values by value, reject unsupported live objects, and require explicit sharing through safe primitives.
+- [ ] Prevent blind transfer of native pointers, file handles, mutable captured objects, or hardware resources.
+- [ ] Implement handle APIs: `id`, `status`, `join`, `stop`, `kill`, `result`, and `error`.
+- [ ] Propagate child return values and errors to `join()`.
+- [ ] Ensure deterministic child VM cleanup.
+- [ ] Implement IPC primitives: channels, mailboxes, shared buffers, mutexes, and resource ownership.
+- [ ] Add stress tests for spawn/join/error/cleanup/channel paths before enabling by default.
 
-## IPC primitives
+## P5 - Cooperative task scheduler and RTOS-inspired primitives
 
-- [ ] Extend the current cooperative `p2ipc` helpers toward real cross-cog locks, hub-memory channels, mailboxes, and cog attention where appropriate.
+- [ ] Implement cooperative multitasking inside one cog only after Berry call-stack/coroutine/continuation safety is proven.
+- [ ] Implement `task.spin`, `task.next`, `task.stop`, `task.halt`, `task.cont`, `task.chk`, and `task.id` with Spin2-like semantics where memory allows.
+- [ ] Support up to 32 task slots where practical.
+- [ ] Ensure tasks have independent Berry call stacks or a proven safe coroutine/continuation model.
+- [ ] Do not implement the scheduler as simple callback polling.
+- [ ] Implement RTOS-inspired `Semaphore`, `Mutex`, `Queue`, `EventFlags`, and `Timer` after the basic scheduler works.
+- [ ] Add host-simulatable tests where possible and hardware tests/examples for task switching and synchronization.
 
-## Cooperative task scheduler
+## P6 - Video, USB, debug, and performance polish
 
-- [ ] Keep the current `task`/`taskspin` compatibility layer as a source-level cooperative facade, and avoid expanding it as a substitute for real closure/cog VM work.
-- [ ] Provide independent Berry call stacks or a proven safe coroutine/continuation mechanism.
-- [ ] Do not implement this as simple callback polling.
+- [ ] Support or stage serial console, SD filesystem, VGA/video output, streamer video, USB keyboard, USB mouse, USB HID examples, timer/counter APIs, CORDIC, GPIO, smart pins, multicog APIs, locks/IPC, debug/monitor hooks, audio DAC examples, and optional PS/2 compatibility.
+- [ ] Do not fake VGA or USB support; document staged implementation notes until demos work.
+- [ ] Create `p2.debug` with build flags for debug/trace support: VM stack, heap, GC, modules, memory map, cogs, tasks, locks, channels, pins, smart pins, and optional PASM/hardware debug.
+- [ ] Add Berry stack traces with source file/line where possible and native error info where possible.
+- [ ] Create `docs/performance.md` and measurement hooks for VM speed, import latency from SD/PSRAM cache, hub high-water mark, PSRAM usage, GC pause, cog spawn latency, task switch latency, channel latency, smart-pin overhead, native/PASM speedup, video/streamer throughput, SD throughput, and PSRAM throughput.
+- [ ] Investigate LUT/cog-RAM VM dispatch, CORDIC math acceleration, streamer movement, smart-pin offload, and PSRAM import-cache performance only after benchmarks prove value.
 
-## Debugging
+## Deferred or intentionally low priority
 
-- [ ] Add debug build mode.
-- [ ] Implement `p2.debug.breakpoint()`.
-- [ ] Implement `p2.debug.trace(true)`.
-- [ ] Implement `p2.debug.stack()`.
-- [ ] Implement `p2.debug.tasks()`.
-- [ ] Implement `p2.debug.modules()`.
-- [ ] Implement `p2.debug.locks()`.
-- [ ] Implement `p2.debug.channels()`.
-- [ ] Include Berry stack traces with source file/line where possible.
-- [ ] Include native error info where possible.
-- [ ] Include module cache stats.
-- [ ] Include task state.
-- [ ] Include lock state.
-- [ ] Include channel/mailbox state.
-- [ ] Consider PASM breakpoint/single-step/hardware debug support.
-
-## Performance work
-
-- [ ] Measure baseline Berry VM speed.
-- [ ] Measure import latency from SD.
-- [ ] Measure import latency from PSRAM cache.
-- [ ] Measure hub RAM high-water mark.
-- [ ] Measure PSRAM usage.
-- [ ] Measure GC pause time.
-- [ ] Measure cog spawn latency.
-- [ ] Measure task switch latency.
-- [ ] Measure channel latency.
-- [ ] Measure smart-pin wrapper overhead.
-- [ ] Measure native/PASM speedup.
-- [ ] Measure video/streamer throughput if relevant.
-- [ ] Measure SD read throughput.
-- [ ] Measure PSRAM read/write throughput.
-- [ ] Investigate LUT RAM tables for Berry bytecode dispatch.
-- [ ] Investigate hot VM dispatch code in cog RAM.
-- [ ] Investigate P2 custom-bytecode/execution features for Berry dispatch.
-- [ ] Investigate CORDIC acceleration for Berry math.
-- [ ] Investigate streamer acceleration for video/audio/buffer movement.
-- [ ] Investigate smart pins for timing-heavy protocol offload.
-- [ ] Prove PSRAM cache value with benchmarks before adding complicated acceleration.
-
-## Tests
-
-- [ ] Cover Berry standard libraries in host tests.
-- [ ] Cover loader behavior using fake SD.
-- [ ] Expand PSRAM cache behavior coverage using fake PSRAM beyond the current `libstore` chunked source-cache regression.
-- [ ] Cover import cache behavior.
-- [ ] Cover module eviction.
-- [ ] Cover error paths.
-- [ ] Cover closure serialization/copy rules.
-- [ ] Expand host-simulatable task scheduler coverage beyond the current `task` and `taskspin` regressions.
-- [ ] Cover boot on P2 hardware.
-- [ ] Cover REPL or main program launch on P2 hardware.
-- [ ] Cover SD mount on P2 hardware.
-- [ ] Cover PSRAM detection on P2 hardware.
-- [ ] Cover `.be` load from SD.
-- [ ] Cover `.bec` load from SD/cache.
-- [ ] Cover import of all standard Berry modules.
-- [ ] Cover GPIO.
-- [ ] Cover raw smart pin.
-- [ ] Run `/tests/p2/smoke_p2_api.be` on P2 hardware through `make test-p2` or the existing smoke suite.
-- [ ] Cover PWM.
-- [ ] Cover ADC.
-- [ ] Cover DAC.
-- [ ] Cover UART loopback.
-- [ ] Cover SPI/sync serial loopback where wired.
-- [ ] Cover timer/counter.
-- [ ] Cover CORDIC.
-- [ ] Cover locks.
-- [ ] Cover cog spawn.
-- [ ] Cover cog join.
-- [ ] Cover channel IPC.
-- [ ] Cover cooperative task scheduler.
-- [ ] Cover VGA/video demo if hardware is available.
-- [ ] Cover USB keyboard/mouse if hardware is available.
-- [ ] Cover PASM blob launcher.
-- [ ] Soak-test imports.
-- [ ] Soak-test module eviction.
-- [ ] Soak-test GC.
-- [ ] Soak-test SD usage.
-- [ ] Soak-test PSRAM usage.
-- [ ] Soak-test cog spawn/stop.
-- [ ] Soak-test channels.
-- [ ] Soak-test cooperative tasks.
-- [ ] Soak-test GPIO/smart pins.
-- [ ] Report memory leaks or failures.
-
-## Examples
-
-- [ ] Add `examples/adc_read.be`.
-- [ ] Add `examples/dac_write.be`.
-- [ ] Add `examples/pwm_fade.be`.
-- [ ] Add `examples/uart_loopback.be`.
-- [ ] Add `examples/spi_loopback.be`.
-- [ ] Add `examples/quadrature_counter.be`.
-- [ ] Add `examples/vga_test_pattern.be`.
-- [ ] Add `examples/usb_keyboard_mouse.be`.
-- [ ] Add `examples/cog_closure.be`.
-
-## Acceptance criteria still open
-
-- [ ] Firmware builds cleanly in the final target configuration.
-- [ ] Firmware boots on the selected P2 board in the final target configuration.
-- [ ] A Berry program can run from SD card.
-- [ ] `.be` programs can be loaded from SD card.
-- [ ] `.bec` files can be loaded when present.
-- [ ] Berry imports are lazy.
-- [ ] Inactive libraries/modules are cached or staged through PSRAM where safe.
-- [ ] Hub RAM usage is measured and reported.
-- [ ] All included Berry standard libraries are present or honestly documented.
-- [ ] Berry standard libraries have tests.
-- [ ] P2 low-level hardware functions equivalent to Catalina-style coverage are exposed or explicitly documented as unsupported.
-- [ ] Raw smart pin access works.
-- [ ] High-level wrappers exist for ADC, DAC, PWM, timers/counters, serial, quadrature, and USB building blocks where possible.
-- [ ] VGA/video and USB keyboard/mouse have working demos or clear staged implementation notes.
-- [ ] PASM blobs can be loaded and launched.
-- [ ] A Berry closure can run in a new cog with its own VM or a clearly documented safe VM model.
-- [ ] Multiple Berry VMs can run across multiple cogs.
-- [ ] Inter-cog channel/mailbox communication works.
-- [ ] Cooperative tasks work inside a cog with the requested Spin2-like API.
-- [ ] Debug APIs report VM, memory, module, cog, task, and pin state.
-- [ ] Tests cover every implemented API.
-- [ ] Hardware tests are documented and runnable.
-- [ ] Examples are included.
-- [ ] No stub silently pretends to work.
-- [ ] `docs/coverage-matrix.md` honestly shows remaining gaps.
+- [ ] Reimplement archived RTOS/newcog/worker behavior only through the future real closure/VM-cog architecture; do not restore the old worker backend by default.
+- [ ] Keep `sddiag` and similar reduced diagnostics as opt-in profiles only.
+- [ ] Keep experimental facades opt-in until they compile, boot, and prove they do not destabilize the working Edge32/XMM baseline.

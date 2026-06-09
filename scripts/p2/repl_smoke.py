@@ -19,6 +19,48 @@ SUITES = {
     "edge32": [
         ('run_file("/tests/p2/smoke_edge32_all.be")', "P2_SMOKE_PASS edge32_all"),
     ],
+    "compat": [
+        ('run_file("/tests/p2/smoke_compat.be")', "P2_SMOKE_PASS compat"),
+        ('print(input("P2_INPUT_PROMPT"))', "P2_INPUT_VALUE", "P2_INPUT_PROMPT", "P2_INPUT_VALUE"),
+    ],
+    "cog-closure": [
+        ('run_file("/tests/p2/smoke_cog_closure.be")', "P2_SMOKE_PASS cog_closure"),
+    ],
+    "task": [
+        ('run_file("/tests/p2/smoke_task.be")', "P2_SMOKE_PASS task"),
+    ],
+    "cog-ping": [
+        ("import p2", ""),
+        ("ping=p2.vm_cog_ping(41)", ""),
+        ('print(ping["started"], ping["status"], ping["result"], ping["raw_running"], ping["stack_freed"], ping["wait_count"])', "true 3 83 false true"),
+        ('print(p2.heap_info()["wrong_free_count"])', "0"),
+        ('print("P2_SMOKE_PASS cog_ping")', "P2_SMOKE_PASS cog_ping"),
+    ],
+    "vm-cog": [
+        ("import p2", ""),
+        ('slot=0', ""),
+        ('opened=p2.vm_open(slot,p2.heap_info()["vm_partition_bytes"])', ""),
+        ('print(opened["partition_ready"], opened["child_created"] || opened["already_active"])', "true true"),
+        ('loaded=p2.vm_eval(slot,"def cog_add(a,b) return a+b end")', ""),
+        ('print(loaded["active"], loaded["run_result"])', "true 0"),
+        ('run=p2.vm_cog_start(slot,"cog_add",19,23)', ""),
+        ('print(run["started"], run["status"], run["raw_running"], run["stack_freed"])', "true 2 false true"),
+        ('print(run["function_found"], run["call_result"], run["result_type"], run["result_int"])', "true 0 1 42"),
+        ('print(run["wrong_free_delta"], run["wrong_realloc_delta"])', "0 0"),
+        ("closed=p2.vm_close(slot)", ""),
+        ('print(closed["active"], closed["released"])', "false true"),
+        ('print("P2_SMOKE_PASS vm_cog")', "P2_SMOKE_PASS vm_cog"),
+    ],
+    "vm-cog-once": [
+        ("import p2", ""),
+        ('src="def cog_add(a,b) return a+b end"', ""),
+        ('run=p2.vm_cog_call_once(0,p2.heap_info()["vm_partition_bytes"],src,"cog_add",19,23)', ""),
+        ('print(run["started"], run["status"], run["raw_running"], run["stack_freed"], run["released"])', "true 2 false true true"),
+        ('print(run["partition_ready"], run["selected"], run["child_created"], run["child_deleted"])', "true true true true"),
+        ('print(run["function_found"], run["source_result"], run["call_result"], run["result_type"], run["result_int"])', "true 0 0 1 42"),
+        ('print(run["wrong_free_delta"], run["wrong_realloc_delta"], run["current"])', "0 0 -1"),
+        ('print("P2_SMOKE_PASS vm_cog_once")', "P2_SMOKE_PASS vm_cog_once"),
+    ],
     "xmm-heap": [
         ("import p2", ""),
         ("print(type(p2.gc), p2.gc())", "function"),
@@ -341,11 +383,26 @@ def read_until(ser, marker: bytes, timeout: float) -> bytes:
     raise TimeoutError(f"timed out waiting for {marker!r}; saw:\n{decode(bytes(data))}")
 
 
-def run_command(ser, command: str, expected: str, line_ending: bytes, prompt: bytes, timeout: float) -> str:
+def run_command(
+    ser,
+    command: str,
+    expected: str,
+    line_ending: bytes,
+    prompt: bytes,
+    timeout: float,
+    input_marker: str = "",
+    input_text: str = "",
+) -> str:
     ser.write(command.encode("utf-8") + line_ending)
     ser.flush()
+    prefix = ""
+    if input_marker:
+        marker_output = read_until(ser, input_marker.encode("utf-8"), timeout)
+        prefix = decode(marker_output)
+        ser.write(input_text.encode("utf-8") + line_ending)
+        ser.flush()
     output = read_until(ser, prompt, timeout)
-    text = decode(output)
+    text = prefix + decode(output)
     if expected and expected not in text:
         raise AssertionError(
             f"expected {expected!r} after command {command!r}; saw:\n{text}"
@@ -421,9 +478,22 @@ def main() -> int:
             else:
                 commands = SUITES[args.suite]
 
-            for command, expected in commands:
+            for step in commands:
+                command = step[0]
+                expected = step[1] if len(step) > 1 else ""
+                input_marker = step[2] if len(step) > 2 else ""
+                input_text = step[3] if len(step) > 3 else ""
                 print(f"[p2-smoke] {command}")
-                text = run_command(ser, command, expected, line_ending, prompt, args.timeout)
+                text = run_command(
+                    ser,
+                    command,
+                    expected,
+                    line_ending,
+                    prompt,
+                    args.timeout,
+                    input_marker,
+                    input_text,
+                )
                 sys.stdout.write(text)
                 if text and not text.endswith("\n"):
                     sys.stdout.write("\n")

@@ -9,6 +9,8 @@
 #include "be_module.h"
 #include "be_object.h"
 #include "be_string.h"
+#include "be_var.h"
+#include "be_vm.h"
 #include "berry_conf_p2.h"
 #include "berry_port.h"
 #include "p2_build_info.h"
@@ -17,6 +19,9 @@
 #include <propeller2.h>
 #include <prop.h>
 #include <cog.h>
+#if defined(__CATALINA_LARGE)
+#include <hmalloc.h>
+#endif
 #ifdef __CATALINA_libthreads
 #include <threads.h>
 #endif
@@ -27,6 +32,19 @@
 #include <string.h>
 
 extern int sbrk(int amount);
+extern unsigned long _registry(void);
+
+#if defined(__CATALINA_LARGE)
+static const unsigned long p2_xmmd_array[] = {
+#include "../runtime/p2_xmmd.inc"
+};
+
+static const unsigned long p2_xmmcache_array[] = {
+#include "../runtime/p2_xmmcache.inc"
+};
+
+#include "../runtime/p2_xmml.inc"
+#endif
 
 #ifndef BE_P2_ENABLE_ROADMAP_NATIVE_FACADES
 #define BE_P2_ENABLE_ROADMAP_NATIVE_FACADES 0
@@ -34,6 +52,14 @@ extern int sbrk(int amount);
 
 #ifndef BE_P2_ENABLE_EXPERIMENTAL_VM_COG
 #define BE_P2_ENABLE_EXPERIMENTAL_VM_COG 0
+#endif
+
+#ifndef BE_P2_ENABLE_EXPERIMENTAL_COG_PING
+#define BE_P2_ENABLE_EXPERIMENTAL_COG_PING 0
+#endif
+
+#ifndef BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+#define BE_P2_ENABLE_UNSAFE_SHARED_VM_COG 0
 #endif
 
 #if defined(__CATALINA_libpsram) || defined(__CATALINA_PSRAM)
@@ -75,6 +101,16 @@ static size_t p2_psram_cache_entry_count;
 static p2_psram_cache_entry p2_psram_cache_entries[P2_PSRAM_CACHE_MAX_ENTRIES];
 
 static void p2_psram_require_available(bvm *vm);
+static int m_p2_closure_cog_stop(bvm *vm);
+static int m_p2_closure_cog_blinker(bvm *vm);
+static int m_p2_closure_cog_task(bvm *vm);
+#if defined(__CATALINA_LARGE)
+static int m_p2_closure_cog_task_kinds(bvm *vm);
+static int m_p2_closure_cog_task_release(bvm *vm);
+static int m_p2_closure_cog_task_info(bvm *vm);
+static int m_p2_closure_cog_spawn_source(bvm *vm);
+#endif
+static int m_p2_closure_cog_is_task(bvm *vm);
 
 extern int m_clock_freq(bvm *vm);
 extern int m_clock_mode(bvm *vm);
@@ -127,12 +163,27 @@ extern int m_smartpin_read(bvm *vm);
 extern int m_smartpin_query(bvm *vm);
 extern int m_smartpin_start(bvm *vm);
 extern int m_smartpin_clear(bvm *vm);
+extern volatile int *berry_vm_new_diag_stage_ptr;
+extern volatile int berry_vm_new_skip_loadlibs;
 
 enum {
     P2_PINMODE_INPUT = 0,
     P2_PINMODE_OUTPUT = 1,
     P2_PINMODE_OPENDRAIN = 2
 };
+
+enum {
+    P2_CLOSURE_COG_MAX = 4,
+    P2_CLOSURE_COG_ARGS_MAX = 8,
+    P2_CLOSURE_COG_TEXT_MAX = 63,
+    P2_CLOSURE_COG_DESCRIPTOR_MAX = 768,
+    P2_CLOSURE_COG_STACK_DEFAULT = 8192,
+    P2_CLOSURE_COG_STACK_NATIVE_BLINK = 2048,
+    P2_CLOSURE_COG_HANDLE_BASE = 100,
+    P2_CLOSURE_COG_IDLE_WAIT_MS = 1
+};
+
+#define P2_CLOSURE_COG_SOURCE_RUNTIME_SUPPORTED 0
 
 static void p2_module_set_func(bvm *vm, const char *name, bntvfunc func)
 {
@@ -193,9 +244,22 @@ static void p2_map_set_u32_hex(bvm *vm, const char *key, uint32_t value)
     p2_map_set_string(vm, key, buffer);
 }
 
+static int p2_sd_probe_swap_cs_clk;
+
+static int p2_sd_probe_cs_pin(void)
+{
+    return p2_sd_probe_swap_cs_clk ? P2_EDGE_SD_CLK : P2_EDGE_SD_CS;
+}
+
+static int p2_sd_probe_clk_pin(void)
+{
+    return p2_sd_probe_swap_cs_clk ? P2_EDGE_SD_CS : P2_EDGE_SD_CLK;
+}
+
 static uint8_t p2_sd_probe_transfer(uint8_t value)
 {
     uint8_t in = 0;
+    int clk = p2_sd_probe_clk_pin();
     int bit;
 
     for (bit = 0; bit < 8; ++bit) {
@@ -206,10 +270,10 @@ static uint8_t p2_sd_probe_transfer(uint8_t value)
         }
         value <<= 1;
         _waitus(5);
-        _pinh(P2_EDGE_SD_CLK);
+        _pinh(clk);
         _waitus(5);
         in = (uint8_t)((in << 1) | (_pinr(P2_EDGE_SD_DO) ? 1u : 0u));
-        _pinl(P2_EDGE_SD_CLK);
+        _pinl(clk);
     }
     return in;
 }
@@ -242,8 +306,38 @@ static void p2_flash_probe_command(uint8_t cmd)
     _pinh(P2_EDGE_FLASH_CS);
 }
 
+static uint32_t p2_flash_probe_rdid(int release_powerdown)
+{
+    uint8_t b0;
+    uint8_t b1;
+    uint8_t b2;
+
+    _pinh(P2_EDGE_FLASH_CS);
+    _pinl(P2_EDGE_FLASH_CLK);
+    _pinh(P2_EDGE_FLASH_DI);
+    _pinf(P2_EDGE_FLASH_DO);
+    _waitus(10);
+
+    if (release_powerdown) {
+        p2_flash_probe_command(0xABu);
+        _waitus(40);
+    }
+
+    _pinl(P2_EDGE_FLASH_CS);
+    (void)p2_flash_probe_transfer(0x9Fu);
+    b0 = p2_flash_probe_transfer(0xffu);
+    b1 = p2_flash_probe_transfer(0xffu);
+    b2 = p2_flash_probe_transfer(0xffu);
+    _pinh(P2_EDGE_FLASH_CS);
+    _waitus(10);
+
+    return ((uint32_t)b0 << 16) | ((uint32_t)b1 << 8) | (uint32_t)b2;
+}
+
 static void p2_sd_probe_flash_powerdown(void)
 {
+    int i;
+
     _pinh(P2_EDGE_FLASH_CS);
     _pinl(P2_EDGE_FLASH_CLK);
     _pinl(P2_EDGE_FLASH_DI);
@@ -253,11 +347,24 @@ static void p2_sd_probe_flash_powerdown(void)
     _waitms(1);
     p2_flash_probe_command(0xB9u);
     _waitus(10);
+
+    _pinh(P2_EDGE_FLASH_CS);
+    _pinh(P2_EDGE_FLASH_DI);
+    _pinf(P2_EDGE_FLASH_DO);
+    for (i = 0; i < 10; ++i) {
+        int bit;
+        for (bit = 0; bit < 8; ++bit) {
+            _pinh(P2_EDGE_FLASH_CLK);
+            _waitus(2);
+            _pinl(P2_EDGE_FLASH_CLK);
+            _waitus(2);
+        }
+    }
 }
 
 static void p2_sd_probe_deselect(void)
 {
-    _pinh(P2_EDGE_SD_CS);
+    _pinh(p2_sd_probe_cs_pin());
     (void)p2_sd_probe_transfer(0xffu);
 }
 
@@ -265,8 +372,8 @@ static void p2_sd_probe_idle(void)
 {
     int i;
 
-    _pinh(P2_EDGE_SD_CS);
-    _pinl(P2_EDGE_SD_CLK);
+    _pinh(p2_sd_probe_cs_pin());
+    _pinl(p2_sd_probe_clk_pin());
     _pinh(P2_EDGE_SD_DI);
     _pinf(P2_EDGE_SD_DO);
     _waitms(1);
@@ -282,7 +389,7 @@ static uint8_t p2_sd_probe_command(uint8_t cmd, uint32_t arg, uint8_t crc,
     int i;
 
     p2_sd_probe_deselect();
-    _pinl(P2_EDGE_SD_CS);
+    _pinl(p2_sd_probe_cs_pin());
     (void)p2_sd_probe_transfer(0xffu);
     (void)p2_sd_probe_transfer((uint8_t)(0x40u | cmd));
     (void)p2_sd_probe_transfer((uint8_t)(arg >> 24));
@@ -457,6 +564,9 @@ static int m_p2_cogid(bvm *vm)
 static int m_p2_cog_stop(bvm *vm)
 {
     bint cog = p2_require_int_arg(vm, 1, "cog_id must be an int");
+    if (cog >= P2_CLOSURE_COG_HANDLE_BASE) {
+        return m_p2_closure_cog_stop(vm);
+    }
     if (cog < 0 || cog > 7) {
         be_raise(vm, "value_error", "cog_id must be between 0 and 7");
     }
@@ -592,7 +702,512 @@ typedef struct p2_child_vm_cog_ping_job {
     volatile int result;
 } p2_child_vm_cog_ping_job;
 
-static p2_child_vm_cog_ping_job p2_child_vm_cog_ping_jobs[8];
+typedef struct p2_child_vm_cog_once_job {
+    volatile int status;
+    volatile int cog_id;
+    volatile int partition_ready;
+    volatile int selected;
+    volatile int child_created;
+    volatile int child_deleted;
+    volatile int function_found;
+    volatile int vm_new_stage;
+    volatile int vm_new_detail_stage;
+    volatile int source_stage;
+    volatile int load_stage;
+    volatile int call_stage;
+    volatile int execprotected_stage;
+    volatile int return_top;
+    volatile int return_is_function;
+    volatile int post_call_top;
+    volatile int result_slot_type;
+    volatile int post_call_type_1;
+    volatile int post_call_type_2;
+    volatile int post_call_type_3;
+    volatile int source_result;
+    volatile int call_result;
+    volatile int result_type;
+    volatile bint result_int;
+    volatile int result_bool;
+    volatile int child_stack_top;
+    volatile size_t wrong_free_delta;
+    volatile size_t wrong_realloc_delta;
+    int slot;
+    size_t bytes;
+    char source[512];
+    char name[64];
+    int argc;
+    int arg_type[8];
+    bint arg_int[8];
+    int arg_bool[8];
+    char arg_string[8][96];
+    char result_string[96];
+} p2_child_vm_cog_once_job;
+
+static p2_child_vm_cog_once_job p2_child_vm_cog_once_jobs[BE_P2_VM_HEAP_MAX_PARTITIONS];
+
+static int p2_child_vm_runtime_lock_enter(void);
+static void p2_child_vm_runtime_lock_leave(int locked);
+
+#if defined(__CATALINA_LARGE)
+#define P2_COG_STACK_POOL_SLOTS 4
+#define P2_COG_STACK_POOL_BYTES 8192
+static union {
+    unsigned char raw[P2_COG_STACK_POOL_BYTES];
+    uint64_t align;
+} p2_cog_stack_pool[P2_COG_STACK_POOL_SLOTS];
+static int p2_cog_stack_pool_used[P2_COG_STACK_POOL_SLOTS];
+#endif
+
+static void *p2_cog_stack_alloc(size_t size)
+{
+#if defined(__CATALINA_LARGE)
+    int i;
+
+    if (size > P2_COG_STACK_POOL_BYTES) {
+        return NULL;
+    }
+    for (i = 0; i < P2_COG_STACK_POOL_SLOTS; ++i) {
+        if (!p2_cog_stack_pool_used[i]) {
+            p2_cog_stack_pool_used[i] = 1;
+            return p2_cog_stack_pool[i].raw;
+        }
+    }
+    return NULL;
+#else
+    return p2_heap_malloc(size);
+#endif
+}
+
+static void p2_cog_stack_free(void *ptr)
+{
+    if (ptr == NULL) {
+        return;
+    }
+#if defined(__CATALINA_LARGE)
+    int i;
+
+    for (i = 0; i < P2_COG_STACK_POOL_SLOTS; ++i) {
+        if (ptr == p2_cog_stack_pool[i].raw) {
+            p2_cog_stack_pool_used[i] = 0;
+            return;
+        }
+    }
+#else
+        p2_heap_free(ptr);
+#endif
+}
+
+static void *p2_hub_mem_alloc(size_t size)
+{
+#if defined(__CATALINA_LARGE)
+    return hub_malloc(size);
+#else
+    return p2_heap_malloc(size);
+#endif
+}
+
+#if defined(__CATALINA_LARGE)
+static void *p2_hub_mem_calloc(size_t count, size_t size)
+{
+    return hub_calloc(count, size);
+}
+#endif
+
+static void p2_hub_mem_free(void *ptr)
+{
+    if (ptr == NULL) {
+        return;
+    }
+#if defined(__CATALINA_LARGE)
+    hub_free(ptr);
+#else
+    p2_heap_free(ptr);
+#endif
+}
+
+#if defined(__CATALINA_LARGE)
+static int p2_cog_marker_probe(int target_cog, uint32_t *marker_out, uint32_t *cog_out);
+static int p2_cog_large_marker_probe(int target_cog, uint32_t *marker_out, uint32_t *cog_out);
+
+typedef struct p2_xmm_private_cache {
+    unsigned long *kernel;
+    unsigned long *init;
+    unsigned long *mailbox;
+    unsigned long *buffer;
+    unsigned long *child_kernel;
+    unsigned long *child_lut;
+    void *child_cog_data;
+    int cache_cog;
+} p2_xmm_private_cache;
+
+static p2_xmm_private_cache p2_xmm_private_caches[8];
+static volatile int p2_xmm_after_cache_pasm_cog = -1;
+static volatile uint32_t p2_xmm_after_cache_pasm_marker = 0;
+static volatile uint32_t p2_xmm_after_cache_pasm_seen = 0xffffffffu;
+static volatile uint32_t p2_xmm_kernel_word0 = 0;
+static volatile uint32_t p2_xmm_kernel_word90 = 0;
+static volatile uint32_t p2_xmm_kernel_word91 = 0;
+static volatile uint32_t p2_xmm_kernel_addr = 0;
+static volatile uint32_t p2_xmm_cog_data_addr = 0;
+static volatile int p2_xmm_large_pasm_cog = -1;
+static volatile uint32_t p2_xmm_large_pasm_marker = 0;
+static volatile uint32_t p2_xmm_large_pasm_seen = 0xffffffffu;
+static volatile uint32_t p2_xmm_cog_data_word0_after = 0;
+static volatile uint32_t p2_xmm_cog_data_word1_after = 0;
+static volatile uint32_t p2_xmm_cog_data_word2_after = 0;
+static volatile uint32_t p2_xmm_cog_data_word3_after = 0;
+static volatile uint32_t p2_xmm_cog_data_word4_after = 0;
+static volatile uint32_t p2_xmm_cog_data_word5_after = 0;
+static volatile uint32_t p2_xmm_cog_data_word6_after = 0;
+static volatile uint32_t p2_xmm_cog_data_word7_after = 0;
+
+static void p2_xmm_private_cache_release(int child_cog)
+{
+    p2_xmm_private_cache *cache;
+
+    if (child_cog < 0 || child_cog >= 8) {
+        return;
+    }
+    cache = &p2_xmm_private_caches[child_cog];
+    if (cache->kernel == NULL && cache->init == NULL && cache->mailbox == NULL && cache->buffer == NULL &&
+            cache->child_kernel == NULL && cache->child_lut == NULL && cache->child_cog_data == NULL &&
+            cache->cache_cog == 0) {
+        cache->cache_cog = -1;
+        return;
+    }
+    if (cache->cache_cog >= 0 && cache->cache_cog < 8 && _cogchk(cache->cache_cog)) {
+        _cogstop(cache->cache_cog);
+    }
+    if (cache->cache_cog >= 0 && cache->cache_cog < 8) {
+        volatile unsigned long *registry = (volatile unsigned long *)_registry();
+        registry[cache->cache_cog] |= 0xff000000UL;
+    }
+    if (cache->kernel != NULL) {
+        hub_free(cache->kernel);
+    }
+    if (cache->init != NULL) {
+        hub_free(cache->init);
+    }
+    if (cache->mailbox != NULL) {
+        hub_free(cache->mailbox);
+    }
+    if (cache->buffer != NULL) {
+        hub_free(cache->buffer);
+    }
+    if (cache->child_kernel != NULL) {
+        hub_free(cache->child_kernel);
+    }
+    if (cache->child_lut != NULL) {
+        hub_free(cache->child_lut);
+    }
+    if (cache->child_cog_data != NULL) {
+        hub_free(cache->child_cog_data);
+    }
+    memset(cache, 0, sizeof(*cache));
+    cache->cache_cog = -1;
+}
+
+static int p2_xmm_private_cache_start(int child_cog)
+{
+    enum {
+        P2_XMM_CACHE_BYTES = 8192,
+        P2_XMM_CACHE_INDEX_WIDTH = 8,
+        P2_XMM_CACHE_OFFSET_WIDTH = 5,
+        P2_XMM_CACHE_TYPE = 29
+    };
+
+    p2_xmm_private_cache *cache;
+    volatile unsigned long *registry;
+    volatile unsigned long *request;
+    unsigned long request_addr;
+    int cache_cog;
+    int wait_count;
+
+    if (child_cog < 0 || child_cog >= 8) {
+        return -1;
+    }
+    cache_cog = child_cog ^ 1;
+    cache = &p2_xmm_private_caches[child_cog];
+    p2_xmm_private_cache_release(child_cog);
+
+    cache->cache_cog = cache_cog;
+    cache->kernel = (unsigned long *)hub_malloc(sizeof(p2_xmmcache_array));
+    cache->init = (unsigned long *)hub_malloc(4u * sizeof(unsigned long));
+    cache->mailbox = (unsigned long *)hub_malloc(2u * sizeof(unsigned long));
+    cache->buffer = (unsigned long *)hub_malloc(P2_XMM_CACHE_BYTES);
+    if (cache->kernel == NULL || cache->init == NULL || cache->mailbox == NULL || cache->buffer == NULL) {
+        p2_xmm_private_cache_release(child_cog);
+        return -1;
+    }
+
+    memcpy(cache->kernel, p2_xmmcache_array, sizeof(p2_xmmcache_array));
+    memset(cache->buffer, 0, P2_XMM_CACHE_BYTES);
+    cache->mailbox[0] = 0xffffffffUL;
+    cache->mailbox[1] = 0;
+    cache->init[0] = (unsigned long)&cache->mailbox[0];
+    cache->init[1] = (unsigned long)cache->buffer;
+    cache->init[2] = P2_XMM_CACHE_INDEX_WIDTH;
+    cache->init[3] = P2_XMM_CACHE_OFFSET_WIDTH;
+
+    if (_coginit((int)cache->init >> 2, (int)cache->kernel >> 2, cache_cog) < 0) {
+        p2_xmm_private_cache_release(child_cog);
+        return -1;
+    }
+    wait_count = 0;
+    while (cache->mailbox[0] != 0 && wait_count < 5000) {
+        _waitus(1000);
+        ++wait_count;
+    }
+    if (cache->mailbox[0] != 0) {
+        p2_xmm_private_cache_release(child_cog);
+        return -1;
+    }
+
+    registry = (volatile unsigned long *)_registry();
+    request_addr = registry[cache_cog] & 0x00ffffffUL;
+    request = (volatile unsigned long *)request_addr;
+    request[0] = (1UL << P2_XMM_CACHE_OFFSET_WIDTH) - 1UL;
+    request[1] = (unsigned long)&cache->mailbox[0];
+    registry[cache_cog] = request_addr | ((unsigned long)P2_XMM_CACHE_TYPE << 24);
+    return 0;
+}
+
+static int p2_catalina_cogstart_C(void func(void *), void *arg, void *stack_base, uint32_t stack_size)
+{
+    typedef struct p2_xmm_cog_data {
+        unsigned long REG;
+        unsigned long PC;
+        unsigned long SP;
+        unsigned long lsize;
+        unsigned long laddr;
+        unsigned long arg1;
+        unsigned long arg2;
+        unsigned long CS;
+    } p2_xmm_cog_data;
+
+    enum {
+        P2_XMM_DYNAMIC_KERNEL_LONGS = 512,
+        P2_XMM_CODE_SEGMENT_START = 0x00080200UL
+    };
+
+    unsigned long *kernel = NULL;
+    unsigned long *lut = NULL;
+    p2_xmm_cog_data *cog_data = NULL;
+    p2_xmm_private_cache *cache;
+    int cog = -1;
+    int child_cog = -1;
+    int candidate;
+    volatile unsigned long *registry;
+    size_t lut_bytes = (size_t)XMM_LUT_LIBRARY_BLOB_SIZE;
+    int i;
+
+    if (func == NULL || stack_base == NULL || stack_size == 0u) {
+        return -1;
+    }
+    registry = (volatile unsigned long *)_registry();
+    for (candidate = 2; candidate < 8; candidate += 2) {
+        int pair_cog = candidate ^ 1;
+        int candidate_inactive = ((registry[candidate] >> 24) == 0xffu);
+        int pair_inactive = ((registry[pair_cog] >> 24) == 0xffu);
+        if (candidate_inactive && pair_inactive && !_cogchk(candidate) && !_cogchk(pair_cog)) {
+            child_cog = candidate;
+            break;
+        }
+    }
+    if (child_cog < 0) {
+        return -1;
+    }
+    if (p2_xmm_private_cache_start(child_cog) != 0) {
+        return -1;
+    }
+    p2_xmm_after_cache_pasm_cog = p2_cog_marker_probe(child_cog,
+            (uint32_t *)&p2_xmm_after_cache_pasm_marker,
+            (uint32_t *)&p2_xmm_after_cache_pasm_seen);
+    p2_xmm_large_pasm_cog = p2_cog_large_marker_probe(child_cog,
+            (uint32_t *)&p2_xmm_large_pasm_marker,
+            (uint32_t *)&p2_xmm_large_pasm_seen);
+    cache = &p2_xmm_private_caches[child_cog];
+    kernel = (unsigned long *)hub_malloc(P2_XMM_DYNAMIC_KERNEL_LONGS * sizeof(unsigned long));
+    lut = (unsigned long *)hub_malloc(lut_bytes);
+    cog_data = (p2_xmm_cog_data *)hub_malloc(sizeof(*cog_data));
+    if (kernel == NULL || lut == NULL || cog_data == NULL) {
+        p2_xmm_private_cache_release(child_cog);
+        if (kernel != NULL) {
+            hub_free(kernel);
+        }
+        if (lut != NULL) {
+            hub_free(lut);
+        }
+        if (cog_data != NULL) {
+            hub_free(cog_data);
+        }
+        return -1;
+    }
+    cache->child_kernel = kernel;
+    cache->child_lut = lut;
+    cache->child_cog_data = cog_data;
+    for (i = 0; i < P2_XMM_DYNAMIC_KERNEL_LONGS; ++i) {
+        kernel[i] = p2_xmmd_array[i];
+    }
+    p2_xmm_kernel_word0 = (uint32_t)kernel[0];
+    p2_xmm_kernel_word90 = (uint32_t)kernel[90];
+    p2_xmm_kernel_word91 = (uint32_t)kernel[91];
+    p2_xmm_kernel_addr = (uint32_t)kernel;
+    p2_xmm_cog_data_addr = (uint32_t)cog_data;
+    memcpy(lut, XMM_LUT_LIBRARY_array, lut_bytes);
+
+    cog_data->REG = (unsigned long)_registry();
+    cog_data->PC = (unsigned long)func;
+    cog_data->SP = (unsigned long)stack_base + stack_size;
+    cog_data->lsize = (unsigned long)((XMM_LUT_LIBRARY_BLOB_SIZE / 4) - 1u);
+    cog_data->laddr = (unsigned long)lut;
+    cog_data->arg1 = (unsigned long)arg;
+    cog_data->arg2 = (unsigned long)arg;
+    cog_data->CS = P2_XMM_CODE_SEGMENT_START;
+
+    cog = _cogstart_PASM(child_cog, kernel, cog_data);
+    _waitcnt(_cnt() + (_clockfreq() / 20));
+    if (cog < 0) {
+        p2_xmm_private_cache_release(child_cog);
+    }
+    return cog;
+}
+#else
+#define p2_catalina_cogstart_C(func, arg, stack_base, stack_size) _cogstart_C((func), (arg), (stack_base), (stack_size))
+#endif
+
+enum {
+    P2_NATIVE_BLINK_STATUS = 0,
+    P2_NATIVE_BLINK_STOP,
+    P2_NATIVE_BLINK_PIN,
+    P2_NATIVE_BLINK_PERIOD_MS,
+    P2_NATIVE_BLINK_COGID,
+    P2_NATIVE_BLINK_CALLS,
+    P2_NATIVE_BLINK_MS_TICKS,
+    P2_NATIVE_BLINK_MAILBOX_LONGS
+};
+
+static const uint32_t p2_native_blink_pasm[] = {
+    0xf60055f8u, 0xfd606201u, 0xf600562au, 0xf1045610u,
+    0xfc60622bu, 0xf600562au, 0xf1045608u, 0xfb00582bu,
+    0xf600562au, 0xf104560cu, 0xfb005a2bu, 0xf600562au,
+    0xf1045618u, 0xfb005c2bu, 0xfd605859u, 0xfd605e1au,
+    0xf6046201u, 0xfc60622au, 0xf600562au, 0xf1045604u,
+    0xfb08622bu, 0x5d90003cu, 0xf600602du, 0xfa605e2eu,
+    0xfd602224u, 0xf600562au, 0xf1045604u, 0xfb08622bu,
+    0x5d900020u, 0xfb6c61f9u, 0xfd60585fu, 0xf600562au,
+    0xf1045614u, 0xfb00622bu, 0xf1046201u, 0xfc60622bu,
+    0xfd9fffb4u, 0xfd605850u, 0xf6046202u, 0xfc60622au,
+    0xfd606201u, 0xfd606203u, 0x00000000u, 0x00000000u,
+    0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u,
+    0x00000000u, 0x00000000u
+};
+
+static const uint32_t p2_cog_marker_pasm[] = {
+    0xf60011f8u, 0xff2d52adu, 0xf60412a5u, 0xfc601208u,
+    0xfd601201u, 0xf1041004u, 0xfc601208u, 0xfd601203u,
+    0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u,
+    0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u
+};
+
+static int p2_cog_marker_probe(int target_cog, uint32_t *marker_out, uint32_t *cog_out)
+{
+    uint32_t *program;
+    uint32_t *mailbox;
+    int cog;
+    int wait_ms;
+
+    if (marker_out != NULL) {
+        *marker_out = 0;
+    }
+    if (cog_out != NULL) {
+        *cog_out = 0xffffffffu;
+    }
+    program = (uint32_t *)p2_hub_mem_alloc(sizeof(p2_cog_marker_pasm));
+    mailbox = (uint32_t *)p2_hub_mem_alloc(2u * sizeof(uint32_t));
+    if (program == NULL || mailbox == NULL) {
+        if (program != NULL) {
+            p2_hub_mem_free(program);
+        }
+        if (mailbox != NULL) {
+            p2_hub_mem_free(mailbox);
+        }
+        return -1;
+    }
+    memcpy(program, p2_cog_marker_pasm, sizeof(p2_cog_marker_pasm));
+    mailbox[0] = 0;
+    mailbox[1] = 0xffffffffu;
+    cog = _cogstart_PASM(target_cog, program, mailbox);
+    for (wait_ms = 0; cog >= 0 && wait_ms < 50 && mailbox[0] == 0; ++wait_ms) {
+        _waitms(1);
+    }
+    if (marker_out != NULL) {
+        *marker_out = mailbox[0];
+    }
+    if (cog_out != NULL) {
+        *cog_out = mailbox[1];
+    }
+    if (cog >= 0 && _cogchk(cog)) {
+        _cogstop(cog);
+    }
+    p2_hub_mem_free(mailbox);
+    p2_hub_mem_free(program);
+    return cog;
+}
+
+static int p2_cog_large_marker_probe(int target_cog, uint32_t *marker_out, uint32_t *cog_out)
+{
+    static const uint32_t probe_words[] = {
+        0xf600c5f8u, 0xff35db35u, 0xf604c7b6u, 0xfc60c662u,
+        0xfd60c601u, 0xf104c404u, 0xfc60c662u, 0xfd60c603u
+    };
+    uint32_t *program;
+    uint32_t *mailbox;
+    int cog;
+    int wait_ms;
+    int i;
+
+    if (marker_out != NULL) {
+        *marker_out = 0;
+    }
+    if (cog_out != NULL) {
+        *cog_out = 0xffffffffu;
+    }
+    program = (uint32_t *)p2_hub_mem_alloc(512u * sizeof(uint32_t));
+    mailbox = (uint32_t *)p2_hub_mem_alloc(2u * sizeof(uint32_t));
+    if (program == NULL || mailbox == NULL) {
+        if (program != NULL) {
+            p2_hub_mem_free(program);
+        }
+        if (mailbox != NULL) {
+            p2_hub_mem_free(mailbox);
+        }
+        return -1;
+    }
+    memset(program, 0, 512u * sizeof(uint32_t));
+    program[0] = 0xfd900164u;
+    for (i = 0; i < (int)(sizeof(probe_words) / sizeof(probe_words[0])); ++i) {
+        program[90 + i] = probe_words[i];
+    }
+    mailbox[0] = 0;
+    mailbox[1] = 0xffffffffu;
+    cog = _cogstart_PASM(target_cog, program, mailbox);
+    for (wait_ms = 0; cog >= 0 && wait_ms < 50 && mailbox[0] == 0; ++wait_ms) {
+        _waitms(1);
+    }
+    if (marker_out != NULL) {
+        *marker_out = mailbox[0];
+    }
+    if (cog_out != NULL) {
+        *cog_out = mailbox[1];
+    }
+    if (cog >= 0 && _cogchk(cog)) {
+        _cogstop(cog);
+    }
+    p2_hub_mem_free(mailbox);
+    p2_hub_mem_free(program);
+    return cog;
+}
 
 static void p2_child_vm_cog_ping_entry(void *arg)
 {
@@ -606,6 +1221,9 @@ static void p2_child_vm_cog_ping_entry(void *arg)
     job->result = (job->input * 2) + 1;
     _waitus(1000);
     job->status = 2;
+    while (job->status != 3) {
+        _waitus(1000);
+    }
 }
 
 #ifdef __CATALINA_libthreads
@@ -628,6 +1246,197 @@ static int p2_child_vm_thread_ping_entry(int argc, char *argv[])
     return job->result;
 }
 #endif
+
+static void p2_child_vm_cog_once_entry(void *arg)
+{
+    p2_child_vm_cog_once_job *job = (p2_child_vm_cog_once_job *)arg;
+    bvm *child = NULL;
+    size_t wrong_free_before;
+    size_t wrong_realloc_before;
+    int i;
+
+    if (job == NULL || job->slot < 0 || job->slot >= BE_P2_VM_HEAP_MAX_PARTITIONS) {
+        return;
+    }
+    job->status = 1;
+    job->cog_id = _cogid();
+    job->partition_ready = 0;
+    job->selected = 0;
+    job->child_created = 0;
+    job->child_deleted = 0;
+    job->function_found = 0;
+    job->vm_new_stage = 0;
+    job->vm_new_detail_stage = 0;
+    job->source_stage = 0;
+    job->load_stage = 0;
+    job->call_stage = 0;
+    job->execprotected_stage = 0;
+    job->return_top = 0;
+    job->return_is_function = 0;
+    job->post_call_top = 0;
+    job->result_slot_type = -1;
+    job->post_call_type_1 = -1;
+    job->post_call_type_2 = -1;
+    job->post_call_type_3 = -1;
+    job->source_result = BE_SYNTAX_ERROR;
+    job->call_result = BE_SYNTAX_ERROR;
+    job->result_type = 0;
+    job->result_int = 0;
+    job->result_bool = 0;
+    job->result_string[0] = '\0';
+    job->child_stack_top = 0;
+    job->wrong_free_delta = 0;
+    job->wrong_realloc_delta = 0;
+
+    {
+        int runtime_locked = p2_child_vm_runtime_lock_enter();
+
+        wrong_free_before = p2_heap_wrong_free_count();
+        wrong_realloc_before = p2_heap_wrong_realloc_count();
+        job->partition_ready = p2_heap_vm_partition_create(job->slot, job->bytes);
+        if (job->partition_ready) {
+            job->selected = p2_heap_vm_partition_select(job->slot);
+        }
+        if (job->selected) {
+            job->vm_new_stage = 1;
+            berry_vm_new_diag_stage_ptr = &job->vm_new_detail_stage;
+            berry_vm_new_skip_loadlibs = 1;
+            child = be_vm_new();
+            berry_vm_new_skip_loadlibs = 0;
+            berry_vm_new_diag_stage_ptr = NULL;
+            job->vm_new_stage = child != NULL ? 2 : -1;
+        }
+        if (child != NULL) {
+            job->child_created = 1;
+            job->source_stage = 1;
+            job->load_stage = 1;
+            if (job->name[0] != '\0') {
+                (void)be_global_new(child, be_newstr(child, job->name));
+            }
+            job->source_result = be_loadbuffer(child, "cog_source", job->source, strlen(job->source));
+            job->load_stage = 2;
+            if (job->source_result == BE_OK) {
+                job->call_stage = 1;
+                job->source_result = be_pcall(child, 0);
+                job->call_stage = 2;
+            }
+            job->source_stage = 2;
+            if (job->source_result == BE_OK) {
+                job->return_top = be_top(child);
+                job->return_is_function = (job->return_top > 0 && be_isfunction(child, -1));
+                if (!strcmp(job->name, "$return")) {
+                    if (be_top(child) > 0 && be_isfunction(child, -1)) {
+                        job->function_found = 1;
+                    } else if (be_top(child) > 1 && be_isfunction(child, -2)) {
+                        be_pop(child, 1);
+                        job->function_found = 1;
+                    } else if (be_top(child) > 0) {
+                        int result_index = -1;
+                        int stack_top = be_top(child);
+                        int result_scan;
+
+                        for (result_scan = -1; result_scan >= -stack_top; --result_scan) {
+                            if (be_isint(child, result_scan)) {
+                                result_index = result_scan;
+                                break;
+                            }
+                        }
+
+                        if (be_isint(child, result_index)) {
+                            job->result_type = 1;
+                            job->result_int = be_toint(child, result_index);
+                        } else if (be_isbool(child, result_index)) {
+                            job->result_type = 2;
+                            job->result_bool = be_tobool(child, result_index);
+                        } else if (be_isnil(child, result_index)) {
+                            job->result_type = 3;
+                        } else if (be_isstring(child, result_index)) {
+                            const char *text = be_tostring(child, result_index);
+
+                            job->result_type = 4;
+                            if (text != NULL) {
+                                strncpy(job->result_string, text, sizeof(job->result_string) - 1);
+                                job->result_string[sizeof(job->result_string) - 1] = '\0';
+                            }
+                        }
+                        job->call_result = BE_OK;
+                    }
+                } else {
+                    be_pop(child, be_top(child));
+                    job->function_found = be_getglobal(child, job->name);
+                }
+                if (job->function_found) {
+                    bvalue *result_slot;
+
+                    for (i = 0; i < job->argc; ++i) {
+                        switch (job->arg_type[i]) {
+                        case 1:
+                            be_pushint(child, job->arg_int[i]);
+                            break;
+                        case 2:
+                            be_pushbool(child, job->arg_bool[i]);
+                            break;
+                        case 3:
+                            be_pushnil(child);
+                            break;
+                        case 4:
+                            be_pushstring(child, job->arg_string[i]);
+                            break;
+                        default:
+                            be_pushnil(child);
+                            break;
+                        }
+                    }
+                    result_slot = child->top - job->argc - 1;
+                    job->call_result = be_pcall(child, job->argc);
+                    if (job->call_result == BE_OK) {
+                        job->post_call_top = be_top(child);
+                        job->result_slot_type = var_type(result_slot);
+                        if (be_top(child) >= 1) {
+                            job->post_call_type_1 = var_type(child->top - 1);
+                        }
+                        if (be_top(child) >= 2) {
+                            job->post_call_type_2 = var_type(child->top - 2);
+                        }
+                        if (be_top(child) >= 3) {
+                            job->post_call_type_3 = var_type(child->top - 3);
+                        }
+                        if (var_isint(result_slot)) {
+                            job->result_type = 1;
+                            job->result_int = var_toint(result_slot);
+                        } else if (var_isbool(result_slot)) {
+                            job->result_type = 2;
+                            job->result_bool = var_tobool(result_slot);
+                        } else if (var_isnil(result_slot)) {
+                            job->result_type = 3;
+                        } else if (var_isstr(result_slot)) {
+                            const char *text = str(var_tostr(result_slot));
+
+                            job->result_type = 4;
+                            if (text != NULL) {
+                                strncpy(job->result_string, text, sizeof(job->result_string) - 1);
+                                job->result_string[sizeof(job->result_string) - 1] = '\0';
+                            }
+                        }
+                    }
+                }
+            }
+            be_pop(child, be_top(child));
+            job->child_stack_top = be_top(child);
+            be_vm_delete(child);
+            job->child_deleted = 1;
+        }
+        p2_heap_vm_partition_clear_current();
+        job->wrong_free_delta = p2_heap_wrong_free_count() - wrong_free_before;
+        job->wrong_realloc_delta = p2_heap_wrong_realloc_count() - wrong_realloc_before;
+        p2_child_vm_runtime_lock_leave(runtime_locked);
+    }
+
+    job->status = 2;
+    while (job->status != 4) {
+        _waitus(1000);
+    }
+}
 
 static void p2_child_vm_runtime_lock_init(void)
 {
@@ -665,6 +1474,1747 @@ static void p2_child_vm_runtime_lock_leave(int locked)
     if (locked && p2_child_vm_runtime_lock >= 0) {
         LOCKCLR(p2_child_vm_runtime_lock);
     }
+}
+
+typedef struct p2_closure_cog_slot {
+    int used;
+    bvm *vm;
+    void *stack;
+    size_t stack_size;
+    bint handle;
+    volatile int stop;
+    volatile int status;
+    volatile int cog_id;
+    volatile int period_ms;
+    volatile int native_pin;
+    volatile int native_blink;
+    volatile int descriptor_task;
+    volatile int setup_function;
+    volatile int setup_descriptor_return;
+    volatile int task_kind;
+    volatile int isolated_source;
+    p2_child_vm_cog_once_job *source_job;
+#if defined(__CATALINA_LARGE)
+    volatile uint32_t *native_mailbox;
+#else
+    volatile uint32_t native_mailbox[P2_NATIVE_BLINK_MAILBOX_LONGS];
+#endif
+    volatile int argc;
+    int arg_type[P2_CLOSURE_COG_ARGS_MAX];
+    bint arg_int[P2_CLOSURE_COG_ARGS_MAX];
+    int arg_bool[P2_CLOSURE_COG_ARGS_MAX];
+    char arg_string[P2_CLOSURE_COG_ARGS_MAX][P2_CLOSURE_COG_TEXT_MAX + 1];
+    volatile size_t call_count;
+    volatile int call_result;
+    volatile int last_result_type;
+    volatile bint last_result_int;
+    volatile int last_result_bool;
+    volatile int stop_wait_ms;
+    char last_error[64];
+} p2_closure_cog_slot;
+
+static p2_closure_cog_slot p2_closure_cog_slots[P2_CLOSURE_COG_MAX];
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+static volatile int p2_closure_cog_main_idle;
+static int p2_closure_cog_main_vm_locked;
+#endif
+
+void p2_closure_cog_repl_idle(int idle)
+{
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+    if (idle) {
+        p2_closure_cog_main_idle = 1;
+        p2_child_vm_runtime_lock_leave(p2_closure_cog_main_vm_locked);
+        p2_closure_cog_main_vm_locked = 0;
+    } else {
+        p2_closure_cog_main_idle = 0;
+        if (!p2_closure_cog_main_vm_locked) {
+            p2_closure_cog_main_vm_locked = p2_child_vm_runtime_lock_enter();
+        }
+    }
+#else
+    (void)idle;
+#endif
+}
+
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+static int p2_closure_cog_runtime_lock_enter(p2_closure_cog_slot *slot)
+{
+    int lock;
+
+    p2_child_vm_runtime_lock_init();
+    lock = p2_child_vm_runtime_lock;
+    if (lock < 0) {
+        return 0;
+    }
+    while (LOCKSET(lock)) {
+        ++p2_child_vm_runtime_lock_contentions;
+        if (slot == NULL || slot->stop || !p2_closure_cog_main_idle) {
+            return 0;
+        }
+        _waitus(10);
+    }
+    if (slot != NULL && (slot->stop || !p2_closure_cog_main_idle)) {
+        LOCKCLR(lock);
+        return 0;
+    }
+    ++p2_child_vm_runtime_lock_acquires;
+    return 1;
+}
+#endif
+
+static int p2_closure_cog_slot_from_handle(bint handle)
+{
+    bint slot = handle - P2_CLOSURE_COG_HANDLE_BASE;
+
+    if (slot < 0 || slot >= P2_CLOSURE_COG_MAX) {
+        return -1;
+    }
+    return (int)slot;
+}
+
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+static void p2_closure_cog_registry_init(bvm *vm)
+{
+    int i;
+
+    if (be_getglobal(vm, "__p2_closure_cogs")) {
+        be_pop(vm, 1);
+        return;
+    }
+    be_pop(vm, 1);
+    be_newobject(vm, "list");
+    for (i = 0; i < P2_CLOSURE_COG_MAX; ++i) {
+        be_pushnil(vm);
+        be_data_push(vm, -2);
+        be_pop(vm, 1);
+    }
+    be_setglobal(vm, "__p2_closure_cogs");
+    be_pop(vm, 1);
+}
+
+static void p2_closure_cog_registry_set(bvm *vm, int slot, int value_index)
+{
+    int abs_value = be_absindex(vm, value_index);
+
+    p2_closure_cog_registry_init(vm);
+    (void)be_getglobal(vm, "__p2_closure_cogs");
+    be_pushint(vm, (bint)slot);
+    be_pushvalue(vm, abs_value);
+    (void)be_setindex(vm, -3);
+    be_pop(vm, 3);
+}
+
+static void p2_closure_cog_registry_clear(bvm *vm, int slot)
+{
+    p2_closure_cog_registry_init(vm);
+    (void)be_getglobal(vm, "__p2_closure_cogs");
+    be_pushint(vm, (bint)slot);
+    be_pushnil(vm);
+    (void)be_setindex(vm, -3);
+    be_pop(vm, 3);
+}
+#endif
+
+static void p2_closure_cog_capture_exception(bvm *vm, p2_closure_cog_slot *slot)
+{
+    const char *msg = NULL;
+
+    if (be_top(vm) >= 1 && be_isstring(vm, -1)) {
+        msg = be_tostring(vm, -1);
+    }
+    if (!msg && be_top(vm) >= 2 && be_isstring(vm, -2)) {
+        msg = be_tostring(vm, -2);
+    }
+    if (!msg) {
+        msg = "closure cog callback failed";
+    }
+    strncpy(slot->last_error, msg, sizeof(slot->last_error) - 1);
+    slot->last_error[sizeof(slot->last_error) - 1] = '\0';
+}
+
+static void p2_closure_cog_push_arg(bvm *vm, p2_closure_cog_slot *slot, int index)
+{
+    switch (slot->arg_type[index]) {
+    case 1:
+        be_pushint(vm, slot->arg_int[index]);
+        break;
+    case 2:
+        be_pushbool(vm, slot->arg_bool[index]);
+        break;
+    case 3:
+        be_pushnil(vm);
+        break;
+    case 4:
+        be_pushstring(vm, slot->arg_string[index]);
+        break;
+    default:
+        be_pushnil(vm);
+        break;
+    }
+}
+
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+static int p2_closure_cog_call_once(p2_closure_cog_slot *slot)
+{
+    bvm *vm = slot->vm;
+    int top_before;
+    int callable = 0;
+    int result_index;
+    int i;
+
+    if (vm == NULL) {
+        return 0;
+    }
+    top_before = be_top(vm);
+    if (be_getglobal(vm, "__p2_closure_cogs")) {
+        be_pushint(vm, slot->handle - P2_CLOSURE_COG_HANDLE_BASE);
+        callable = be_getindex(vm, -2);
+        be_remove(vm, -2);
+        be_remove(vm, -2);
+    }
+    if (!callable || !be_isfunction(vm, -1)) {
+        be_pop(vm, be_top(vm) - top_before);
+        strncpy(slot->last_error, "closure cog callback is not callable", sizeof(slot->last_error) - 1);
+        slot->last_error[sizeof(slot->last_error) - 1] = '\0';
+        slot->call_result = BE_EXCEPTION;
+        return 0;
+    }
+    for (i = 0; i < slot->argc; ++i) {
+        p2_closure_cog_push_arg(vm, slot, i);
+    }
+    slot->call_result = be_pcall(vm, slot->argc);
+    if (slot->call_result != BE_OK) {
+        p2_closure_cog_capture_exception(vm, slot);
+        be_pop(vm, be_top(vm) - top_before);
+        return 0;
+    }
+    ++slot->call_count;
+    result_index = -(slot->argc + 1);
+    slot->last_result_type = 0;
+    slot->last_result_int = 0;
+    slot->last_result_bool = 0;
+    if (be_top(vm) > top_before) {
+        if (be_isbool(vm, result_index)) {
+            slot->last_result_type = 2;
+            slot->last_result_bool = be_tobool(vm, result_index);
+            if (!slot->last_result_bool) {
+                be_pop(vm, be_top(vm) - top_before);
+                return 0;
+            }
+        } else if (be_isnil(vm, result_index)) {
+            slot->last_result_type = 3;
+            be_pop(vm, be_top(vm) - top_before);
+            return 0;
+        } else if (be_isint(vm, result_index)) {
+            slot->last_result_type = 1;
+            slot->last_result_int = be_toint(vm, result_index);
+            if (slot->last_result_int < 0) {
+                be_pop(vm, be_top(vm) - top_before);
+                return 0;
+            }
+            slot->period_ms = (int)slot->last_result_int;
+        }
+    }
+    be_pop(vm, be_top(vm) - top_before);
+    return 1;
+}
+#endif
+
+static void p2_closure_cog_setup_native_blink(bvm *vm, p2_closure_cog_slot *slot)
+{
+    (void)vm;
+
+    slot->call_result = BE_OK;
+    slot->last_result_type = 1;
+    slot->last_result_int = (bint)slot->period_ms;
+    slot->last_result_bool = 0;
+}
+
+static void p2_closure_cog_sync_native_blink(p2_closure_cog_slot *slot)
+{
+    if (slot == NULL || !slot->native_blink) {
+        return;
+    }
+#if defined(__CATALINA_LARGE)
+    if (slot->native_mailbox == NULL) {
+        return;
+    }
+#endif
+    if (slot->native_mailbox[P2_NATIVE_BLINK_STATUS] != 0) {
+        slot->status = (int)slot->native_mailbox[P2_NATIVE_BLINK_STATUS];
+    }
+    if (slot->native_mailbox[P2_NATIVE_BLINK_COGID] < 8u) {
+        slot->cog_id = (int)slot->native_mailbox[P2_NATIVE_BLINK_COGID];
+    }
+    slot->call_count = (size_t)slot->native_mailbox[P2_NATIVE_BLINK_CALLS];
+}
+
+static void p2_closure_cog_sync_isolated_source(p2_closure_cog_slot *slot)
+{
+    p2_child_vm_cog_once_job *job;
+
+    if (slot == NULL || !slot->isolated_source) {
+        return;
+    }
+    job = slot->source_job;
+    if (job == NULL) {
+        return;
+    }
+    if (job->status != 0) {
+        slot->status = job->status;
+    }
+    if (job->cog_id >= 0 && job->cog_id < 8) {
+        slot->cog_id = job->cog_id;
+    }
+    slot->call_result = job->call_result;
+    slot->last_result_type = job->result_type;
+    slot->last_result_int = job->result_int;
+    slot->last_result_bool = job->result_bool;
+    slot->call_count = job->function_found ? 1u : 0u;
+}
+
+static int p2_closure_cog_start_native_blink(p2_closure_cog_slot *slot)
+{
+    void *program;
+    uint64_t ms_ticks;
+    int cog;
+    int target;
+    int wait_ms;
+
+    if (slot == NULL || slot->native_pin < 0 || slot->native_pin > 63 || slot->period_ms <= 0) {
+        return -1;
+    }
+
+#if defined(__CATALINA_LARGE)
+    slot->native_mailbox = (volatile uint32_t *)p2_hub_mem_calloc(P2_NATIVE_BLINK_MAILBOX_LONGS, sizeof(uint32_t));
+    if (slot->native_mailbox == NULL) {
+        strncpy(slot->last_error, "failed to allocate native blinker mailbox", sizeof(slot->last_error) - 1);
+        slot->last_error[sizeof(slot->last_error) - 1] = '\0';
+        return -2;
+    }
+#else
+    memset((void *)slot->native_mailbox, 0, sizeof(slot->native_mailbox));
+#endif
+    ms_ticks = ((uint64_t)_clockfreq()) / 1000u;
+    if (ms_ticks == 0u) {
+        ms_ticks = 1u;
+    }
+    if (ms_ticks > 0xffffffffu) {
+        ms_ticks = 0xffffffffu;
+    }
+    slot->native_mailbox[P2_NATIVE_BLINK_PIN] = (uint32_t)slot->native_pin;
+    slot->native_mailbox[P2_NATIVE_BLINK_PERIOD_MS] = (uint32_t)slot->period_ms;
+    slot->native_mailbox[P2_NATIVE_BLINK_MS_TICKS] = (uint32_t)ms_ticks;
+
+    program = p2_hub_mem_alloc(sizeof(p2_native_blink_pasm));
+    if (program == NULL) {
+#if defined(__CATALINA_LARGE)
+        p2_hub_mem_free((void *)slot->native_mailbox);
+        slot->native_mailbox = NULL;
+#endif
+        strncpy(slot->last_error, "failed to allocate native blinker program", sizeof(slot->last_error) - 1);
+        slot->last_error[sizeof(slot->last_error) - 1] = '\0';
+        return -2;
+    }
+    memcpy(program, p2_native_blink_pasm, sizeof(p2_native_blink_pasm));
+    target = ANY_COG;
+    cog = _cogstart_PASM(target, program, (void *)slot->native_mailbox);
+    p2_hub_mem_free(program);
+    if (cog < 0) {
+#if defined(__CATALINA_LARGE)
+        p2_hub_mem_free((void *)slot->native_mailbox);
+        slot->native_mailbox = NULL;
+#endif
+        return -1;
+    }
+    target = cog;
+    slot->cog_id = target;
+    slot->status = 0;
+    for (wait_ms = 0; wait_ms < 20 && slot->native_mailbox[P2_NATIVE_BLINK_STATUS] == 0; ++wait_ms) {
+        _waitms(1);
+    }
+    p2_closure_cog_sync_native_blink(slot);
+    if (slot->native_mailbox[P2_NATIVE_BLINK_STATUS] == 0) {
+        _cogstop(target);
+        slot->cog_id = -1;
+        slot->status = 3;
+        strncpy(slot->last_error, "blink cog no ack", sizeof(slot->last_error) - 1);
+        slot->last_error[sizeof(slot->last_error) - 1] = '\0';
+#if defined(__CATALINA_LARGE)
+        p2_hub_mem_free((void *)slot->native_mailbox);
+        slot->native_mailbox = NULL;
+#endif
+        return -2;
+    }
+    return target;
+}
+
+static void p2_closure_cog_entry(void *arg)
+{
+    p2_closure_cog_slot *slot = (p2_closure_cog_slot *)arg;
+
+    if (slot == NULL) {
+        return;
+    }
+    slot->status = 1;
+    slot->cog_id = _cogid();
+    if (slot->native_blink && slot->native_pin >= 0 && slot->native_pin <= 63) {
+        _dirh(slot->native_pin);
+        while (!slot->stop) {
+            int waited = 0;
+
+            while (!slot->stop && waited < slot->period_ms) {
+                int chunk = slot->period_ms - waited;
+
+                if (chunk > 10) {
+                    chunk = 10;
+                }
+                if (chunk <= 0) {
+                    chunk = 1;
+                }
+                _waitms((uint32_t)chunk);
+                waited += chunk;
+            }
+            if (!slot->stop) {
+                berry_p2_gpio_toggle(slot->native_pin);
+                ++slot->call_count;
+            }
+        }
+        slot->status = slot->stop ? 2 : 3;
+        return;
+    }
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+    while (!slot->stop) {
+        int locked = 0;
+        int keep_running = 1;
+        int waited = 0;
+
+        while (!slot->stop && !p2_closure_cog_main_idle) {
+            _waitms(P2_CLOSURE_COG_IDLE_WAIT_MS);
+        }
+        if (slot->stop) {
+            break;
+        }
+        locked = p2_closure_cog_runtime_lock_enter(slot);
+        if (locked && !slot->stop && p2_closure_cog_main_idle) {
+            keep_running = p2_closure_cog_call_once(slot);
+        }
+        p2_child_vm_runtime_lock_leave(locked);
+        if (!keep_running) {
+            break;
+        }
+        while (!slot->stop && waited < slot->period_ms) {
+            int chunk = slot->period_ms - waited;
+
+            if (chunk > 10) {
+                chunk = 10;
+            }
+            if (chunk <= 0) {
+                chunk = 1;
+            }
+            _waitms((uint32_t)chunk);
+            waited += chunk;
+        }
+    }
+#endif
+    slot->status = slot->stop ? 2 : 3;
+}
+
+static int p2_closure_cog_first_free(void)
+{
+    int i;
+
+    for (i = 0; i < P2_CLOSURE_COG_MAX; ++i) {
+        if (!p2_closure_cog_slots[i].used) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void p2_closure_cog_reap_stopped(bvm *vm)
+{
+    int i;
+
+    for (i = 0; i < P2_CLOSURE_COG_MAX; ++i) {
+        p2_closure_cog_slot *slot = &p2_closure_cog_slots[i];
+        int raw_running = 0;
+
+        if (!slot->used || slot->status == 1) {
+            p2_closure_cog_sync_native_blink(slot);
+            p2_closure_cog_sync_isolated_source(slot);
+        }
+        if (!slot->used || slot->status == 1) {
+            continue;
+        }
+        if (slot->cog_id >= 0 && slot->cog_id < 8) {
+            raw_running = _cogchk(slot->cog_id) ? 1 : 0;
+        }
+        if (slot->isolated_source &&
+            slot->status == 2 &&
+            slot->cog_id >= 1 &&
+            slot->cog_id < 8 &&
+            raw_running) {
+            if (slot->source_job != NULL) {
+                slot->source_job->status = 3;
+            }
+            _cogstop(slot->cog_id);
+            raw_running = 0;
+        }
+        if (raw_running) {
+            continue;
+        }
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+        p2_closure_cog_registry_clear(vm, i);
+#else
+        (void)vm;
+#endif
+        if (slot->stack != NULL) {
+            p2_cog_stack_free(slot->stack);
+        }
+#if defined(__CATALINA_LARGE)
+        if (slot->native_mailbox != NULL) {
+            p2_hub_mem_free((void *)slot->native_mailbox);
+        }
+#endif
+        if (slot->isolated_source) {
+            (void)p2_heap_vm_partition_release(i);
+            if (slot->source_job != NULL) {
+                p2_hub_mem_free(slot->source_job);
+            }
+        }
+        memset(slot, 0, sizeof(*slot));
+    }
+}
+
+static p2_closure_cog_slot *p2_closure_cog_require_handle(bvm *vm, int index, int *slot_index)
+{
+    bint handle = p2_require_int_arg(vm, index, "closure cog handle must be an int");
+    int slot = p2_closure_cog_slot_from_handle(handle);
+
+    if (slot < 0 || !p2_closure_cog_slots[slot].used) {
+        be_raise(vm, "value_error", "invalid closure cog handle");
+    }
+    if (slot_index != NULL) {
+        *slot_index = slot;
+    }
+    return &p2_closure_cog_slots[slot];
+}
+
+enum {
+    P2_CLOSURE_TASK_NONE = 0,
+    P2_CLOSURE_TASK_BLINKER = 1,
+#if defined(__CATALINA_LARGE)
+    P2_CLOSURE_TASK_SOURCE = 2
+#endif
+};
+
+#if defined(__CATALINA_LARGE)
+typedef struct p2_closure_source_task {
+    int used;
+    char source[512];
+    char name[64];
+    int argc;
+    int arg_type[P2_CLOSURE_COG_ARGS_MAX];
+    bint arg_int[P2_CLOSURE_COG_ARGS_MAX];
+    int arg_bool[P2_CLOSURE_COG_ARGS_MAX];
+    char arg_string[P2_CLOSURE_COG_ARGS_MAX][P2_CLOSURE_COG_TEXT_MAX + 1];
+} p2_closure_source_task;
+
+static p2_closure_source_task p2_closure_source_tasks[P2_CLOSURE_COG_MAX];
+#endif
+
+static int p2_closure_cog_parse_blinker_descriptor(const char *text, int *argc,
+    int arg_type[P2_CLOSURE_COG_ARGS_MAX],
+    bint arg_int[P2_CLOSURE_COG_ARGS_MAX],
+    int arg_bool[P2_CLOSURE_COG_ARGS_MAX],
+    char arg_string[P2_CLOSURE_COG_ARGS_MAX][P2_CLOSURE_COG_TEXT_MAX + 1])
+{
+    int parsed_pin = -1;
+    int parsed_ms = 0;
+    char tail = '\0';
+    const char *p;
+    char *endptr;
+    long count;
+    int i;
+
+    if (text == NULL) {
+        return 0;
+    }
+    if (sscanf(text, "p2blink:%d:%d%c", &parsed_pin, &parsed_ms, &tail) == 2) {
+        if (parsed_pin < 0 || parsed_pin > 63 || parsed_ms <= 0) {
+            return 0;
+        }
+        *argc = 2;
+        arg_type[0] = 1;
+        arg_int[0] = (bint)parsed_pin;
+        arg_bool[0] = 0;
+        arg_string[0][0] = '\0';
+        arg_type[1] = 1;
+        arg_int[1] = (bint)parsed_ms;
+        arg_bool[1] = 0;
+        arg_string[1][0] = '\0';
+        return 1;
+    }
+    if (strncmp(text, "p2blinkv:", 9) != 0) {
+        return 0;
+    }
+    p = text + 9;
+    count = strtol(p, &endptr, 10);
+    if (endptr == p || *endptr != ':' || count < 2 || count > P2_CLOSURE_COG_ARGS_MAX) {
+        return 0;
+    }
+    p = endptr + 1;
+    for (i = 0; i < count; ++i) {
+        arg_type[i] = 0;
+        arg_int[i] = 0;
+        arg_bool[i] = 0;
+        arg_string[i][0] = '\0';
+        if (*p == 'i') {
+            long value;
+
+            ++p;
+            value = strtol(p, &endptr, 10);
+            if (endptr == p) {
+                return 0;
+            }
+            arg_type[i] = 1;
+            arg_int[i] = (bint)value;
+            p = endptr;
+        } else if (*p == 'b' && (p[1] == '0' || p[1] == '1')) {
+            arg_type[i] = 2;
+            arg_bool[i] = p[1] == '1';
+            p += 2;
+        } else if (*p == 'n') {
+            arg_type[i] = 3;
+            ++p;
+        } else if (*p == 's') {
+            long len;
+
+            ++p;
+            len = strtol(p, &endptr, 10);
+            if (endptr == p || *endptr != '=' ||
+                len < 0 || len > P2_CLOSURE_COG_TEXT_MAX ||
+                strlen(endptr + 1) < (size_t)len) {
+                return 0;
+            }
+            arg_type[i] = 4;
+            memcpy(arg_string[i], endptr + 1, (size_t)len);
+            arg_string[i][len] = '\0';
+            p = endptr + 1 + len;
+        } else {
+            return 0;
+        }
+        if (i + 1 < count) {
+            if (*p != ':') {
+                return 0;
+            }
+            ++p;
+        } else if (*p != '\0') {
+            return 0;
+        }
+    }
+    if (arg_type[0] != 1 || arg_type[1] != 1 ||
+        arg_int[0] < 0 || arg_int[0] > 63 || arg_int[1] <= 0) {
+        return 0;
+    }
+    *argc = (int)count;
+    return 1;
+}
+
+static int p2_closure_cog_parse_task_descriptor(const char *text, int *kind, int *argc,
+    int arg_type[P2_CLOSURE_COG_ARGS_MAX],
+    bint arg_int[P2_CLOSURE_COG_ARGS_MAX],
+    int arg_bool[P2_CLOSURE_COG_ARGS_MAX],
+    char arg_string[P2_CLOSURE_COG_ARGS_MAX][P2_CLOSURE_COG_TEXT_MAX + 1])
+{
+    const char *p;
+    const char *kind_start;
+    char *endptr;
+    long kind_len;
+    long count;
+    int i;
+
+    if (kind != NULL) {
+        *kind = P2_CLOSURE_TASK_NONE;
+    }
+#if defined(__CATALINA_LARGE)
+    if (text != NULL && strncmp(text, "p2source:", 9) == 0) {
+        long id;
+
+        p = text + 9;
+        id = strtol(p, &endptr, 10);
+        if (endptr == p || *endptr != '\0' ||
+            id < 0 || id >= P2_CLOSURE_COG_MAX ||
+            !p2_closure_source_tasks[id].used) {
+            return 0;
+        }
+        if (kind != NULL) {
+            *kind = P2_CLOSURE_TASK_SOURCE;
+        }
+        if (argc != NULL) {
+            *argc = p2_closure_source_tasks[id].argc;
+        }
+        for (i = 0; i < p2_closure_source_tasks[id].argc; ++i) {
+            arg_type[i] = p2_closure_source_tasks[id].arg_type[i];
+            arg_int[i] = p2_closure_source_tasks[id].arg_int[i];
+            arg_bool[i] = p2_closure_source_tasks[id].arg_bool[i];
+            if (p2_closure_source_tasks[id].arg_type[i] == 4) {
+                strncpy(arg_string[i], p2_closure_source_tasks[id].arg_string[i], P2_CLOSURE_COG_TEXT_MAX);
+                arg_string[i][P2_CLOSURE_COG_TEXT_MAX] = '\0';
+            }
+        }
+        return 1;
+    }
+#endif
+    if (text != NULL && strncmp(text, "p2task:", 7) == 0) {
+        p = text + 7;
+        kind_len = strtol(p, &endptr, 10);
+        if (endptr == p || *endptr != '=' || kind_len <= 0 || kind_len > 31) {
+            return 0;
+        }
+        kind_start = endptr + 1;
+        p = kind_start + kind_len;
+        if (*p != ':') {
+            return 0;
+        }
+        if (kind_len != 7 || memcmp(kind_start, "blinker", 7) != 0) {
+            return 0;
+        }
+        ++p;
+        count = strtol(p, &endptr, 10);
+        if (endptr == p || *endptr != ':' || count < 2 || count > P2_CLOSURE_COG_ARGS_MAX) {
+            return 0;
+        }
+        p = endptr + 1;
+        for (i = 0; i < count; ++i) {
+            arg_type[i] = 0;
+            arg_int[i] = 0;
+            arg_bool[i] = 0;
+            arg_string[i][0] = '\0';
+            if (*p == 'i') {
+                long value;
+
+                ++p;
+                value = strtol(p, &endptr, 10);
+                if (endptr == p) {
+                    return 0;
+                }
+                arg_type[i] = 1;
+                arg_int[i] = (bint)value;
+                p = endptr;
+            } else if (*p == 'b' && (p[1] == '0' || p[1] == '1')) {
+                arg_type[i] = 2;
+                arg_bool[i] = p[1] == '1';
+                p += 2;
+            } else if (*p == 'n') {
+                arg_type[i] = 3;
+                ++p;
+            } else if (*p == 's') {
+                long len;
+
+                ++p;
+                len = strtol(p, &endptr, 10);
+                if (endptr == p || *endptr != '=' ||
+                    len < 0 || len > P2_CLOSURE_COG_TEXT_MAX ||
+                    strlen(endptr + 1) < (size_t)len) {
+                    return 0;
+                }
+                arg_type[i] = 4;
+                memcpy(arg_string[i], endptr + 1, (size_t)len);
+                arg_string[i][len] = '\0';
+                p = endptr + 1 + len;
+            } else {
+                return 0;
+            }
+            if (i + 1 < count) {
+                if (*p != ':') {
+                    return 0;
+                }
+                ++p;
+            } else if (*p != '\0') {
+                return 0;
+            }
+        }
+        if (arg_type[0] != 1 || arg_type[1] != 1 ||
+            arg_int[0] < 0 || arg_int[0] > 63 || arg_int[1] <= 0) {
+            return 0;
+        }
+        if (kind != NULL) {
+            *kind = P2_CLOSURE_TASK_BLINKER;
+        }
+        *argc = (int)count;
+        return 1;
+    }
+    if (p2_closure_cog_parse_blinker_descriptor(text, argc, arg_type, arg_int, arg_bool, arg_string)) {
+        if (kind != NULL) {
+            *kind = P2_CLOSURE_TASK_BLINKER;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+static const char *p2_closure_cog_task_kind_name(int kind)
+{
+    switch (kind) {
+    case P2_CLOSURE_TASK_BLINKER:
+        return "blinker";
+#if defined(__CATALINA_LARGE)
+    case P2_CLOSURE_TASK_SOURCE:
+        return "source";
+#endif
+    default:
+        return "unknown";
+    }
+}
+
+static int p2_closure_cog_push_blinker_descriptor(bvm *vm, int first_arg, int argc)
+{
+    int pin = (int)p2_require_int_arg(vm, first_arg, "pin must be an int");
+    int ms = (int)p2_require_int_arg(vm, first_arg + 1, "delay ms must be an int");
+    char descriptor[P2_CLOSURE_COG_DESCRIPTOR_MAX];
+    size_t used;
+    int i;
+
+    if (pin < 0 || pin > 63) {
+        be_raise(vm, "value_error", "pin out of range");
+    }
+    if (ms <= 0) {
+        be_raise(vm, "value_error", "delay ms must be > 0");
+    }
+    if (argc < 2 || argc > P2_CLOSURE_COG_ARGS_MAX) {
+        be_raise(vm, "value_error", "too many blinker descriptor args");
+    }
+    used = (size_t)snprintf(descriptor, sizeof(descriptor), "p2task:7=blinker:%d", argc);
+    for (i = 0; i < argc; ++i) {
+        int arg_index = first_arg + i;
+        int written;
+
+        if (be_isbool(vm, arg_index)) {
+            written = snprintf(descriptor + used, sizeof(descriptor) - used,
+                ":b%d", be_tobool(vm, arg_index) ? 1 : 0);
+        } else if (be_isint(vm, arg_index)) {
+            written = snprintf(descriptor + used, sizeof(descriptor) - used,
+                ":i%ld", (long)be_toint(vm, arg_index));
+        } else if (be_isnil(vm, arg_index)) {
+            written = snprintf(descriptor + used, sizeof(descriptor) - used, ":n");
+        } else if (be_isstring(vm, arg_index)) {
+            const char *text = be_tostring(vm, arg_index);
+            size_t len = text ? strlen(text) : 0u;
+
+            if (len > P2_CLOSURE_COG_TEXT_MAX) {
+                be_raise(vm, "value_error", "blinker descriptor string too long");
+            }
+            written = snprintf(descriptor + used, sizeof(descriptor) - used,
+                ":s%lu=", (unsigned long)len);
+            if (written < 0 || used + (size_t)written + len >= sizeof(descriptor)) {
+                be_raise(vm, "value_error", "blinker descriptor too long");
+            }
+            used += (size_t)written;
+            if (len > 0u) {
+                memcpy(descriptor + used, text, len);
+                used += len;
+                descriptor[used] = '\0';
+            }
+            continue;
+        } else {
+            be_raise(vm, "type_error", "blinker descriptor args must be int, bool, nil, or string");
+        }
+        if (written < 0 || used + (size_t)written >= sizeof(descriptor)) {
+            be_raise(vm, "value_error", "blinker descriptor too long");
+        }
+        used += (size_t)written;
+    }
+    be_pushstring(vm, descriptor);
+    be_return(vm);
+}
+
+static int m_p2_closure_cog_blinker(bvm *vm)
+{
+    return p2_closure_cog_push_blinker_descriptor(vm, 1, be_top(vm));
+}
+
+#if defined(__CATALINA_LARGE)
+static int p2_closure_cog_push_source_descriptor(bvm *vm, int first_arg, int argc)
+{
+    const char *source;
+    const char *name;
+    int task_index = -1;
+    int i;
+    char descriptor[24];
+    p2_closure_source_task *task;
+
+    if (argc < 2 || argc - 2 > P2_CLOSURE_COG_ARGS_MAX) {
+        be_raise(vm, "value_error", "source task expects source, name, and up to 8 args");
+    }
+    if (!be_isstring(vm, first_arg) || !be_isstring(vm, first_arg + 1)) {
+        be_raise(vm, "type_error", "source task expects source and function name strings");
+    }
+    source = be_tostring(vm, first_arg);
+    name = be_tostring(vm, first_arg + 1);
+    if (source == NULL || strlen(source) >= sizeof(p2_closure_source_tasks[0].source)) {
+        be_raise(vm, "value_error", "source task source too long");
+    }
+    if (name == NULL || !name[0] || strlen(name) >= sizeof(p2_closure_source_tasks[0].name)) {
+        be_raise(vm, "value_error", "source task function name too long");
+    }
+    for (i = 0; i < P2_CLOSURE_COG_MAX; ++i) {
+        if (!p2_closure_source_tasks[i].used) {
+            task_index = i;
+            break;
+        }
+    }
+    if (task_index < 0) {
+        be_raise(vm, "runtime_error", "no source task descriptor slots available");
+    }
+    task = &p2_closure_source_tasks[task_index];
+    memset(task, 0, sizeof(*task));
+    task->used = 1;
+    strcpy(task->source, source);
+    strcpy(task->name, name);
+    task->argc = argc - 2;
+    for (i = 0; i < task->argc; ++i) {
+        int arg_index = first_arg + 2 + i;
+
+        if (be_isint(vm, arg_index)) {
+            task->arg_type[i] = 1;
+            task->arg_int[i] = be_toint(vm, arg_index);
+        } else if (be_isbool(vm, arg_index)) {
+            task->arg_type[i] = 2;
+            task->arg_bool[i] = be_tobool(vm, arg_index);
+        } else if (be_isnil(vm, arg_index)) {
+            task->arg_type[i] = 3;
+        } else if (be_isstring(vm, arg_index)) {
+            const char *text = be_tostring(vm, arg_index);
+
+            task->arg_type[i] = 4;
+            if (text != NULL) {
+                strncpy(task->arg_string[i], text, P2_CLOSURE_COG_TEXT_MAX);
+                task->arg_string[i][P2_CLOSURE_COG_TEXT_MAX] = '\0';
+            }
+        } else {
+            memset(task, 0, sizeof(*task));
+            be_raise(vm, "type_error", "source task args must be int, bool, nil, or string");
+        }
+    }
+    snprintf(descriptor, sizeof(descriptor), "p2source:%d", task_index);
+    be_pushstring(vm, descriptor);
+    be_return(vm);
+}
+#endif
+
+static int m_p2_closure_cog_task(bvm *vm)
+{
+    const char *kind;
+
+    if (be_top(vm) < 1 || !be_isstring(vm, 1)) {
+        be_raise(vm, "type_error", "task kind must be a string");
+    }
+    kind = be_tostring(vm, 1);
+    if (kind != NULL && !strcmp(kind, "blinker")) {
+        return p2_closure_cog_push_blinker_descriptor(vm, 2, be_top(vm) - 1);
+    }
+#if defined(__CATALINA_LARGE)
+    if (kind != NULL && !strcmp(kind, "source")) {
+#if !P2_CLOSURE_COG_SOURCE_RUNTIME_SUPPORTED
+        be_raise(vm, "runtime_error", "source task cog runtime is not supported on this P2 build");
+#endif
+        return p2_closure_cog_push_source_descriptor(vm, 2, be_top(vm) - 1);
+    }
+#endif
+    be_raise(vm, "value_error", "unsupported task kind");
+    be_return_nil(vm);
+}
+
+#if defined(__CATALINA_LARGE)
+static int m_p2_closure_cog_task_kinds(bvm *vm)
+{
+    be_newobject(vm, "list");
+    be_pushstring(vm, "blinker");
+    be_data_push(vm, -2);
+    be_pop(vm, 1);
+#if defined(__CATALINA_LARGE)
+#if P2_CLOSURE_COG_SOURCE_RUNTIME_SUPPORTED
+    be_pushstring(vm, "source");
+    be_data_push(vm, -2);
+    be_pop(vm, 1);
+#endif
+#endif
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_closure_cog_task_release(bvm *vm)
+{
+    const char *text;
+    int source_index;
+    int released = 0;
+
+    if (be_top(vm) < 1 || !be_isstring(vm, 1)) {
+        be_raise(vm, "type_error", "task descriptor must be a string");
+    }
+    text = be_tostring(vm, 1);
+#if defined(__CATALINA_LARGE)
+    if (text != NULL && strncmp(text, "p2source:", 9) == 0) {
+        source_index = (int)strtol(text + 9, NULL, 10);
+        if (source_index >= 0 && source_index < P2_CLOSURE_COG_MAX &&
+            p2_closure_source_tasks[source_index].used) {
+            memset(&p2_closure_source_tasks[source_index], 0, sizeof(p2_closure_source_tasks[source_index]));
+            released = 1;
+        }
+    }
+#else
+    (void)text;
+#endif
+    be_pushbool(vm, released);
+    be_return(vm);
+}
+#endif
+
+static int m_p2_closure_cog_is_task(bvm *vm)
+{
+    int argc = 0;
+    int arg_type[P2_CLOSURE_COG_ARGS_MAX];
+    bint arg_int[P2_CLOSURE_COG_ARGS_MAX];
+    int arg_bool[P2_CLOSURE_COG_ARGS_MAX];
+    char arg_string[P2_CLOSURE_COG_ARGS_MAX][P2_CLOSURE_COG_TEXT_MAX + 1];
+    int kind = P2_CLOSURE_TASK_NONE;
+    int ok = 0;
+
+    memset(arg_type, 0, sizeof(arg_type));
+    memset(arg_int, 0, sizeof(arg_int));
+    memset(arg_bool, 0, sizeof(arg_bool));
+    memset(arg_string, 0, sizeof(arg_string));
+    if (be_top(vm) >= 1 && be_isstring(vm, 1)) {
+        ok = p2_closure_cog_parse_task_descriptor(be_tostring(vm, 1), &kind, &argc,
+            arg_type, arg_int, arg_bool, arg_string);
+    }
+    be_pushbool(vm, ok);
+    be_return(vm);
+}
+
+#if defined(__CATALINA_LARGE)
+static int m_p2_closure_cog_task_info(bvm *vm)
+{
+    int argc = 0;
+    int arg_type[P2_CLOSURE_COG_ARGS_MAX];
+    bint arg_int[P2_CLOSURE_COG_ARGS_MAX];
+    int arg_bool[P2_CLOSURE_COG_ARGS_MAX];
+    char arg_string[P2_CLOSURE_COG_ARGS_MAX][P2_CLOSURE_COG_TEXT_MAX + 1];
+    int kind = P2_CLOSURE_TASK_NONE;
+    int i;
+
+    memset(arg_type, 0, sizeof(arg_type));
+    memset(arg_int, 0, sizeof(arg_int));
+    memset(arg_bool, 0, sizeof(arg_bool));
+    memset(arg_string, 0, sizeof(arg_string));
+    if (be_top(vm) < 1 || !be_isstring(vm, 1) ||
+        !p2_closure_cog_parse_task_descriptor(be_tostring(vm, 1), &kind, &argc,
+            arg_type, arg_int, arg_bool, arg_string)) {
+        be_raise(vm, "value_error", "invalid task descriptor");
+    }
+    be_newobject(vm, "map");
+    p2_map_set_string(vm, "kind", p2_closure_cog_task_kind_name(kind));
+    p2_map_set_int(vm, "argc", (bint)argc);
+    if (kind == P2_CLOSURE_TASK_BLINKER) {
+        p2_map_set_int(vm, "pin", arg_int[0]);
+        p2_map_set_int(vm, "period_ms", arg_int[1]);
+    }
+#if defined(__CATALINA_LARGE)
+    else if (kind == P2_CLOSURE_TASK_SOURCE && be_isstring(vm, 1)) {
+        const char *text = be_tostring(vm, 1);
+        int source_index = text ? (int)strtol(text + 9, NULL, 10) : -1;
+
+        if (source_index >= 0 && source_index < P2_CLOSURE_COG_MAX &&
+            p2_closure_source_tasks[source_index].used) {
+            p2_map_set_string(vm, "function", p2_closure_source_tasks[source_index].name);
+            p2_map_set_int(vm, "source_len", (bint)strlen(p2_closure_source_tasks[source_index].source));
+        }
+    }
+#endif
+    (void)arg_type;
+    (void)arg_bool;
+    (void)arg_string;
+    be_pop(vm, 1);
+    be_return(vm);
+}
+#endif
+
+static int p2_closure_cog_call_setup_function(bvm *vm, p2_closure_cog_slot *slot)
+{
+    int top_before;
+    bvalue *result_slot;
+    int parsed_kind = P2_CLOSURE_TASK_NONE;
+    int parsed_argc = 0;
+    int parsed_arg_type[P2_CLOSURE_COG_ARGS_MAX];
+    bint parsed_arg_int[P2_CLOSURE_COG_ARGS_MAX];
+    int parsed_arg_bool[P2_CLOSURE_COG_ARGS_MAX];
+    char parsed_arg_string[P2_CLOSURE_COG_ARGS_MAX][P2_CLOSURE_COG_TEXT_MAX + 1];
+    int i;
+
+    if (vm == NULL || slot == NULL || !be_isfunction(vm, 1)) {
+        return 0;
+    }
+    slot->setup_function = 1;
+    slot->setup_descriptor_return = 0;
+
+    memset(parsed_arg_type, 0, sizeof(parsed_arg_type));
+    memset(parsed_arg_int, 0, sizeof(parsed_arg_int));
+    memset(parsed_arg_bool, 0, sizeof(parsed_arg_bool));
+    memset(parsed_arg_string, 0, sizeof(parsed_arg_string));
+
+    top_before = be_top(vm);
+    be_pushvalue(vm, 1);
+    for (i = 0; i < slot->argc; ++i) {
+        p2_closure_cog_push_arg(vm, slot, i);
+    }
+    result_slot = vm->top - slot->argc - 1;
+    slot->call_result = be_pcall(vm, slot->argc);
+    if (slot->call_result != BE_OK) {
+        p2_closure_cog_capture_exception(vm, slot);
+        be_pop(vm, be_top(vm) - top_before);
+        return 0;
+    }
+
+    if (var_isint(result_slot)) {
+        slot->last_result_type = 1;
+        slot->last_result_int = var_toint(result_slot);
+        slot->period_ms = (int)slot->last_result_int;
+    } else if (var_isbool(result_slot)) {
+        slot->last_result_type = 2;
+        slot->last_result_bool = var_tobool(result_slot);
+    } else if (var_isnil(result_slot)) {
+        slot->last_result_type = 3;
+    } else if (var_isstr(result_slot)) {
+        const char *text = str(var_tostr(result_slot));
+
+        slot->last_result_type = 4;
+        if (text != NULL) {
+            strncpy(slot->arg_string[0], text, P2_CLOSURE_COG_TEXT_MAX);
+            slot->arg_string[0][P2_CLOSURE_COG_TEXT_MAX] = '\0';
+            if (p2_closure_cog_parse_task_descriptor(text, &parsed_kind, &parsed_argc,
+                    parsed_arg_type, parsed_arg_int, parsed_arg_bool, parsed_arg_string) &&
+                parsed_kind == P2_CLOSURE_TASK_BLINKER) {
+                slot->setup_descriptor_return = 1;
+                slot->task_kind = parsed_kind;
+                slot->argc = parsed_argc;
+                for (i = 0; i < parsed_argc; ++i) {
+                    slot->arg_type[i] = parsed_arg_type[i];
+                    slot->arg_int[i] = parsed_arg_int[i];
+                    slot->arg_bool[i] = parsed_arg_bool[i];
+                    if (parsed_arg_type[i] == 4) {
+                        strncpy(slot->arg_string[i], parsed_arg_string[i], P2_CLOSURE_COG_TEXT_MAX);
+                        slot->arg_string[i][P2_CLOSURE_COG_TEXT_MAX] = '\0';
+                    } else {
+                        slot->arg_string[i][0] = '\0';
+                    }
+                }
+                slot->native_pin = (int)slot->arg_int[0];
+                slot->period_ms = (int)slot->arg_int[1];
+            }
+        }
+    } else {
+        slot->last_result_type = 0;
+    }
+
+    be_pop(vm, be_top(vm) - top_before);
+    return 1;
+}
+
+static int m_p2_closure_cog_spawn(bvm *vm)
+{
+    int slot_index;
+    int argc;
+    int i;
+    int cog;
+    int descriptor_native = 0;
+    int descriptor_kind = P2_CLOSURE_TASK_NONE;
+    int descriptor_argc = 0;
+    int descriptor_arg_type[P2_CLOSURE_COG_ARGS_MAX];
+    bint descriptor_arg_int[P2_CLOSURE_COG_ARGS_MAX];
+    int descriptor_arg_bool[P2_CLOSURE_COG_ARGS_MAX];
+    char descriptor_arg_string[P2_CLOSURE_COG_ARGS_MAX][P2_CLOSURE_COG_TEXT_MAX + 1];
+    void *stack;
+    p2_closure_cog_slot *slot;
+#if defined(__CATALINA_LARGE)
+    p2_child_vm_cog_once_job *source_job = NULL;
+    p2_closure_source_task *source_task = NULL;
+    int source_task_index = -1;
+#endif
+
+    memset(descriptor_arg_type, 0, sizeof(descriptor_arg_type));
+    memset(descriptor_arg_int, 0, sizeof(descriptor_arg_int));
+    memset(descriptor_arg_bool, 0, sizeof(descriptor_arg_bool));
+    memset(descriptor_arg_string, 0, sizeof(descriptor_arg_string));
+
+    if (be_top(vm) < 1) {
+        be_raise(vm, "type_error", "expected closure/function or spawn descriptor");
+    }
+    if (be_isfunction(vm, 1)) {
+        argc = be_top(vm) - 1;
+    } else if (be_top(vm) == 1 &&
+        be_isstring(vm, 1) &&
+        p2_closure_cog_parse_task_descriptor(be_tostring(vm, 1), &descriptor_kind, &descriptor_argc,
+            descriptor_arg_type, descriptor_arg_int, descriptor_arg_bool, descriptor_arg_string)) {
+        descriptor_native = 1;
+        argc = descriptor_argc;
+#if defined(__CATALINA_LARGE)
+        if (descriptor_kind == P2_CLOSURE_TASK_SOURCE) {
+            const char *text = be_tostring(vm, 1);
+            source_task_index = (int)strtol(text + 9, NULL, 10);
+            if (source_task_index < 0 || source_task_index >= P2_CLOSURE_COG_MAX ||
+                !p2_closure_source_tasks[source_task_index].used) {
+                be_raise(vm, "value_error", "invalid source task descriptor");
+            }
+            source_task = &p2_closure_source_tasks[source_task_index];
+        }
+#endif
+    } else {
+        be_raise(vm, "type_error", "expected closure/function or spawn descriptor");
+    }
+    if (argc > P2_CLOSURE_COG_ARGS_MAX) {
+        be_raise(vm, "value_error", "too many closure cog args");
+    }
+    p2_child_vm_runtime_lock_init();
+    if (p2_child_vm_runtime_lock < 0) {
+        be_raise(vm, "runtime_error", "closure cog requires a hardware VM lock");
+    }
+    p2_closure_cog_reap_stopped(vm);
+    slot_index = p2_closure_cog_first_free();
+    if (slot_index < 0) {
+        be_raise(vm, "runtime_error", "no closure cog slots available");
+    }
+    slot = &p2_closure_cog_slots[slot_index];
+    memset(slot, 0, sizeof(*slot));
+    slot->vm = vm;
+    slot->handle = P2_CLOSURE_COG_HANDLE_BASE + slot_index;
+    slot->cog_id = -1;
+    slot->period_ms = 0;
+    slot->native_pin = -1;
+    slot->task_kind = P2_CLOSURE_TASK_NONE;
+    slot->argc = argc;
+    slot->call_result = BE_OK;
+    slot->stack_size = P2_CLOSURE_COG_STACK_DEFAULT;
+    if (descriptor_native) {
+        slot->descriptor_task = 1;
+        slot->task_kind = descriptor_kind;
+        for (i = 0; i < argc; ++i) {
+            slot->arg_type[i] = descriptor_arg_type[i];
+            slot->arg_int[i] = descriptor_arg_int[i];
+            slot->arg_bool[i] = descriptor_arg_bool[i];
+            if (descriptor_arg_type[i] == 4) {
+                strncpy(slot->arg_string[i], descriptor_arg_string[i], P2_CLOSURE_COG_TEXT_MAX);
+                slot->arg_string[i][P2_CLOSURE_COG_TEXT_MAX] = '\0';
+            }
+        }
+#if defined(__CATALINA_LARGE)
+        if (descriptor_kind == P2_CLOSURE_TASK_SOURCE && source_task != NULL) {
+            slot->argc = source_task->argc;
+            for (i = 0; i < source_task->argc; ++i) {
+                slot->arg_type[i] = source_task->arg_type[i];
+                slot->arg_int[i] = source_task->arg_int[i];
+                slot->arg_bool[i] = source_task->arg_bool[i];
+                if (source_task->arg_type[i] == 4) {
+                    strncpy(slot->arg_string[i], source_task->arg_string[i], P2_CLOSURE_COG_TEXT_MAX);
+                    slot->arg_string[i][P2_CLOSURE_COG_TEXT_MAX] = '\0';
+                }
+            }
+        }
+#endif
+    } else {
+        for (i = 0; i < argc; ++i) {
+            int arg_index = i + 2;
+
+            if (be_isint(vm, arg_index)) {
+                slot->arg_type[i] = 1;
+                slot->arg_int[i] = be_toint(vm, arg_index);
+            } else if (be_isbool(vm, arg_index)) {
+                slot->arg_type[i] = 2;
+                slot->arg_bool[i] = be_tobool(vm, arg_index);
+            } else if (be_isnil(vm, arg_index)) {
+                slot->arg_type[i] = 3;
+            } else if (be_isstring(vm, arg_index)) {
+                const char *text = be_tostring(vm, arg_index);
+
+                slot->arg_type[i] = 4;
+                if (text != NULL) {
+                    strncpy(slot->arg_string[i], text, P2_CLOSURE_COG_TEXT_MAX);
+                    slot->arg_string[i][P2_CLOSURE_COG_TEXT_MAX] = '\0';
+                }
+            } else {
+                memset(slot, 0, sizeof(*slot));
+                be_raise(vm, "type_error", "closure cog args must be int, bool, nil, or string");
+            }
+        }
+    }
+    if (!descriptor_native) {
+        if (!p2_closure_cog_call_setup_function(vm, slot)) {
+            memset(slot, 0, sizeof(*slot));
+            be_raise(vm, "runtime_error", "closure setup function failed");
+        }
+    }
+    if ((descriptor_kind == P2_CLOSURE_TASK_BLINKER ||
+            (!descriptor_native && descriptor_kind == P2_CLOSURE_TASK_NONE)) &&
+        slot->argc >= 2 &&
+        slot->arg_type[0] == 1 &&
+        slot->arg_type[1] == 1 &&
+        slot->arg_int[0] >= 0 &&
+        slot->arg_int[0] <= 63 &&
+        slot->period_ms > 0) {
+        slot->native_blink = 1;
+        slot->task_kind = P2_CLOSURE_TASK_BLINKER;
+        slot->native_pin = (int)slot->arg_int[0];
+        slot->stack_size = P2_CLOSURE_COG_STACK_NATIVE_BLINK;
+        if (descriptor_native) {
+            slot->period_ms = (int)slot->arg_int[1];
+            p2_closure_cog_setup_native_blink(vm, slot);
+        }
+    }
+#if !BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+    if (!slot->native_blink
+#if defined(__CATALINA_LARGE)
+        && descriptor_kind != P2_CLOSURE_TASK_SOURCE
+#endif
+        ) {
+        memset(slot, 0, sizeof(*slot));
+        be_raise(vm, "runtime_error", "unsupported closure cog shape");
+    }
+#endif
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+    p2_closure_cog_registry_set(vm, slot_index, 1);
+#endif
+    if (slot->native_blink) {
+        stack = NULL;
+    } else {
+        stack = p2_cog_stack_alloc(slot->stack_size);
+    }
+    if (!slot->native_blink && stack == NULL) {
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+        p2_closure_cog_registry_clear(vm, slot_index);
+#endif
+        memset(slot, 0, sizeof(*slot));
+        be_raise(vm, "memory_error", "failed to allocate closure cog stack");
+    }
+    slot->stack = stack;
+    slot->used = 1;
+#if defined(__CATALINA_LARGE)
+    if (descriptor_kind == P2_CLOSURE_TASK_SOURCE && source_task != NULL) {
+        int wait_count = 0;
+
+        source_job = (p2_child_vm_cog_once_job *)p2_hub_mem_alloc(sizeof(*source_job));
+        if (source_job == NULL) {
+            if (stack != NULL) {
+                p2_cog_stack_free(stack);
+            }
+            memset(source_task, 0, sizeof(*source_task));
+            memset(slot, 0, sizeof(*slot));
+            be_raise(vm, "memory_error", "failed to allocate closure source mailbox");
+        }
+        memset(source_job, 0, sizeof(*source_job));
+        source_job->status = 0;
+        source_job->cog_id = -1;
+        source_job->slot = slot_index;
+        source_job->bytes = p2_heap_vm_partition_size();
+        strcpy(source_job->source, source_task->source);
+        strcpy(source_job->name, source_task->name);
+        source_job->argc = source_task->argc;
+        for (i = 0; i < source_task->argc; ++i) {
+            source_job->arg_type[i] = source_task->arg_type[i];
+            source_job->arg_int[i] = source_task->arg_int[i];
+            source_job->arg_bool[i] = source_task->arg_bool[i];
+            if (source_task->arg_type[i] == 4) {
+                strncpy(source_job->arg_string[i], source_task->arg_string[i], sizeof(source_job->arg_string[i]) - 1);
+                source_job->arg_string[i][sizeof(source_job->arg_string[i]) - 1] = '\0';
+            }
+        }
+        slot->isolated_source = 1;
+        slot->source_job = source_job;
+        cog = p2_catalina_cogstart_C(p2_child_vm_cog_once_entry, source_job, stack, (int)slot->stack_size);
+        if (cog >= 0 && cog < 8) {
+            source_job->cog_id = cog;
+            while (source_job->status == 0 && wait_count < 100) {
+                _waitus(1000);
+                ++wait_count;
+            }
+            p2_closure_cog_sync_isolated_source(slot);
+        }
+        memset(source_task, 0, sizeof(*source_task));
+    } else
+#endif
+    if (slot->native_blink) {
+        cog = p2_closure_cog_start_native_blink(slot);
+    } else {
+        cog = p2_catalina_cogstart_C(p2_closure_cog_entry, slot, stack, (int)slot->stack_size);
+    }
+    if (cog < 0 || cog >= 8) {
+        char spawn_error[96];
+
+        strncpy(spawn_error, slot->last_error[0] ? slot->last_error : "no free cog for closure", sizeof(spawn_error) - 1);
+        spawn_error[sizeof(spawn_error) - 1] = '\0';
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+        p2_closure_cog_registry_clear(vm, slot_index);
+#endif
+        if (stack != NULL) {
+            p2_cog_stack_free(stack);
+        }
+#if defined(__CATALINA_LARGE)
+        if (descriptor_kind == P2_CLOSURE_TASK_SOURCE) {
+            if (source_job != NULL) {
+                p2_hub_mem_free(source_job);
+            }
+        }
+#endif
+        memset(slot, 0, sizeof(*slot));
+        be_raise(vm, "runtime_error", spawn_error);
+    }
+    slot->cog_id = cog;
+    be_pushint(vm, slot->handle);
+    be_return(vm);
+}
+
+#if defined(__CATALINA_LARGE)
+static int m_p2_closure_cog_spawn_source(bvm *vm)
+{
+    int slot_index;
+    bint bytes = (bint)p2_heap_vm_partition_size();
+    const char *source;
+    const char *name;
+    int argc;
+    int i;
+    int cog;
+    int wait_count = 0;
+    void *stack;
+    p2_closure_cog_slot *slot;
+    p2_child_vm_cog_once_job *job;
+
+#if !P2_CLOSURE_COG_SOURCE_RUNTIME_SUPPORTED
+    be_raise(vm, "runtime_error", "source cog runtime is not supported on this P2 build");
+#endif
+
+    if (be_top(vm) < 2 || !be_isstring(vm, 1) || !be_isstring(vm, 2)) {
+        be_raise(vm, "type_error", "expected source string and function name");
+    }
+    argc = be_top(vm) - 2;
+    if (argc > P2_CLOSURE_COG_ARGS_MAX) {
+        be_raise(vm, "value_error", "too many closure cog args");
+    }
+    if (bytes < (bint)p2_heap_vm_partition_size()) {
+        be_raise(vm, "value_error", "bytes below VM partition minimum");
+    }
+
+    source = be_tostring(vm, 1);
+    name = be_tostring(vm, 2);
+    if (source == NULL || strlen(source) >= sizeof(p2_child_vm_cog_once_jobs[0].source)) {
+        be_raise(vm, "value_error", "source too long");
+    }
+    if (name == NULL || !name[0] || strlen(name) >= sizeof(p2_child_vm_cog_once_jobs[0].name)) {
+        be_raise(vm, "value_error", "function name too long");
+    }
+
+    p2_child_vm_runtime_lock_init();
+    if (p2_child_vm_runtime_lock < 0) {
+        be_raise(vm, "runtime_error", "closure cog requires a hardware VM lock");
+    }
+    p2_closure_cog_reap_stopped(vm);
+    slot_index = p2_closure_cog_first_free();
+    if (slot_index < 0) {
+        be_raise(vm, "runtime_error", "no closure cog slots available");
+    }
+
+    slot = &p2_closure_cog_slots[slot_index];
+    job = (p2_child_vm_cog_once_job *)p2_hub_mem_alloc(sizeof(*job));
+    if (job == NULL) {
+        memset(slot, 0, sizeof(*slot));
+        be_raise(vm, "memory_error", "failed to allocate closure source mailbox");
+    }
+    memset(slot, 0, sizeof(*slot));
+    memset(job, 0, sizeof(*job));
+    slot->vm = vm;
+    slot->handle = P2_CLOSURE_COG_HANDLE_BASE + slot_index;
+    slot->cog_id = -1;
+    slot->native_pin = -1;
+    slot->argc = argc;
+    slot->call_result = BE_OK;
+    slot->stack_size = P2_CLOSURE_COG_STACK_DEFAULT;
+    slot->isolated_source = 1;
+
+    job->status = 0;
+    job->cog_id = -1;
+    job->slot = slot_index;
+    job->bytes = (size_t)bytes;
+    strcpy(job->source, source);
+    strcpy(job->name, name);
+    job->argc = argc;
+    for (i = 0; i < argc; ++i) {
+        int arg_index = i + 3;
+
+        if (be_isint(vm, arg_index)) {
+            job->arg_type[i] = 1;
+            job->arg_int[i] = be_toint(vm, arg_index);
+        } else if (be_isbool(vm, arg_index)) {
+            job->arg_type[i] = 2;
+            job->arg_bool[i] = be_tobool(vm, arg_index);
+        } else if (be_isnil(vm, arg_index)) {
+            job->arg_type[i] = 3;
+        } else if (be_isstring(vm, arg_index)) {
+            const char *text = be_tostring(vm, arg_index);
+
+            job->arg_type[i] = 4;
+            if (text != NULL) {
+                strncpy(job->arg_string[i], text, sizeof(job->arg_string[i]) - 1);
+                job->arg_string[i][sizeof(job->arg_string[i]) - 1] = '\0';
+            }
+        } else {
+            memset(slot, 0, sizeof(*slot));
+            p2_hub_mem_free(job);
+            be_raise(vm, "type_error", "closure cog args must be int, bool, nil, or string");
+        }
+    }
+
+    stack = p2_cog_stack_alloc(slot->stack_size);
+    if (stack == NULL) {
+        memset(slot, 0, sizeof(*slot));
+        p2_hub_mem_free(job);
+        be_raise(vm, "memory_error", "failed to allocate closure cog stack");
+    }
+    slot->stack = stack;
+    slot->used = 1;
+    slot->source_job = job;
+    cog = p2_catalina_cogstart_C(p2_child_vm_cog_once_entry, job, stack, (int)slot->stack_size);
+    if (cog < 0 || cog >= 8) {
+        p2_cog_stack_free(stack);
+        memset(slot, 0, sizeof(*slot));
+        p2_hub_mem_free(job);
+        be_raise(vm, "runtime_error", "no free cog for closure source");
+    }
+    slot->cog_id = cog;
+    job->cog_id = cog;
+    while (job->status == 0 && wait_count < 100) {
+        _waitus(1000);
+        ++wait_count;
+    }
+    p2_closure_cog_sync_isolated_source(slot);
+    if (job->status == 0) {
+        _cogstop(cog);
+        p2_cog_stack_free(stack);
+        (void)p2_heap_vm_partition_release(slot_index);
+        memset(slot, 0, sizeof(*slot));
+        p2_hub_mem_free(job);
+        be_raise(vm, "runtime_error", "closure source cog did not start");
+    }
+    be_pushint(vm, slot->handle);
+    be_return(vm);
+}
+#endif
+
+static void p2_closure_cog_push_info_map(bvm *vm, int slot_index, p2_closure_cog_slot *slot)
+{
+    int raw_running = 0;
+
+    p2_closure_cog_sync_native_blink(slot);
+    p2_closure_cog_sync_isolated_source(slot);
+    if (slot->cog_id >= 0 && slot->cog_id < 8) {
+        raw_running = _cogchk(slot->cog_id) ? 1 : 0;
+    }
+    be_newobject(vm, "map");
+    p2_map_set_string(vm, "kind", "closure");
+    p2_map_set_string(vm, "model", slot->native_blink ? "native_blink" : (slot->isolated_source ? "isolated_source_vm" : "shared_vm_repl_idle"));
+    p2_map_set_int(vm, "slot", (bint)slot_index);
+    p2_map_set_int(vm, "handle", slot->handle);
+    p2_map_set_int(vm, "cog", (bint)slot->cog_id);
+    p2_map_set_bool(vm, "used", slot->used);
+    p2_map_set_bool(vm, "running", slot->status == 1 && raw_running);
+    p2_map_set_bool(vm, "raw_running", raw_running);
+    p2_map_set_int(vm, "status", (bint)slot->status);
+    p2_map_set_int(vm, "period_ms", (bint)slot->period_ms);
+    p2_map_set_bool(vm, "native_blink", slot->native_blink);
+    p2_map_set_bool(vm, "descriptor_task", slot->descriptor_task);
+    p2_map_set_bool(vm, "setup_function", slot->setup_function);
+    p2_map_set_bool(vm, "setup_descriptor_return", slot->setup_descriptor_return);
+    p2_map_set_string(vm, "task_kind", p2_closure_cog_task_kind_name(slot->task_kind));
+    p2_map_set_bool(vm, "isolated_source", slot->isolated_source);
+    p2_map_set_int(vm, "native_pin", (bint)slot->native_pin);
+    p2_map_set_int(vm, "argc", (bint)slot->argc);
+    p2_map_set_int(vm, "calls", (bint)slot->call_count);
+    p2_map_set_int(vm, "call_result", (bint)slot->call_result);
+    p2_map_set_int(vm, "last_result_type", (bint)slot->last_result_type);
+    p2_map_set_int(vm, "last_result_int", slot->last_result_int);
+    p2_map_set_bool(vm, "last_result_bool", slot->last_result_bool);
+    p2_map_set_string(vm, "error", slot->last_error);
+#if defined(__CATALINA_LARGE)
+    if (slot->isolated_source && slot->source_job != NULL) {
+        p2_child_vm_cog_once_job *job = slot->source_job;
+
+        p2_map_set_bool(vm, "source_partition_ready", job->partition_ready);
+        p2_map_set_bool(vm, "source_selected", job->selected);
+        p2_map_set_bool(vm, "source_child_created", job->child_created);
+        p2_map_set_bool(vm, "source_child_deleted", job->child_deleted);
+        p2_map_set_bool(vm, "source_function_found", job->function_found);
+        p2_map_set_int(vm, "source_vm_new_stage", (bint)job->vm_new_stage);
+        p2_map_set_int(vm, "source_vm_new_detail_stage", (bint)job->vm_new_detail_stage);
+        p2_map_set_int(vm, "source_stage", (bint)job->source_stage);
+        p2_map_set_int(vm, "source_load_stage", (bint)job->load_stage);
+        p2_map_set_int(vm, "source_call_stage", (bint)job->call_stage);
+        p2_map_set_int(vm, "source_execprotected_stage", (bint)job->execprotected_stage);
+        p2_map_set_int(vm, "source_return_top", (bint)job->return_top);
+        p2_map_set_bool(vm, "source_return_is_function", job->return_is_function);
+        p2_map_set_int(vm, "source_post_call_top", (bint)job->post_call_top);
+        p2_map_set_int(vm, "source_result_slot_type", (bint)job->result_slot_type);
+        p2_map_set_int(vm, "source_post_call_type_1", (bint)job->post_call_type_1);
+        p2_map_set_int(vm, "source_post_call_type_2", (bint)job->post_call_type_2);
+        p2_map_set_int(vm, "source_post_call_type_3", (bint)job->post_call_type_3);
+        p2_map_set_int(vm, "source_result", (bint)job->source_result);
+        p2_map_set_int(vm, "source_call_result", (bint)job->call_result);
+        p2_map_set_int(vm, "source_child_stack_top", (bint)job->child_stack_top);
+        p2_map_set_int(vm, "source_wrong_free_delta", (bint)job->wrong_free_delta);
+        p2_map_set_int(vm, "source_wrong_realloc_delta", (bint)job->wrong_realloc_delta);
+    }
+#endif
+    p2_map_set_int(vm, "stack_bytes", (bint)slot->stack_size);
+    p2_map_set_int(vm, "wait_ms", (bint)slot->stop_wait_ms);
+    p2_map_set_bool(vm, "repl_idle_only", (slot->native_blink || slot->isolated_source) ? 0 : 1);
+    be_pop(vm, 1);
+}
+
+static int m_p2_closure_cog_info(bvm *vm)
+{
+    int slot_index;
+    p2_closure_cog_slot *slot;
+
+    if (be_top(vm) < 1) {
+        int i;
+
+        be_newobject(vm, "list");
+        for (i = 0; i < P2_CLOSURE_COG_MAX; ++i) {
+            if (p2_closure_cog_slots[i].used) {
+                p2_closure_cog_push_info_map(vm, i, &p2_closure_cog_slots[i]);
+                be_data_push(vm, -2);
+                be_pop(vm, 1);
+            }
+        }
+        be_pop(vm, 1);
+        be_return(vm);
+    }
+
+    slot = p2_closure_cog_require_handle(vm, 1, &slot_index);
+
+    p2_closure_cog_push_info_map(vm, slot_index, slot);
+    be_return(vm);
+}
+
+static int m_p2_closure_cog_capabilities(bvm *vm)
+{
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "spawn", 1);
+    p2_map_set_bool(vm, "spawn_task", 1);
+    p2_map_set_bool(vm, "spawn_source", P2_CLOSURE_COG_SOURCE_RUNTIME_SUPPORTED);
+    p2_map_set_bool(vm, "berry_closure", 0);
+    p2_map_set_bool(vm, "isolated_child_vm_cog", P2_CLOSURE_COG_SOURCE_RUNTIME_SUPPORTED);
+    p2_map_set_bool(vm, "blinker_descriptor", 1);
+    p2_map_set_bool(vm, "task_descriptor", 1);
+    p2_map_set_bool(vm, "function_entity_spawn", 1);
+    p2_map_set_bool(vm, "function_entity_setup_call", 1);
+    p2_map_set_bool(vm, "function_entity_descriptor_return", 1);
+    p2_map_set_bool(vm, "task_kinds", 1);
+    p2_map_set_bool(vm, "task_release",
+#if defined(__CATALINA_LARGE)
+        1
+#else
+        0
+#endif
+    );
+    p2_map_set_bool(vm, "task_descriptor_info", 1);
+    p2_map_set_int(vm, "task_max_args", (bint)P2_CLOSURE_COG_ARGS_MAX);
+    p2_map_set_bool(vm, "native_blink", 1);
+    p2_map_set_int(vm, "native_blink_stack", (bint)P2_CLOSURE_COG_STACK_NATIVE_BLINK);
+    p2_map_set_int(vm, "handle_base", (bint)P2_CLOSURE_COG_HANDLE_BASE);
+    p2_map_set_int(vm, "max_handles", (bint)P2_CLOSURE_COG_MAX);
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+    p2_map_set_bool(vm, "unsafe_shared_vm", 1);
+    p2_map_set_bool(vm, "reject_unsupported", 0);
+#else
+    p2_map_set_bool(vm, "unsafe_shared_vm", 0);
+    p2_map_set_bool(vm, "reject_unsupported", 1);
+#endif
+    p2_map_set_bool(vm, "isolated_vm_closure", 0);
+    p2_map_set_bool(vm, "isolated_source_vm", 1);
+    p2_map_set_bool(vm, "literal_closure_transfer", 0);
+#if BE_USE_BYTECODE_LOADER
+    p2_map_set_bool(vm, "bytecode_loader", 1);
+#else
+    p2_map_set_bool(vm, "bytecode_loader", 0);
+#endif
+#if BE_USE_BYTECODE_SAVER
+    p2_map_set_bool(vm, "bytecode_saver", 1);
+#else
+    p2_map_set_bool(vm, "bytecode_saver", 0);
+#endif
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_closure_cog_stop(bvm *vm)
+{
+    int slot_index;
+    int wait_count = 0;
+    p2_closure_cog_slot *slot = p2_closure_cog_require_handle(vm, 1, &slot_index);
+
+    slot->stop = 1;
+    if (slot->native_blink) {
+#if defined(__CATALINA_LARGE)
+        if (slot->native_mailbox != NULL) {
+            slot->native_mailbox[P2_NATIVE_BLINK_STOP] = 1;
+        }
+#else
+        slot->native_mailbox[P2_NATIVE_BLINK_STOP] = 1;
+#endif
+    }
+    if (slot->isolated_source) {
+        if (slot->source_job != NULL) {
+            slot->source_job->status = 3;
+        }
+    }
+    if (slot->cog_id >= (slot->native_blink ? 1 : 0) && slot->cog_id < 8 && _cogchk(slot->cog_id)) {
+        _cogstop(slot->cog_id);
+    }
+    if (slot->native_blink && slot->native_pin >= 0 && slot->native_pin <= 63) {
+        _pinf(slot->native_pin);
+        slot->status = 2;
+#if defined(__CATALINA_LARGE)
+        if (slot->native_mailbox != NULL) {
+            slot->native_mailbox[P2_NATIVE_BLINK_STATUS] = 2;
+        }
+#else
+        slot->native_mailbox[P2_NATIVE_BLINK_STATUS] = 2;
+#endif
+        p2_closure_cog_sync_native_blink(slot);
+    }
+    slot->stop_wait_ms = wait_count;
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+    p2_closure_cog_registry_clear(vm, slot_index);
+#endif
+    if (slot->stack != NULL) {
+        p2_cog_stack_free(slot->stack);
+        slot->stack = NULL;
+    }
+    p2_closure_cog_push_info_map(vm, slot_index, slot);
+#if defined(__CATALINA_LARGE)
+    if (slot->native_mailbox != NULL) {
+        p2_hub_mem_free((void *)slot->native_mailbox);
+        slot->native_mailbox = NULL;
+    }
+#endif
+    if (slot->isolated_source) {
+        (void)p2_heap_vm_partition_release(slot_index);
+        if (slot->source_job != NULL) {
+            p2_hub_mem_free(slot->source_job);
+            slot->source_job = NULL;
+        }
+    }
+    memset(slot, 0, sizeof(*slot));
+    be_return(vm);
 }
 
 static void p2_child_vm_handles_init(void)
@@ -710,6 +3260,9 @@ static void p2_child_vm_cog_entry(void *arg)
         if (!handle->active || handle->child == NULL || !p2_heap_vm_partition_select(job->slot)) {
             p2_child_vm_runtime_lock_leave(runtime_locked);
             handle->cog_status = 3;
+            while (handle->cog_status != 4) {
+                _waitus(1000);
+            }
             return;
         }
 
@@ -768,6 +3321,9 @@ static void p2_child_vm_cog_entry(void *arg)
         p2_child_vm_runtime_lock_leave(runtime_locked);
     }
     handle->cog_status = 2;
+    while (handle->cog_status != 4) {
+        _waitus(1000);
+    }
 }
 
 static int m_p2_vm_probe(bvm *vm)
@@ -1732,6 +4288,173 @@ static int m_p2_vm_invoke(bvm *vm)
     be_return(vm);
 }
 
+static int m_p2_vm_cog_call_once(bvm *vm)
+{
+    bint slot;
+    bint bytes;
+    const char *source;
+    const char *name;
+    char source_copy[512];
+    char name_copy[64];
+    int argc;
+    uint32_t stack_size = 8192u;
+    int i;
+    int result = -1;
+    int raw_running = 0;
+    int stack_freed = 0;
+    int released = 0;
+    int wait_count = 0;
+    p2_child_vm_cog_once_job *job;
+    void *stack_mem;
+
+    source_copy[0] = '\0';
+    name_copy[0] = '\0';
+    if (be_top(vm) < 4) {
+        be_raise(vm, "value_error", "expected slot, bytes, source, function name");
+    }
+    if (!be_isint(vm, 1)) {
+        be_raise(vm, "type_error", "slot must be int");
+    }
+    if (!be_isint(vm, 2)) {
+        be_raise(vm, "type_error", "bytes must be int");
+    }
+    if (!be_isstring(vm, 3)) {
+        be_raise(vm, "type_error", "source must be string");
+    }
+    if (!be_isstring(vm, 4) && !be_isclosure(vm, 4)) {
+        be_raise(vm, "type_error", "function must be name string or named closure");
+    }
+    slot = be_toint(vm, 1);
+    bytes = be_toint(vm, 2);
+    source = be_tostring(vm, 3);
+    if (be_isclosure(vm, 4)) {
+        name = p2_vm_closure_name_or_raise(vm, 4);
+    } else {
+        name = be_tostring(vm, 4);
+    }
+    if (slot < 0 || slot >= BE_P2_VM_HEAP_MAX_PARTITIONS) {
+        be_raise(vm, "value_error", "slot out of range");
+    }
+    if (bytes < (bint)p2_heap_vm_partition_size()) {
+        be_raise(vm, "value_error", "bytes below VM partition minimum");
+    }
+    if (source != NULL) {
+        if (strlen(source) >= sizeof(source_copy)) {
+            be_raise(vm, "value_error", "source too long");
+        }
+        strcpy(source_copy, source);
+        source = source_copy;
+    }
+    if (name != NULL) {
+        if (strlen(name) >= sizeof(name_copy)) {
+            be_raise(vm, "value_error", "function name too long");
+        }
+        strcpy(name_copy, name);
+        name = name_copy;
+    }
+    argc = be_top(vm) - 4;
+    if (argc > 8) {
+        be_raise(vm, "value_error", "too many child VM cog args");
+    }
+
+    job = &p2_child_vm_cog_once_jobs[slot];
+    memset(job, 0, sizeof(*job));
+    job->status = 0;
+    job->cog_id = -1;
+    job->slot = (int)slot;
+    job->bytes = (size_t)bytes;
+    strcpy(job->source, source ? source : "");
+    strcpy(job->name, name ? name : "");
+    job->argc = argc;
+    for (i = 0; i < argc; ++i) {
+        int index = i + 5;
+
+        job->arg_type[i] = 0;
+        job->arg_int[i] = 0;
+        job->arg_bool[i] = 0;
+        job->arg_string[i][0] = '\0';
+        if (be_isint(vm, index)) {
+            job->arg_type[i] = 1;
+            job->arg_int[i] = be_toint(vm, index);
+        } else if (be_isbool(vm, index)) {
+            job->arg_type[i] = 2;
+            job->arg_bool[i] = be_tobool(vm, index);
+        } else if (be_isnil(vm, index)) {
+            job->arg_type[i] = 3;
+        } else if (be_isstring(vm, index)) {
+            const char *text = be_tostring(vm, index);
+
+            job->arg_type[i] = 4;
+            if (text != NULL) {
+                strncpy(job->arg_string[i], text, sizeof(job->arg_string[i]) - 1);
+                job->arg_string[i][sizeof(job->arg_string[i]) - 1] = '\0';
+            }
+        } else {
+            be_raise(vm, "type_error", "child VM cog args must be int, bool, nil, or string");
+        }
+    }
+
+    stack_mem = p2_cog_stack_alloc(stack_size);
+    if (stack_mem == NULL) {
+        be_raise(vm, "memory_error", "failed to allocate isolated child VM cog stack");
+    }
+    result = p2_catalina_cogstart_C(p2_child_vm_cog_once_entry, job, stack_mem, stack_size);
+    if (result >= 0 && result < 8) {
+        job->cog_id = result;
+        while ((job->status == 0 || job->status == 1) && wait_count < 10000) {
+            _waitus(1000);
+            ++wait_count;
+        }
+        if (job->status == 2 && _cogchk(result)) {
+            job->status = 4;
+            _cogstop(result);
+        }
+        while (_cogchk(result) && wait_count < 10200) {
+            _waitus(1000);
+            ++wait_count;
+        }
+        raw_running = _cogchk(result) ? 1 : 0;
+        if (!raw_running) {
+            p2_cog_stack_free(stack_mem);
+            stack_freed = 1;
+            released = p2_heap_vm_partition_release((int)slot);
+        }
+    } else {
+        p2_cog_stack_free(stack_mem);
+        stack_freed = 1;
+    }
+
+    be_newobject(vm, "map");
+    p2_map_set_int(vm, "slot", slot);
+    p2_map_set_int(vm, "bytes", bytes);
+    p2_map_set_int(vm, "cog", (bint)result);
+    p2_map_set_bool(vm, "started", result >= 0);
+    p2_map_set_int(vm, "status", (bint)job->status);
+    p2_map_set_bool(vm, "raw_running", raw_running);
+    p2_map_set_bool(vm, "stack_freed", stack_freed);
+    p2_map_set_bool(vm, "released", released);
+    p2_map_set_bool(vm, "partition_ready", job->partition_ready);
+    p2_map_set_bool(vm, "selected", job->selected);
+    p2_map_set_bool(vm, "child_created", job->child_created);
+    p2_map_set_bool(vm, "child_deleted", job->child_deleted);
+    p2_map_set_bool(vm, "function_found", job->function_found);
+    p2_map_set_int(vm, "source_result", (bint)job->source_result);
+    p2_map_set_int(vm, "call_result", (bint)job->call_result);
+    p2_map_set_int(vm, "result_type", (bint)job->result_type);
+    p2_map_set_int(vm, "result_int", job->result_int);
+    p2_map_set_bool(vm, "result_bool", job->result_bool);
+    p2_map_set_string(vm, "result_string", job->result_string);
+    p2_map_set_int(vm, "child_stack_top", (bint)job->child_stack_top);
+    p2_map_set_int(vm, "wrong_free_delta", (bint)job->wrong_free_delta);
+    p2_map_set_int(vm, "wrong_realloc_delta", (bint)job->wrong_realloc_delta);
+    p2_map_set_int(vm, "argc", (bint)argc);
+    p2_map_set_int(vm, "stack_bytes", (bint)stack_size);
+    p2_map_set_int(vm, "wait_count", (bint)wait_count);
+    p2_map_set_int(vm, "current", (bint)p2_heap_vm_partition_current());
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
 static int m_p2_vm_cog_start(bvm *vm)
 {
     bint slot;
@@ -1741,6 +4464,9 @@ static int m_p2_vm_cog_start(bvm *vm)
     uint32_t stack_size = 8192u;
     int i;
     int result = -1;
+    int final_status = 0;
+    int raw_running = 0;
+    int stack_freed = 0;
     p2_child_vm_handle *handle;
     p2_child_vm_cog_job *job;
     void *stack_mem;
@@ -1788,7 +4514,7 @@ static int m_p2_vm_cog_start(bvm *vm)
         if (handle->cog_id >= 0 && _cogchk(handle->cog_id)) {
             be_raise(vm, "runtime_error", "previous child VM cog still running");
         }
-        free(handle->cog_stack);
+        p2_cog_stack_free(handle->cog_stack);
         handle->cog_stack = NULL;
         handle->cog_stack_size = 0;
     }
@@ -1825,7 +4551,7 @@ static int m_p2_vm_cog_start(bvm *vm)
         }
     }
 
-    stack_mem = malloc(stack_size);
+    stack_mem = p2_cog_stack_alloc(stack_size);
     if (stack_mem == NULL) {
         be_raise(vm, "memory_error", "failed to allocate child VM cog stack");
     }
@@ -1841,7 +4567,7 @@ static int m_p2_vm_cog_start(bvm *vm)
     handle->cog_child_stack_top = 0;
     handle->cog_wrong_free_delta = 0;
     handle->cog_wrong_realloc_delta = 0;
-    result = _cogstart_C(p2_child_vm_cog_entry, job, stack_mem, stack_size);
+    result = p2_catalina_cogstart_C(p2_child_vm_cog_entry, job, stack_mem, stack_size);
     if (result >= 0 && result < 8) {
         handle->cog_stack = stack_mem;
         handle->cog_stack_size = stack_size;
@@ -1850,8 +4576,33 @@ static int m_p2_vm_cog_start(bvm *vm)
             _waitus(1000);
             ++wait_count;
         }
+        final_status = handle->cog_status;
+        if ((final_status == 2 || final_status == 3) && _cogchk(result)) {
+            handle->cog_status = 4;
+            _cogstop(result);
+        }
+        while (_cogchk(result) && wait_count < 5200) {
+            _waitus(1000);
+            ++wait_count;
+        }
+        if (_cogchk(result)) {
+            _cogstop(result);
+            while (_cogchk(result) && wait_count < 5400) {
+                _waitus(1000);
+                ++wait_count;
+            }
+        }
+        raw_running = _cogchk(result) ? 1 : 0;
+        if (!raw_running) {
+            p2_cog_stack_free(stack_mem);
+            handle->cog_stack = NULL;
+            handle->cog_stack_size = 0;
+            stack_freed = 1;
+        }
+        handle->cog_status = final_status;
     } else {
-        free(stack_mem);
+        p2_cog_stack_free(stack_mem);
+        stack_freed = 1;
     }
 
     be_newobject(vm, "map");
@@ -1860,6 +4611,8 @@ static int m_p2_vm_cog_start(bvm *vm)
     p2_map_set_bool(vm, "started", result >= 0);
     p2_map_set_bool(vm, "active", handle->active);
     p2_map_set_int(vm, "status", (bint)handle->cog_status);
+    p2_map_set_bool(vm, "raw_running", raw_running);
+    p2_map_set_bool(vm, "stack_freed", stack_freed);
     p2_map_set_int(vm, "wait_count", (bint)wait_count);
     p2_map_set_bool(vm, "function_found", handle->cog_function_found);
     p2_map_set_int(vm, "call_result", (bint)handle->cog_call_result);
@@ -1889,6 +4642,10 @@ static int m_p2_vm_cog_ping(bvm *vm)
     int raw_running = 0;
     int stack_freed = 0;
     int thread_mode = 0;
+    uint32_t startup_marker = 0;
+    uint32_t pasm_marker = 0;
+    uint32_t pasm_cog_seen = 0xffffffffu;
+    int pasm_cog = -1;
 
     if (be_top(vm) >= 1 && !be_isnil(vm, 1)) {
         if (!be_isint(vm, 1)) {
@@ -1906,22 +4663,28 @@ static int m_p2_vm_cog_ping(bvm *vm)
         be_raise(vm, "value_error", "slot out of range");
     }
 
-    job = &p2_child_vm_cog_ping_jobs[slot];
+    job = (p2_child_vm_cog_ping_job *)p2_hub_mem_alloc(sizeof(*job));
+    if (job == NULL) {
+        be_raise(vm, "memory_error", "failed to allocate cog ping mailbox");
+    }
     job->status = 0;
     job->cog_id = -1;
     job->input = (int)input;
     job->result = 0;
 
-    stack_mem = malloc(stack_size);
+    stack_mem = p2_cog_stack_alloc(stack_size);
     if (stack_mem == NULL) {
+        p2_hub_mem_free(job);
         be_raise(vm, "memory_error", "failed to allocate cog ping stack");
     }
+    ((volatile uint32_t *)stack_mem)[0] = 0;
+    pasm_cog = p2_cog_marker_probe(6, &pasm_marker, &pasm_cog_seen);
 
 #ifdef __CATALINA_libthreads
     thread_mode = 1;
     result = _threadstart_C(p2_child_vm_thread_ping_entry, 0, (char **)job, stack_mem, stack_size);
 #else
-    result = _cogstart_C(p2_child_vm_cog_ping_entry, job, stack_mem, stack_size);
+    result = p2_catalina_cogstart_C(p2_child_vm_cog_ping_entry, job, stack_mem, stack_size);
 #endif
     if (result >= 0 && result < 8) {
         job->cog_id = result;
@@ -1929,17 +4692,42 @@ static int m_p2_vm_cog_ping(bvm *vm)
             _waitus(1000);
             ++wait_count;
         }
-        while (_cogchk(result) && wait_count < 5100) {
+        if (job->status == 2 && _cogchk(result)) {
+            job->status = 3;
+            _cogstop(result);
+        }
+        while (_cogchk(result) && wait_count < 5200) {
             _waitus(1000);
             ++wait_count;
         }
+        if (_cogchk(result)) {
+            _cogstop(result);
+            while (_cogchk(result) && wait_count < 5400) {
+                _waitus(1000);
+                ++wait_count;
+            }
+        }
+        startup_marker = ((volatile uint32_t *)stack_mem)[0];
         raw_running = _cogchk(result) ? 1 : 0;
         if (!raw_running) {
-            free(stack_mem);
+            p2_cog_stack_free(stack_mem);
             stack_freed = 1;
         }
+        if (result >= 0 && result < 8 && p2_xmm_private_caches[result].child_cog_data != NULL) {
+            volatile uint32_t *data = (volatile uint32_t *)p2_xmm_private_caches[result].child_cog_data;
+
+            p2_xmm_cog_data_word0_after = data[0];
+            p2_xmm_cog_data_word1_after = data[1];
+            p2_xmm_cog_data_word2_after = data[2];
+            p2_xmm_cog_data_word3_after = data[3];
+            p2_xmm_cog_data_word4_after = data[4];
+            p2_xmm_cog_data_word5_after = data[5];
+            p2_xmm_cog_data_word6_after = data[6];
+            p2_xmm_cog_data_word7_after = data[7];
+        }
+        p2_xmm_private_cache_release(result);
     } else {
-        free(stack_mem);
+        p2_cog_stack_free(stack_mem);
         stack_freed = 1;
     }
 
@@ -1954,7 +4742,32 @@ static int m_p2_vm_cog_ping(bvm *vm)
     p2_map_set_bool(vm, "raw_running", raw_running);
     p2_map_set_bool(vm, "stack_freed", stack_freed);
     p2_map_set_bool(vm, "thread_mode", thread_mode);
+    p2_map_set_int(vm, "startup_marker", (bint)startup_marker);
+    p2_map_set_int(vm, "pasm_cog", (bint)pasm_cog);
+    p2_map_set_int(vm, "pasm_marker", (bint)pasm_marker);
+    p2_map_set_int(vm, "pasm_cog_seen", (bint)pasm_cog_seen);
+    p2_map_set_int(vm, "after_cache_pasm_cog", (bint)p2_xmm_after_cache_pasm_cog);
+    p2_map_set_int(vm, "after_cache_pasm_marker", (bint)p2_xmm_after_cache_pasm_marker);
+    p2_map_set_int(vm, "after_cache_pasm_seen", (bint)p2_xmm_after_cache_pasm_seen);
+    p2_map_set_int(vm, "xmm_kernel_word0", (bint)p2_xmm_kernel_word0);
+    p2_map_set_int(vm, "xmm_kernel_word90", (bint)p2_xmm_kernel_word90);
+    p2_map_set_int(vm, "xmm_kernel_word91", (bint)p2_xmm_kernel_word91);
+    p2_map_set_int(vm, "xmm_kernel_addr", (bint)p2_xmm_kernel_addr);
+    p2_map_set_int(vm, "xmm_cog_data_addr", (bint)p2_xmm_cog_data_addr);
+    p2_map_set_int(vm, "large_pasm_cog", (bint)p2_xmm_large_pasm_cog);
+    p2_map_set_int(vm, "large_pasm_marker", (bint)p2_xmm_large_pasm_marker);
+    p2_map_set_int(vm, "large_pasm_seen", (bint)p2_xmm_large_pasm_seen);
+    p2_map_set_int(vm, "xmm_cog_data_word0_after", (bint)p2_xmm_cog_data_word0_after);
+    p2_map_set_int(vm, "xmm_cog_data_word1_after", (bint)p2_xmm_cog_data_word1_after);
+    p2_map_set_int(vm, "xmm_cog_data_word2_after", (bint)p2_xmm_cog_data_word2_after);
+    p2_map_set_int(vm, "xmm_cog_data_word3_after", (bint)p2_xmm_cog_data_word3_after);
+    p2_map_set_int(vm, "xmm_cog_data_word4_after", (bint)p2_xmm_cog_data_word4_after);
+    p2_map_set_int(vm, "xmm_cog_data_word5_after", (bint)p2_xmm_cog_data_word5_after);
+    p2_map_set_int(vm, "xmm_cog_data_word6_after", (bint)p2_xmm_cog_data_word6_after);
+    p2_map_set_int(vm, "xmm_cog_data_word7_after", (bint)p2_xmm_cog_data_word7_after);
+    p2_map_set_int(vm, "stack_bytes", (bint)stack_size);
     p2_map_set_int(vm, "current", (bint)p2_heap_vm_partition_current());
+    p2_hub_mem_free(job);
     be_pop(vm, 1);
     be_return(vm);
 }
@@ -2075,7 +4888,7 @@ static int m_p2_vm_close(bvm *vm)
         }
     }
     if (p2_child_vm_handles[slot].cog_stack != NULL) {
-        free(p2_child_vm_handles[slot].cog_stack);
+        p2_cog_stack_free(p2_child_vm_handles[slot].cog_stack);
         p2_child_vm_handles[slot].cog_stack = NULL;
         p2_child_vm_handles[slot].cog_stack_size = 0;
     }
@@ -2345,6 +5158,7 @@ static int m_p2_sd_raw_probe(bvm *vm)
     uint32_t sector = 0;
     uint32_t read_arg;
     int high_capacity;
+    int swap_cs_clk = 0;
     int tries;
     int i;
 
@@ -2354,7 +5168,12 @@ static int m_p2_sd_raw_probe(bvm *vm)
             sector = (uint32_t)value;
         }
     }
+    if (be_top(vm) >= 2 && (be_isbool(vm, 2) || be_isint(vm, 2))) {
+        swap_cs_clk = be_tobool(vm, 2) ? 1 : 0;
+    }
+    p2_sd_probe_swap_cs_clk = swap_cs_clk;
 
+    p2_sd_probe_flash_powerdown();
     p2_sd_probe_idle();
 
     cmd0 = p2_sd_probe_command(0, 0, 0x95u, NULL, 0, 0);
@@ -2409,6 +5228,7 @@ static int m_p2_sd_raw_probe(bvm *vm)
 
     be_newobject(vm, "map");
     p2_map_set_int(vm, "sector", (bint)sector);
+    p2_map_set_bool(vm, "swap_cs_clk", swap_cs_clk);
     p2_map_set_int(vm, "cmd0", (bint)cmd0);
     p2_map_set_int(vm, "cmd8", (bint)cmd8);
     p2_map_set_u32_hex(vm, "cmd8_r7", cmd8_r7);
@@ -2426,6 +5246,111 @@ static int m_p2_sd_raw_probe(bvm *vm)
     p2_map_set_int(vm, "sig0", (bint)sig0);
     p2_map_set_int(vm, "sig1", (bint)sig1);
     p2_map_set_int(vm, "signature", (bint)(((int)sig1 << 8) | (int)sig0));
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_flash_diag(bvm *vm)
+{
+    uint32_t before_sleep;
+    uint32_t after_sleep;
+    uint32_t after_release;
+
+    before_sleep = p2_flash_probe_rdid(1);
+    p2_sd_probe_flash_powerdown();
+    after_sleep = p2_flash_probe_rdid(0);
+    after_release = p2_flash_probe_rdid(1);
+    p2_sd_probe_flash_powerdown();
+
+    be_newobject(vm, "map");
+    p2_map_set_u32_hex(vm, "before_sleep", before_sleep);
+    p2_map_set_u32_hex(vm, "after_sleep", after_sleep);
+    p2_map_set_u32_hex(vm, "after_release", after_release);
+    p2_map_set_bool(vm, "sleep_quiet", after_sleep == 0xffffffu || after_sleep == 0x000000u);
+    p2_map_set_bool(vm, "release_answers", after_release != after_sleep);
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_sd_pin_diag(bvm *vm)
+{
+    int initial_do;
+    int initial_di;
+    int initial_cs;
+    int initial_clk;
+    int cs_low;
+    int cs_high;
+    int clk_low;
+    int clk_high;
+    int di_low;
+    int di_high;
+    int do_after_cs_low;
+    int do_after_clk_high;
+    int do_final;
+
+    (void)vm;
+
+    p2_sd_probe_flash_powerdown();
+
+    _pinh(P2_EDGE_SD_CS);
+    _pinl(P2_EDGE_SD_CLK);
+    _pinh(P2_EDGE_SD_DI);
+    _pinf(P2_EDGE_SD_DO);
+    _waitus(20);
+
+    initial_do = _pinr(P2_EDGE_SD_DO) ? 1 : 0;
+    initial_di = _pinr(P2_EDGE_SD_DI) ? 1 : 0;
+    initial_cs = _pinr(P2_EDGE_SD_CS) ? 1 : 0;
+    initial_clk = _pinr(P2_EDGE_SD_CLK) ? 1 : 0;
+
+    _pinl(P2_EDGE_SD_CS);
+    _waitus(20);
+    cs_low = _pinr(P2_EDGE_SD_CS) ? 1 : 0;
+    do_after_cs_low = _pinr(P2_EDGE_SD_DO) ? 1 : 0;
+
+    _pinh(P2_EDGE_SD_CS);
+    _waitus(20);
+    cs_high = _pinr(P2_EDGE_SD_CS) ? 1 : 0;
+
+    _pinl(P2_EDGE_SD_CLK);
+    _waitus(20);
+    clk_low = _pinr(P2_EDGE_SD_CLK) ? 1 : 0;
+
+    _pinh(P2_EDGE_SD_CLK);
+    _waitus(20);
+    clk_high = _pinr(P2_EDGE_SD_CLK) ? 1 : 0;
+    do_after_clk_high = _pinr(P2_EDGE_SD_DO) ? 1 : 0;
+
+    _pinl(P2_EDGE_SD_CLK);
+    _pinl(P2_EDGE_SD_DI);
+    _waitus(20);
+    di_low = _pinr(P2_EDGE_SD_DI) ? 1 : 0;
+
+    _pinh(P2_EDGE_SD_DI);
+    _waitus(20);
+    di_high = _pinr(P2_EDGE_SD_DI) ? 1 : 0;
+
+    _pinh(P2_EDGE_SD_CS);
+    _pinl(P2_EDGE_SD_CLK);
+    _pinh(P2_EDGE_SD_DI);
+    _pinf(P2_EDGE_SD_DO);
+    _waitus(20);
+    do_final = _pinr(P2_EDGE_SD_DO) ? 1 : 0;
+
+    be_newobject(vm, "map");
+    p2_map_set_int(vm, "initial_do", (bint)initial_do);
+    p2_map_set_int(vm, "initial_di", (bint)initial_di);
+    p2_map_set_int(vm, "initial_cs", (bint)initial_cs);
+    p2_map_set_int(vm, "initial_clk", (bint)initial_clk);
+    p2_map_set_int(vm, "cs_low", (bint)cs_low);
+    p2_map_set_int(vm, "cs_high", (bint)cs_high);
+    p2_map_set_int(vm, "clk_low", (bint)clk_low);
+    p2_map_set_int(vm, "clk_high", (bint)clk_high);
+    p2_map_set_int(vm, "di_low", (bint)di_low);
+    p2_map_set_int(vm, "di_high", (bint)di_high);
+    p2_map_set_int(vm, "do_after_cs_low", (bint)do_after_cs_low);
+    p2_map_set_int(vm, "do_after_clk_high", (bint)do_after_clk_high);
+    p2_map_set_int(vm, "do_final", (bint)do_final);
     be_pop(vm, 1);
     be_return(vm);
 }
@@ -2461,8 +5386,20 @@ static int m_p2_fs_info(bvm *vm)
     p2_map_set_string(vm, "cwd", info.cwd);
     p2_map_set_string(vm, "path", info.path);
     p2_map_set_string(vm, "fs_path", info.fs_path);
+#if BE_P2_ENABLE_SD_DIAGNOSTICS
+    p2_map_set_string(vm, "root_first_name", info.root_first_name);
+    p2_map_set_string(vm, "root_sample", info.root_sample);
+#endif
     p2_map_set_string(vm, "read_value", info.read_value);
     p2_map_set_int(vm, "root_entry_count", (bint)info.root_entry_count);
+#if BE_P2_ENABLE_SD_DIAGNOSTICS
+    p2_map_set_int(vm, "root_zero_entry_count", (bint)info.root_zero_entry_count);
+    p2_map_set_int(vm, "root_deleted_entry_count", (bint)info.root_deleted_entry_count);
+    p2_map_set_int(vm, "root_hidden_entry_count", (bint)info.root_hidden_entry_count);
+    p2_map_set_int(vm, "root_lfn_entry_count", (bint)info.root_lfn_entry_count);
+    p2_map_set_int(vm, "root_first_byte", (bint)info.root_first_byte);
+    p2_map_set_int(vm, "root_first_attr", (bint)info.root_first_attr);
+#endif
     p2_map_set_int(vm, "write_count", (bint)info.write_count);
     p2_map_set_int(vm, "read_count", (bint)info.read_count);
     p2_map_set_int(vm, "sector0_signature", (bint)info.sector0_signature);
@@ -2485,6 +5422,19 @@ static int m_p2_fs_info(bvm *vm)
     p2_map_set_int(vm, "partition_start", (bint)info.partition_start);
     p2_map_set_int(vm, "partition_size", (bint)info.partition_size);
     p2_map_set_int(vm, "filesystem_type", (bint)info.filesystem_type);
+#if BE_P2_ENABLE_SD_DIAGNOSTICS
+    p2_map_set_int(vm, "vol_startsector", (bint)info.vol_startsector);
+    p2_map_set_int(vm, "vol_secperclus", (bint)info.vol_secperclus);
+    p2_map_set_int(vm, "vol_reservedsecs", (bint)info.vol_reservedsecs);
+    p2_map_set_int(vm, "vol_secperfat", (bint)info.vol_secperfat);
+    p2_map_set_int(vm, "vol_fat1", (bint)info.vol_fat1);
+    p2_map_set_int(vm, "vol_rootdir", (bint)info.vol_rootdir);
+    p2_map_set_int(vm, "vol_dataarea", (bint)info.vol_dataarea);
+    p2_map_set_int(vm, "vol_numsecs", (bint)info.vol_numsecs);
+    p2_map_set_int(vm, "vol_rootentries", (bint)info.vol_rootentries);
+    p2_map_set_int(vm, "vol_numclusters", (bint)info.vol_numclusters);
+    p2_map_set_int(vm, "vol_root_sector", (bint)info.vol_root_sector);
+#endif
     p2_map_set_fs_result(vm, "sd_init_result", info.sd_init_result);
     p2_map_set_fs_result(vm, "raw_sector0_result", info.raw_sector0_result);
     p2_map_set_fs_result(vm, "dfs_sector0_result", info.dfs_sector0_result);
@@ -3373,7 +6323,11 @@ static int m_p2_status(bvm *vm)
     p2_status_write_line("");
 
     p2_status_write_line("Memory");
-    p2_status_print_bar_line("image", image, hub_total);
+    unsigned long image_total = hub_total;
+#if BE_P2_PROFILE == BE_P2_PROFILE_XMM
+    image_total = (unsigned long)BE_P2_XMM_BYTES;
+#endif
+    p2_status_print_bar_line("image", image, image_total);
     p2_status_print_bar_line("main heap", main_used, main_total);
     p2_status_print_bar_line("worker heap", worker_used, worker_total);
     p2_status_writef("  current free %7lu B\n", current_free);
@@ -3423,6 +6377,9 @@ static void p2_status_info_build(bvm *vm)
     p2_map_set_int(vm, "data_bytes", (bint)P2_BUILD_DATA_BYTES);
     p2_map_set_int(vm, "bytes_max", (bint)BE_BYTES_MAX_SIZE);
     p2_map_set_int(vm, "stack_slots", (bint)BE_STACK_TOTAL_MAX);
+    p2_map_set_int(vm, "bytecode_saver", (bint)BE_USE_BYTECODE_SAVER);
+    p2_map_set_int(vm, "bytecode_loader", (bint)BE_USE_BYTECODE_LOADER);
+    p2_map_set_int(vm, "bytecode_execution", (bint)BE_P2_ENABLE_BYTECODE_EXECUTION);
     be_pop(vm, 1);
 }
 
@@ -3814,6 +6771,18 @@ static void p2_module_add_cog(bvm *vm)
     p2_module_set_func(vm, "id", m_p2_cogid);
     p2_module_set_func(vm, "check", m_cog_check);
     p2_module_set_func(vm, "stop", m_p2_cog_stop);
+    p2_module_set_func(vm, "blinker", m_p2_closure_cog_blinker);
+    p2_module_set_func(vm, "task", m_p2_closure_cog_task);
+    p2_module_set_func(vm, "task_kinds", m_p2_closure_cog_task_kinds);
+    p2_module_set_func(vm, "task_release", m_p2_closure_cog_task_release);
+    p2_module_set_func(vm, "is_task", m_p2_closure_cog_is_task);
+    p2_module_set_func(vm, "task_info", m_p2_closure_cog_task_info);
+    p2_module_set_func(vm, "spawn", m_p2_closure_cog_spawn);
+    p2_module_set_func(vm, "spawn_task", m_p2_closure_cog_spawn);
+    p2_module_set_func(vm, "spawn_source", m_p2_closure_cog_spawn_source);
+    p2_module_set_func(vm, "info", m_p2_closure_cog_info);
+    p2_module_set_func(vm, "capabilities", m_p2_closure_cog_capabilities);
+    p2_module_set_func(vm, "vm_cog_ping", m_p2_vm_cog_ping);
     p2_module_set_func(vm, "attention", m_attention_signal);
     p2_module_set_func(vm, "poll_attention", m_attention_poll);
     p2_module_set_func(vm, "wait_attention", m_attention_wait);
@@ -3897,6 +6866,61 @@ static void p2_module_add_smart(bvm *vm)
 
 #endif
 
+static void p2_module_add_runtime_cog(bvm *vm)
+{
+    be_newmodule(vm);
+    p2_module_set_func(vm, "id", m_p2_cogid);
+    p2_module_set_func(vm, "check", m_cog_check);
+    p2_module_set_func(vm, "stop", m_p2_cog_stop);
+    p2_module_set_func(vm, "blinker", m_p2_closure_cog_blinker);
+    p2_module_set_func(vm, "task", m_p2_closure_cog_task);
+    p2_module_set_func(vm, "task_kinds", m_p2_closure_cog_task_kinds);
+    p2_module_set_func(vm, "task_release", m_p2_closure_cog_task_release);
+    p2_module_set_func(vm, "is_task", m_p2_closure_cog_is_task);
+    p2_module_set_func(vm, "task_info", m_p2_closure_cog_task_info);
+    p2_module_set_func(vm, "spawn", m_p2_closure_cog_spawn);
+    p2_module_set_func(vm, "spawn_task", m_p2_closure_cog_spawn);
+    p2_module_set_func(vm, "spawn_source", m_p2_closure_cog_spawn_source);
+    p2_module_set_func(vm, "info", m_p2_closure_cog_info);
+    p2_module_set_func(vm, "capabilities", m_p2_closure_cog_capabilities);
+    p2_module_set_func(vm, "attention", m_attention_signal);
+    p2_module_set_func(vm, "poll_attention", m_attention_poll);
+    p2_module_set_func(vm, "wait_attention", m_attention_wait);
+    be_setmember(vm, -2, "cog");
+    be_pop(vm, 1);
+}
+
+static void p2_module_add_runtime_pin(bvm *vm)
+{
+    be_newmodule(vm);
+    p2_module_set_func(vm, "dir_low", m_pin_input);
+    p2_module_set_func(vm, "dir_high", m_pin_output);
+    p2_module_set_func(vm, "write", m_pin_write);
+    p2_module_set_func(vm, "low", m_pin_low);
+    p2_module_set_func(vm, "high", m_pin_high);
+    p2_module_set_func(vm, "toggle", m_pin_toggle);
+    p2_module_set_func(vm, "float", m_pin_float);
+    p2_module_set_func(vm, "read", m_pin_read);
+    be_setmember(vm, -2, "pin");
+    be_pop(vm, 1);
+}
+
+static void p2_module_add_runtime_clock_aliases(bvm *vm)
+{
+    p2_module_set_func(vm, "cnt", m_counter_ticks);
+    p2_module_set_func(vm, "cnth", m_counter_ticks_high);
+    p2_module_set_func(vm, "ticks", m_counter_ticks);
+    p2_module_set_func(vm, "ticks_high", m_counter_ticks_high);
+    p2_module_set_func(vm, "ticks64", m_counter_ticks64);
+    p2_module_set_func(vm, "waitx", m_counter_wait_ticks);
+    p2_module_set_func(vm, "wait_ticks", m_counter_wait_ticks);
+    p2_module_set_func(vm, "waitus", m_counter_sleep_us);
+    p2_module_set_func(vm, "waitms", m_counter_sleep_ms);
+    p2_module_set_func(vm, "waitsec", m_counter_sleep);
+    p2_module_set_func(vm, "waitcnt", m_counter_wait_until);
+    p2_module_set_func(vm, "wait_until", m_counter_wait_until);
+}
+
 static int m_p2_gc(bvm *vm)
 {
     size_t before = be_gc_memcount(vm);
@@ -3929,6 +6953,13 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "ticks64")) be_pushntvfunction(vm, m_counter_ticks64);
     else if (!strcmp(name, "wait_until")) be_pushntvfunction(vm, m_counter_wait_until);
     else if (!strcmp(name, "wait_ticks")) be_pushntvfunction(vm, m_counter_wait_ticks);
+    else if (!strcmp(name, "cnt")) be_pushntvfunction(vm, m_counter_ticks);
+    else if (!strcmp(name, "cnth")) be_pushntvfunction(vm, m_counter_ticks_high);
+    else if (!strcmp(name, "waitx")) be_pushntvfunction(vm, m_counter_wait_ticks);
+    else if (!strcmp(name, "waitus")) be_pushntvfunction(vm, m_counter_sleep_us);
+    else if (!strcmp(name, "waitms")) be_pushntvfunction(vm, m_counter_sleep_ms);
+    else if (!strcmp(name, "waitsec")) be_pushntvfunction(vm, m_counter_sleep);
+    else if (!strcmp(name, "waitcnt")) be_pushntvfunction(vm, m_counter_wait_until);
     else if (!strcmp(name, "high")) be_pushntvfunction(vm, m_p2_high);
     else if (!strcmp(name, "low")) be_pushntvfunction(vm, m_p2_low);
     else if (!strcmp(name, "toggle")) be_pushntvfunction(vm, m_p2_toggle);
@@ -3949,6 +6980,17 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "cog_start_c")) be_pushntvfunction(vm, m_cog_start_c);
     else if (!strcmp(name, "cog_start_pasm")) be_pushntvfunction(vm, m_cog_start_pasm);
     else if (!strcmp(name, "cog_start_hex")) be_pushntvfunction(vm, m_cog_start_hex);
+    else if (!strcmp(name, "cog_spawn")) be_pushntvfunction(vm, m_p2_closure_cog_spawn);
+    else if (!strcmp(name, "cog_spawn_task")) be_pushntvfunction(vm, m_p2_closure_cog_spawn);
+    else if (!strcmp(name, "cog_blinker")) be_pushntvfunction(vm, m_p2_closure_cog_blinker);
+    else if (!strcmp(name, "cog_task")) be_pushntvfunction(vm, m_p2_closure_cog_task);
+    else if (!strcmp(name, "cog_task_kinds")) be_pushntvfunction(vm, m_p2_closure_cog_task_kinds);
+    else if (!strcmp(name, "cog_task_release")) be_pushntvfunction(vm, m_p2_closure_cog_task_release);
+    else if (!strcmp(name, "cog_is_task")) be_pushntvfunction(vm, m_p2_closure_cog_is_task);
+    else if (!strcmp(name, "cog_task_info")) be_pushntvfunction(vm, m_p2_closure_cog_task_info);
+    else if (!strcmp(name, "cog_spawn_source")) be_pushntvfunction(vm, m_p2_closure_cog_spawn_source);
+    else if (!strcmp(name, "cog_info")) be_pushntvfunction(vm, m_p2_closure_cog_info);
+    else if (!strcmp(name, "cog_closure_stop")) be_pushntvfunction(vm, m_p2_closure_cog_stop);
     else if (!strcmp(name, "cog_stop")) be_pushntvfunction(vm, m_p2_cog_stop);
     else if (!strcmp(name, "cog_raw_stop")) be_pushntvfunction(vm, m_cog_stop);
     else if (!strcmp(name, "cog_check")) be_pushntvfunction(vm, m_cog_check);
@@ -3982,9 +7024,12 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "vm_invoke")) be_pushntvfunction(vm, m_p2_vm_invoke);
     else if (!strcmp(name, "vm_lock_info")) be_pushntvfunction(vm, m_p2_vm_lock_info);
 #if BE_P2_ENABLE_EXPERIMENTAL_VM_COG
+    else if (!strcmp(name, "vm_cog_call_once")) be_pushntvfunction(vm, m_p2_vm_cog_call_once);
     else if (!strcmp(name, "vm_cog_start")) be_pushntvfunction(vm, m_p2_vm_cog_start);
-    else if (!strcmp(name, "vm_cog_ping")) be_pushntvfunction(vm, m_p2_vm_cog_ping);
     else if (!strcmp(name, "vm_cog_info")) be_pushntvfunction(vm, m_p2_vm_cog_info);
+#endif
+#if BE_P2_ENABLE_EXPERIMENTAL_VM_COG || BE_P2_ENABLE_EXPERIMENTAL_COG_PING
+    else if (!strcmp(name, "vm_cog_ping")) be_pushntvfunction(vm, m_p2_vm_cog_ping);
 #endif
     else if (!strcmp(name, "vm_close")) be_pushntvfunction(vm, m_p2_vm_close);
     else if (!strcmp(name, "vm_partition_info")) be_pushntvfunction(vm, m_p2_vm_partition_info);
@@ -3994,6 +7039,8 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "fs_info")) be_pushntvfunction(vm, m_p2_fs_info);
     else if (!strcmp(name, "sd_info")) be_pushntvfunction(vm, m_p2_fs_info);
     else if (!strcmp(name, "sd_raw_probe")) be_pushntvfunction(vm, m_p2_sd_raw_probe);
+    else if (!strcmp(name, "sd_pin_diag")) be_pushntvfunction(vm, m_p2_sd_pin_diag);
+    else if (!strcmp(name, "flash_diag")) be_pushntvfunction(vm, m_p2_flash_diag);
     else if (!strcmp(name, "psram_info")) be_pushntvfunction(vm, m_p2_psram_info);
     else if (!strcmp(name, "psram_cache_info")) be_pushntvfunction(vm, m_p2_psram_cache_info);
     else if (!strcmp(name, "psram_cache_reserve")) be_pushntvfunction(vm, m_p2_psram_cache_reserve);
@@ -4027,6 +7074,10 @@ void be_cache_p2module(bvm *vm)
 
     be_newmodule(vm);
     p2_module_set_func(vm, "member", m_p2_member);
+    p2_module_set_func(vm, "vm_cog_ping", m_p2_vm_cog_ping);
+    p2_module_add_runtime_cog(vm);
+    p2_module_add_runtime_pin(vm);
+    p2_module_add_runtime_clock_aliases(vm);
 #if BE_P2_ENABLE_ROADMAP_NATIVE_FACADES
     p2_module_add_debug(vm);
     p2_module_add_clock(vm);

@@ -15,13 +15,13 @@ make test-host
 `make test-host` builds the host Berry binary with the existing sanitizer and coverage flags, runs `./testall.be`, then runs these P2 host regressions:
 
 - `tests/p2/host_libstore_chunk.be`
-- `tests/p2/host_taskspin.be`
+- `tests/p2/host_task.be`
 
 Current coverage:
 
 - Standard desktop Berry tests under `tests/*.be`.
 - Fake-PSRAM `libstore` chunked source-cache behavior.
-- Host-simulatable `taskspin` cooperative scheduler behavior.
+- Host-simulatable `task` cooperative scheduler behavior.
 
 Still open:
 

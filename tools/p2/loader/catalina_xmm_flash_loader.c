@@ -33,7 +33,7 @@ static uint8_t flash_sink;
 static void flash_init(void)
 {
     _pinh(FLASH_CS);
-    _pinl(FLASH_CLK);
+    _pinh(FLASH_CLK);
     _pinl(FLASH_DI);
     _pinf(FLASH_DO);
 }
@@ -65,6 +65,7 @@ static void flash_send(uint8_t out)
 static void flash_start_read(uint32_t addr)
 {
     _pinl(FLASH_CS);
+    _pinl(FLASH_CLK);
     flash_send(FLASH_READ_DATA);
     flash_send((uint8_t)(addr >> 16));
     flash_send((uint8_t)(addr >> 8));
@@ -73,6 +74,7 @@ static void flash_start_read(uint32_t addr)
 
 static void flash_stop(void)
 {
+    _pinh(FLASH_CLK);
     _pinh(FLASH_CS);
 }
 
@@ -90,6 +92,7 @@ static void flash_read(uint32_t addr, uint8_t *dst, uint32_t count)
 static void flash_command(uint8_t cmd)
 {
     _pinl(FLASH_CS);
+    _pinl(FLASH_CLK);
     flash_send(cmd);
     flash_stop();
 }
@@ -104,17 +107,23 @@ static void flash_release_bus(void)
      */
     flash_command(FLASH_RESET_ENABLE);
     flash_command(FLASH_RESET_MEMORY);
-    _waitms(1);
+    _waitms(100);
     flash_command(FLASH_DEEP_POWER_DOWN);
     _waitus(10);
 
-    _pinh(FLASH_CS);
-    _pinl(FLASH_CLK);
-    _pinh(FLASH_DI);
-    _pinf(FLASH_DO);
-    _pinf(FLASH_DI);
-    _pinf(FLASH_CLK);
-    _pinf(FLASH_CS);
+    /*
+     * Leave both shared devices explicitly deselected for Catalina:
+     *
+     *   SD_CS  == FLASH_CLK  high
+     *   SD_CLK == FLASH_CS   high
+     *
+     * Floating these pins here lets the board/pullups decide the handoff
+     * state, and driving FLASH_CLK low selects the SD card.
+     */
+    _pinh(SD_CS);
+    _pinh(SD_CLK);
+    _pinh(SD_DI);
+    _pinf(SD_DO);
 }
 
 static void sd_idle_after_flash(void)
@@ -122,21 +131,27 @@ static void sd_idle_after_flash(void)
     int i;
 
     /*
-     * Flash loading toggles pins that double as SD select/clock on P2 Edge.
-     * Send the SD power-up idle pattern before Catalina starts its SD plugin.
+     * Catalina's SD cog sends the SD power-up idle clocks during _SDcard_Init.
+     * Standalone flash boot has just spent a long time exercising the shared
+     * flash/SD pins, so provide the SD idle-clock pattern here too, but end
+     * with both shared devices explicitly deselected.
      */
     _pinh(SD_CS);
-    _pinl(SD_CLK);
+    _pinh(SD_CLK);
     _pinh(SD_DI);
     _pinf(SD_DO);
     _waitms(1);
     for (i = 0; i < 96; ++i) {
-        _pinh(SD_CLK);
-        _waitus(5);
         _pinl(SD_CLK);
+        _waitus(5);
+        _pinh(SD_CLK);
         _waitus(5);
     }
     _waitms(10);
+    _pinh(SD_CS);
+    _pinh(SD_CLK);
+    _pinh(SD_DI);
+    _pinf(SD_DO);
 }
 
 static uint32_t flash_read_u32(uint32_t addr)

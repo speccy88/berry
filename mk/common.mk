@@ -40,7 +40,7 @@ test: all
 	$(Q) ./testall.be
 	$(Q) $(RM) */*.gcno */*.gcda
 
-P2_HOST_TESTS ?= tests/p2/host_libstore_chunk.be tests/p2/host_taskspin.be tests/p2/host_task.be tests/p2/host_p2ipc.be
+P2_HOST_TESTS ?= tests/p2/host_libstore_chunk.be tests/p2/host_task.be tests/p2/host_p2ipc.be
 
 test-host: test
 	$(MSG) [Run P2 host regressions...]

@@ -110,8 +110,6 @@ void be_throw_message(bvm *vm, int errorcode, const char *msg)
     be_throw(vm, errorcode);
 }
 
-/* Exec protected: exec function and capture any exception and contain it within call */
-/* Exceptions or fatal errors are not propagated */
 int be_execprotected(bvm *vm, bpfunc f, void *data)
 {
     struct blongjmp jmp;

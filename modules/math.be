@@ -1,23 +1,46 @@
 # P2 SD math helper.
 #
-# The Catalina/P2 native math module is kept out of the Hub image. This module
-# covers the lightweight math surface used by the P2 smoke tests and common REPL
-# checks; heavier transcendental functions can be added here as pure Berry code
-# or backed by targeted P2/CORDIC helpers later.
+# The Catalina/P2 native math module stays out of the core Hub image. This
+# source module lives on SD and provides the math surface used by P2 smoke tests
+# and REPL work. On Propeller 2 it opportunistically uses the native CORDIC
+# helpers for trig/polar operations, with pure-Berry finite fallbacks for host
+# and non-P2 use.
 
 var math = module("math")
 
 math.pi = 3.1415927
 math.e = 2.7182818
+math.nan = real("nan")
+math.inf = real("inf")
 math.imax = 2147483647
 math.imin = -2147483647 - 1
-math._half_pi = math.pi / 2
-math._two_pi = math.pi * 2
+math._half_pi = math.pi / 2.0
+math._two_pi = math.pi * 2.0
 math._log10 = 2.3025851
+math._cordic_scale = 1000000
+math._cordic_turn = 4294967296.0
+math._p2 = nil
+math._cordic = false
+
+try
+    import p2
+    var _probe = p2.polxy(1, 0)
+    if type(_probe) == "map"
+        math._p2 = p2
+        math._cordic = true
+    end
+except .. as e, m
+    math._p2 = nil
+    math._cordic = false
+end
 
 math._is_number = def(x)
     var t = type(x)
     return t == "int" || t == "real"
+end
+
+math._real = def(x)
+    return x + 0.0
 end
 
 math.abs = def(x)
@@ -61,30 +84,18 @@ math.sqrt = def(x)
         return 0
     end
 
-    var root = 0
-    while root * root < x
-        root += 1
-    end
-    if root * root == x
-        return root
-    end
-
-    var low = root - 1
-    var high = root
+    x = math._real(x)
+    var guess = x >= 1 ? x : 1.0
     var i = 0
     while i < 24
-        var mid = (low + high) / 2
-        if mid * mid > x
-            high = mid
-        else
-            low = mid
-        end
+        guess = (guess + x / guess) / 2.0
         i += 1
     end
-    return (low + high) / 2
+    return guess
 end
 
 math._wrap_pi = def(x)
+    x = math._real(x)
     while x > math.pi
         x -= math._two_pi
     end
@@ -94,19 +105,62 @@ math._wrap_pi = def(x)
     return x
 end
 
+math._cordic_angle = def(x)
+    x = math._wrap_pi(x)
+    if x >= math.pi
+        return math.imin
+    end
+    return int((x / math._two_pi) * math._cordic_turn)
+end
+
+math._cordic_to_rad = def(t)
+    var v = math._real(t)
+    if v < 0
+        v += math._cordic_turn
+    end
+    var a = (v / math._cordic_turn) * math._two_pi
+    if a > math.pi
+        a -= math._two_pi
+    end
+    return a
+end
+
 math._atan_series = def(x)
+    x = math._real(x)
     var term = x
     var sum = x
     var x2 = x * x
-    var sign = -1
+    var sign = -1.0
     var n = 3
     while n < 51
         term *= x2
-        sum += sign * term / n
+        sum += sign * term / math._real(n)
         sign = -sign
         n += 2
     end
     return sum
+end
+
+math.accel_info = def()
+    return {
+        "p2": math._p2 != nil,
+        "cordic": math._cordic,
+        "backend": math._cordic ? "p2_cordic" : "berry_fallback",
+        "scale": math._cordic_scale,
+        "turn": math._cordic_turn,
+        "sin": math._cordic,
+        "cos": math._cordic,
+        "tan": math._cordic,
+        "atan2": math._cordic,
+        "asin": math._cordic,
+        "acos": math._cordic,
+        "sqrt": false,
+        "exp": false,
+        "log": false,
+        "reason": math._cordic
+            ? "P2 CORDIC is used for compatible scaled trig/polar operations"
+            : "P2 CORDIC API unavailable; using pure Berry finite fallbacks"
+    }
 end
 
 math.exp = def(x)
@@ -116,22 +170,23 @@ math.exp = def(x)
     if x == 0
         return 1
     end
+    x = math._real(x)
     if x < 0
-        return 1 / math.exp(-x)
+        return 1.0 / math.exp(-x)
     end
 
     var parts = int(x / 0.5) + 1
-    var y = x / parts
-    var term = 1
-    var sum = 1
+    var y = x / math._real(parts)
+    var term = 1.0
+    var sum = 1.0
     var i = 1
-    while i < 24
-        term = term * y / i
+    while i < 28
+        term = term * y / math._real(i)
         sum += term
         i += 1
     end
 
-    var out = 1
+    var out = 1.0
     i = 0
     while i < parts
         out *= sum
@@ -148,6 +203,7 @@ math.log = def(x)
         return nil
     end
 
+    x = math._real(x)
     var scale = 0
     while x > 1.5
         x /= math.e
@@ -158,17 +214,17 @@ math.log = def(x)
         scale -= 1
     end
 
-    var y = (x - 1) / (x + 1)
+    var y = (x - 1.0) / (x + 1.0)
     var y2 = y * y
     var term = y
     var sum = y
     var n = 3
-    while n < 61
+    while n < 81
         term *= y2
-        sum += term / n
+        sum += term / math._real(n)
         n += 2
     end
-    return 2 * sum + scale
+    return 2.0 * sum + math._real(scale)
 end
 
 math.log10 = def(x)
@@ -183,14 +239,19 @@ math.sin = def(x)
     if !math._is_number(x)
         return 0
     end
+    if math._cordic
+        var p = math._p2.polxy(math._cordic_scale, math._cordic_angle(x))
+        return math._real(p["y"]) / math._real(math._cordic_scale)
+    end
+
     x = math._wrap_pi(x)
     var term = x
     var sum = x
     var x2 = x * x
     var n = 3
-    var sign = -1
-    while n < 23
-        term = term * x2 / ((n - 1) * n)
+    var sign = -1.0
+    while n < 25
+        term = term * x2 / math._real((n - 1) * n)
         sum += sign * term
         sign = -sign
         n += 2
@@ -202,14 +263,19 @@ math.cos = def(x)
     if !math._is_number(x)
         return 0
     end
+    if math._cordic
+        var p = math._p2.polxy(math._cordic_scale, math._cordic_angle(x))
+        return math._real(p["x"]) / math._real(math._cordic_scale)
+    end
+
     x = math._wrap_pi(x)
-    var term = 1
-    var sum = 1
+    var term = 1.0
+    var sum = 1.0
     var x2 = x * x
     var n = 2
-    var sign = -1
-    while n < 24
-        term = term * x2 / ((n - 1) * n)
+    var sign = -1.0
+    while n < 26
+        term = term * x2 / math._real((n - 1) * n)
         sum += sign * term
         sign = -sign
         n += 2
@@ -229,6 +295,7 @@ math.atan = def(x)
     if !math._is_number(x)
         return 0
     end
+    x = math._real(x)
     if x == 0
         return 0
     end
@@ -236,11 +303,11 @@ math.atan = def(x)
         return -math.atan(-x)
     end
     if x > 1
-        return math._half_pi - math.atan(1 / x)
+        return math._half_pi - math.atan(1.0 / x)
     end
     if x > 0.5
-        var y = x / (1 + math.sqrt(1 + x * x))
-        return 2 * math._atan_series(y)
+        var y = x / (1.0 + math.sqrt(1.0 + x * x))
+        return 2.0 * math._atan_series(y)
     end
     return math._atan_series(x)
 end
@@ -249,25 +316,34 @@ math.atan2 = def(y, x)
     if !math._is_number(y) || !math._is_number(x)
         return 0
     end
+    if x == 0 && y == 0
+        return 0
+    end
+    if math._cordic
+        var ax = math.abs(x)
+        var ay = math.abs(y)
+        var div = ax > ay ? ax : ay
+        var xi = int((math._real(x) / math._real(div)) * math._cordic_scale)
+        var yi = int((math._real(y) / math._real(div)) * math._cordic_scale)
+        var p = math._p2.xypol(xi, yi)
+        return math._cordic_to_rad(p["t"])
+    end
+    x = math._real(x)
+    y = math._real(y)
     if x > 0
         return math.atan(y / x)
     end
     if x < 0
         return y >= 0 ? math.atan(y / x) + math.pi : math.atan(y / x) - math.pi
     end
-    if y > 0
-        return math._half_pi
-    end
-    if y < 0
-        return -math._half_pi
-    end
-    return 0
+    return y > 0 ? math._half_pi : -math._half_pi
 end
 
 math.asin = def(x)
     if !math._is_number(x)
         return 0
     end
+    x = math._real(x)
     if x > 1 || x < -1
         return nil
     end
@@ -277,7 +353,7 @@ math.asin = def(x)
     if x == -1
         return -math._half_pi
     end
-    return math.atan2(x, math.sqrt(1 - x * x))
+    return math.atan2(x, math.sqrt(1.0 - x * x))
 end
 
 math.acos = def(x)
@@ -292,14 +368,14 @@ math.sinh = def(x)
     if !math._is_number(x)
         return 0
     end
-    return (math.exp(x) - math.exp(-x)) / 2
+    return (math.exp(x) - math.exp(-x)) / 2.0
 end
 
 math.cosh = def(x)
     if !math._is_number(x)
         return 0
     end
-    return (math.exp(x) + math.exp(-x)) / 2
+    return (math.exp(x) + math.exp(-x)) / 2.0
 end
 
 math.tanh = def(x)
@@ -349,27 +425,27 @@ math.pow = def(x, y)
         return 1
     end
     if type(y) == "int"
-        var out = 1
+        var out = 1.0
         var i = 0
         var n = y < 0 ? -y : y
         while i < n
             out *= x
             i += 1
         end
-        return y < 0 ? 1 / out : out
+        return y < 0 ? 1.0 / out : out
     end
     if x > 0
-        return math.exp(y * math.log(x))
+        return math.exp(math._real(y) * math.log(x))
     end
     return nil
 end
 
 math.deg = def(x)
-    return math._is_number(x) ? x * 180 / math.pi : 0
+    return math._is_number(x) ? math._real(x) * 180.0 / math.pi : 0
 end
 
 math.rad = def(x)
-    return math._is_number(x) ? x * math.pi / 180 : 0
+    return math._is_number(x) ? math._real(x) * math.pi / 180.0 : 0
 end
 
 math.isnan = def(x)
@@ -377,14 +453,19 @@ math.isnan = def(x)
 end
 
 math.isinf = def(x)
-    return false
+    if !math._is_number(x) || !math._is_number(math.inf)
+        return false
+    end
+    return x == math.inf || x == -math.inf
 end
 
 math.srand = def(seed) end
 
 math.rand = def()
-    import p2
-    return p2.random()
+    if math._p2 != nil
+        return math._p2.random()
+    end
+    return 0
 end
 
 return math

@@ -17,8 +17,19 @@ static void be_p2_configure_module_paths(bvm *vm)
 #if BE_USE_FILE_SYSTEM
     /* P2 keeps optional Berry libraries on SD. The upstream loader searches
      * this path lazily on import, so source modules do not consume Hub image
-     * space until a program asks for them. */
-    be_module_path_set(vm, "/modules");
+     * space until a program asks for them.
+     *
+     * Catalina DOSFS exposes short FAT names in uppercase on P2. Keep the
+     * default import roots in that same form so source-module imports work on
+     * freshly formatted cards copied from macOS/FAT tooling.
+     *
+     * /MODULES remains first to preserve the known-good deployed layout.
+     * /BERRY/LIB and /BERRY/APP stage the goal layout without changing native
+     * module-first resolution or eager-loading anything into Hub RAM.
+     */
+    be_module_path_set(vm, "/MODULES");
+    be_module_path_set(vm, "/BERRY/LIB");
+    be_module_path_set(vm, "/BERRY/APP");
 #else
     (void)vm;
 #endif

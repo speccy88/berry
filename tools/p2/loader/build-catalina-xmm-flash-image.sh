@@ -12,8 +12,6 @@ OUTPUT_BIN="$3"
 WORK_DIR="$4"
 
 ROOT_DIR="$(pwd)"
-DOCKER_IMAGE="${CATALINA_DOCKER_IMAGE:-berry-p2-catalina-builder:ubuntu24.04}"
-DOCKER_PLATFORM="${CATALINA_DOCKER_PLATFORM:-linux/amd64}"
 FLASH_LOADER_SRC="tools/p2/loader/catalina_xmm_flash_loader.c"
 STAGE1_SRC="tools/p2/loader/flshboot_xmm_stage1.t"
 COMPOSE_SCRIPT="tools/p2/loader/compose-catalina-xmm-flash.py"
@@ -24,6 +22,8 @@ case "$CATALINA_DIR" in
     /*) CATALINA_ABS="$CATALINA_DIR" ;;
     *) CATALINA_ABS="$ROOT_DIR/$CATALINA_DIR" ;;
 esac
+CATALINA_BIN="${CATALINA_ABS}/bin/catalina"
+P2_ASM_TOOL="${CATALINA_ABS}/bin/p2_asm"
 case "$INPUT_BIN" in
     /*) INPUT_ABS="$INPUT_BIN" ;;
     *) INPUT_ABS="$ROOT_DIR/$INPUT_BIN" ;;
@@ -39,20 +39,50 @@ esac
 
 mkdir -p "$WORK_ABS" "$(dirname "$OUTPUT_ABS")"
 
-to_docker_path() {
+normalize_binary_output() {
+    local base="$1"
+    local dest="$2"
+
+    if [ -f "${base}.bin" ]; then
+        cp "${base}.bin" "$dest"
+    elif [ -f "${base}.binary" ]; then
+        cp "${base}.binary" "$dest"
+    elif [ -f "$base" ]; then
+        cp "$base" "$dest"
+    else
+        echo "error: expected Catalina binary output for ${base}" >&2
+        exit 1
+    fi
+}
+
+repo_relative_path() {
     local path="$1"
+
     case "$path" in
-        "$ROOT_DIR"/*) printf '/work/%s' "${path#"$ROOT_DIR"/}" ;;
-        "$ROOT_DIR") printf '/work' ;;
-        *) return 1 ;;
+        "$ROOT_DIR"/*) printf '%s\n' "${path#"$ROOT_DIR"/}" ;;
+        *) printf '%s\n' "$path" ;;
     esac
 }
 
 compile_loader_local() {
+    local loader_base
+    local stage1_base
+    local loader_src
+    local stage1_src
+
+    loader_base="$(repo_relative_path "$WORK_ABS/xmm_flash_loader")"
+    stage1_base="$(repo_relative_path "$WORK_ABS/xmm_flash_stage1")"
+    loader_src="$(repo_relative_path "$ROOT_DIR/$FLASH_LOADER_SRC")"
+    stage1_src="$(repo_relative_path "$ROOT_DIR/$STAGE1_SRC")"
+
+    export CATALINA_DIR="$CATALINA_ABS"
+    export CATALINA_INCLUDE="$CATALINA_ABS/include"
+    export CATALINA_TARGET="$CATALINA_ABS/target"
+    export CATALINA_LIBRARY="$CATALINA_ABS"
     export LCCDIR="$CATALINA_ABS"
-    # shellcheck disable=SC1090
-    source "$LCCDIR/use_catalina" >/dev/null
-    catalina "$ROOT_DIR/$FLASH_LOADER_SRC" \
+    export PATH="$CATALINA_ABS/bin:$PATH"
+    "$CATALINA_BIN" \
+        -C99 \
         -p2 \
         -lci \
         -lpsram \
@@ -60,48 +90,17 @@ compile_loader_local() {
         -C NO_HMI \
         -C P2_CUSTOM \
         -D "BERRY_XMM_FLASH_ADDR=$APP_FLASH_ADDR" \
-        -o "$WORK_ABS/xmm_flash_loader"
-    cp "$WORK_ABS/xmm_flash_loader.bin" "$WORK_ABS/xmm_flash_loader.binary"
-    p2_asm "$ROOT_DIR/$STAGE1_SRC" -o "$WORK_ABS/xmm_flash_stage1"
-    cp "$WORK_ABS/xmm_flash_stage1.bin" "$WORK_ABS/xmm_flash_stage1.binary"
+        -o "$loader_base" \
+        "$loader_src"
+    normalize_binary_output "$loader_base" "$WORK_ABS/xmm_flash_loader.binary"
+    "$P2_ASM_TOOL" "$stage1_src" -o "$stage1_base"
+    normalize_binary_output "$stage1_base" "$WORK_ABS/xmm_flash_stage1.binary"
 }
 
-compile_loader_docker() {
-    local catalina_docker work_docker loader_src_docker stage1_src_docker
-
-    if ! docker image inspect "$DOCKER_IMAGE" >/dev/null 2>&1; then
-        echo "[Docker] Building Catalina builder image: $DOCKER_IMAGE"
-        docker build \
-            --platform "$DOCKER_PLATFORM" \
-            -t "$DOCKER_IMAGE" \
-            -<<'EOF'
-FROM ubuntu:24.04
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends make python3 \
-    && rm -rf /var/lib/apt/lists/*
-EOF
-    fi
-
-    catalina_docker="$(to_docker_path "$CATALINA_ABS")"
-    work_docker="$(to_docker_path "$WORK_ABS")"
-    loader_src_docker="$(to_docker_path "$ROOT_DIR/$FLASH_LOADER_SRC")"
-    stage1_src_docker="$(to_docker_path "$ROOT_DIR/$STAGE1_SRC")"
-
-    docker run --rm \
-        --platform "$DOCKER_PLATFORM" \
-        -v "$ROOT_DIR:/work" \
-        -w /work \
-        "$DOCKER_IMAGE" \
-        bash -lc "set -euo pipefail; export LCCDIR='$catalina_docker'; source \"\$LCCDIR/use_catalina\" >/dev/null; mkdir -p '$work_docker'; catalina '$loader_src_docker' -p2 -lci -lpsram -R0x10000 -C NO_HMI -C P2_CUSTOM -D 'BERRY_XMM_FLASH_ADDR=$APP_FLASH_ADDR' -o '$work_docker/xmm_flash_loader'; cp '$work_docker/xmm_flash_loader.bin' '$work_docker/xmm_flash_loader.binary'; p2_asm '$stage1_src_docker' -o '$work_docker/xmm_flash_stage1'; cp '$work_docker/xmm_flash_stage1.bin' '$work_docker/xmm_flash_stage1.binary'"
-}
-
-if "$CATALINA_ABS/bin/catalina" -h >/dev/null 2>&1 && command -v p2_asm >/dev/null 2>&1; then
+if [ -x "$CATALINA_BIN" ] && [ -x "$P2_ASM_TOOL" ]; then
     compile_loader_local
-elif command -v docker >/dev/null 2>&1; then
-    compile_loader_docker
 else
-    echo "error: Catalina XMM flash image generation needs Catalina+p2_asm or Docker" >&2
+    echo "error: Catalina XMM flash image generation needs native Catalina and p2_asm" >&2
     exit 1
 fi
 

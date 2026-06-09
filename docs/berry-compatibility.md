@@ -9,8 +9,8 @@ Current smoke coverage includes non-interactive builtins and core modules throug
 ## Covered examples
 
 - Core builtins: `print`, `classname`, `classof`, `str`, `number`, `int`, `real`, `bool`, `type`, `size`, `super`, `assert`, `compile`, `module`, `issubclass`, `isinstance`, `call`, `list`, `map`, `range`, and `bytes`.
-- SD-backed modules: `math`, `json`, `string`, `os`, `os.path`, `libstore`, `p2mem`, `taskspin`, and `task` have targeted P2 smoke coverage.
-- Native/hardware modules: `p2`, `rtos`, `i2c`, `spi`, `spin2`, and WiFi scaffolding are documented in the P2 docs and coverage matrix.
+- SD-backed modules: `math`, `json`, `string`, `os`, `os.path`, `libstore`, `p2mem` and `task` have targeted P2 smoke coverage.
+- Native/hardware modules: `p2`, `i2c`, `spi`, `spin2`, and WiFi scaffolding are documented in the P2 docs and coverage matrix.
 
 ## Host-like limitations
 

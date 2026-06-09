@@ -33,9 +33,9 @@ specific task.
 - `PORT=...`
 - `P2_PROFILE=minimal|full|edge32|xmm` when not using a convenience profile target
 - `P2_BOARD=auto|p2edge|p2edge32` for the physical board pinout. `auto`
-  maps `full`/`minimal` to `p2edge` and `edge32`/`xmm` to `p2edge32`.
+ maps `full`/`minimal` to `p2edge` and `edge32`/`xmm` to `p2edge32`.
 - `P2_SILICON=a|latest|b|c` for old silicon versus current B/C silicon
-  code generation.
+ code generation.
 - `CATALINA_DIR=...`
 - `LOADP2=...` for the loader from FlexProp
 
@@ -44,13 +44,13 @@ specific task.
 Keep the three release identities distinct:
 
 - old silicon: set `P2_SILICON=a`. This selects the old P2 codegen path
-  (`-2a`). Board pinout is still selected separately with `P2_BOARD`.
+ (`-2a`). Board pinout is still selected separately with `P2_BOARD`.
 - P2 Edge no-RAM: use `P2_BOARD=p2edge`, normally through `make p2-full`.
-  On this board profile, onboard LEDs are `LED0=56` and `LED1=57`.
+ On this board profile, onboard LEDs are `LED0=56` and `LED1=57`.
 - P2 Edge 32 MB RAM: use `P2_BOARD=p2edge32`, normally through
-  `make p2-edge32` or `make p2-xmm`. On this board profile, onboard LEDs are
-  `LED0=38` and `LED1=39`; pins `40..57` are reserved for PSRAM, with pin `57`
-  used as PSRAM chip-select.
+ `make p2-edge32` or `make p2-xmm`. On this board profile, onboard LEDs are
+ `LED0=38` and `LED1=39`; pins `40..57` are reserved for PSRAM, with pin `57`
+ used as PSRAM chip-select.
 
 The makefile generates these runtime macros in the P2 config header:
 
@@ -102,13 +102,13 @@ make p2-xmm
 Run the experimental XMM image through Catalina's serial XMM loader:
 
 ```sh
-make p2-xmm-run PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build
+make p2-xmm-run PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
 ```
 
 Install the experimental XMM image for standalone SPI-flash boot:
 
 ```sh
-make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build
+make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
 ```
 
 The XMM flash target creates a complete bootable flash image and writes it with
@@ -153,14 +153,14 @@ flags on every command:
 
 ```sh
 make configure \
-  TOOLCHAIN=catalina \
-  PORT=/dev/cu.usbserial-P97cvdxp \
-  P2_SILICON=latest \
-  P2_BOARD=p2edge \
-  CATALINA_PLATFORM=P2_EDGE \
-  CATALINA_MODEL=COMPACT \
-  CATALINA_CLIB=-lcx \
-  CATALINA_SERIAL_LIB=
+ TOOLCHAIN=catalina \
+ PORT=/dev/cu.usbserial-P97cvdxp \
+ P2_SILICON=latest \
+ P2_BOARD=p2edge \
+ CATALINA_PLATFORM=P2_EDGE \
+ CATALINA_MODEL=COMPACT \
+ CATALINA_CLIB=-lcx \
+ CATALINA_SERIAL_LIB=
 ```
 
 This writes a local `.p2.local.mk` file in the repo root. It is ignored by git,
@@ -211,7 +211,7 @@ tio -b 230400 /dev/cu.usbserial-P97cvdxp
 For a P2 Edge Rev D with the 32 MB RAM module:
 
 ```sh
-make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build
+make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
 tio -b 230400 /dev/cu.usbserial-P97cvdxp
 ```
 
@@ -231,7 +231,7 @@ REPL:
 ```berry
 import p2
 print(p2.fs_info())
-print(p2.fs_info(true))   # creates, reads, and removes /P2FSPROB.TXT
+print(p2.fs_info(true)) # creates, reads, and removes /P2FSPROB.TXT
 ```
 
 Useful fields are `mount_result_name`, `sector0_signature`,
@@ -273,19 +273,19 @@ The smoke suite covers:
 
 - core arithmetic, strings, maps, lists, ranges, and closures
 - `string`, SD-loaded `math`, `json`, `bytes`, and `p2` module basics,
-  including structured `p2.status_info()` diagnostics
+ including structured `p2.status_info()` diagnostics
 - lazy SD library import from `/modules`, including `binary_heap` and
-  `libstore`; on edge32, `libstore` also smoke-tests chunked PSRAM source-cache
-  round trips, discovered-module `cache_all()` warmup, and loading SD modules
-  back from the PSRAM cache
+ `libstore`; on edge32, `libstore` also smoke-tests chunked PSRAM source-cache
+ round trips, discovered-module `cache_all()` warmup, and loading SD modules
+ back from the PSRAM cache
 - `p2.heap_info()`/`p2.sbrk()` allocator accounting: allocate transient objects,
-  verify free-space drops, then GC and assert free-space is reclaimed
+ verify free-space drops, then GC and assert free-space is reclaimed
 - SD-loaded cooperative `taskspin` tasks using a Spin2-shaped `TASK*` API,
-  including halt-mask and stack-address diagnostics
+ including halt-mask and stack-address diagnostics
 - SD create/read/readbytes/remove using only `/P2SMOKE.TXT`
 - `rtos` channels, events, timers, `process_info()`, guarded closure launch,
-  source-backed `rtos.run(source, task, ...)`, and SD-loaded
-  `rtos.newcog("name", ...)`
+ source-backed `rtos.run(source, task, ...)`, and SD-loaded
+ `rtos.newcog("name", ...)`
 
 For the original short REPL check set:
 

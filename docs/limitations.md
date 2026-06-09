@@ -6,7 +6,7 @@ This file is intentionally direct. It is better to document an unsupported featu
 
 - Full upstream Berry language and module coverage is not complete.
 - `input()` needs non-blocking or manual serial coverage.
-- `.bec` bytecode loading, freshness checks, and compile-to-cache behavior remain open.
+- `.bec` bytecode execution and compile-to-cache behavior remain open; sidecar freshness manifest metadata is staged but does not enable execution.
 - COMPACT Edge32 does not store arbitrary live Berry GC objects in PSRAM.
 - Real module cache hit/miss, refcount, pinned, hash, mtime, and last-used metadata remain open.
 - Smart-pin mode-family constants and high-level wrappers remain open.

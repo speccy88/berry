@@ -71,44 +71,13 @@ loader_cmd=$(printf '%q ' \
     -C P2_CUSTOM \
     -o "${LOADER_OUT_DIR}/XMM_USB")
 
-if "${CATALINA_BIN}" -h >/dev/null 2>&1; then
-    CATALINA_DIR="${CATALINA_DIR}" \
-    CATALINA_INCLUDE="${CATALINA_DIR}/include" \
-    CATALINA_TARGET="${CATALINA_DIR}/target" \
-    CATALINA_LIBRARY="${CATALINA_DIR}" \
-    LCCDIR="${CATALINA_DIR}" \
-    PATH="${CATALINA_DIR}/bin:${PATH}" \
-        bash -lc "${loader_cmd}"
-else
-    DOCKER_IMAGE="${CATALINA_DOCKER_IMAGE:-berry-p2-catalina-builder:ubuntu24.04}"
-    DOCKER_PLATFORM="${CATALINA_DOCKER_PLATFORM:-linux/amd64}"
-    DEFAULT_BASE_IMAGE="${CATALINA_DOCKER_BASE_IMAGE:-ubuntu:24.04}"
-
-    if ! docker image inspect "${DOCKER_IMAGE}" >/dev/null 2>&1; then
-        docker build \
-            --platform "${DOCKER_PLATFORM}" \
-            -t "${DOCKER_IMAGE}" \
-            -<<EOF
-FROM ${DEFAULT_BASE_IMAGE}
-ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update \\
-    && apt-get install -y --no-install-recommends make python3 \\
-    && rm -rf /var/lib/apt/lists/*
-EOF
-    fi
-
-    docker run --rm \
-        --platform "${DOCKER_PLATFORM}" \
-        -v "${PWD}:/work" \
-        -w /work \
-        -e CATALINA_DIR="${CATALINA_DIR}" \
-        -e CATALINA_INCLUDE="${CATALINA_DIR}/include" \
-        -e CATALINA_TARGET="${CATALINA_DIR}/target" \
-        -e CATALINA_LIBRARY="${CATALINA_DIR}" \
-        -e LCCDIR="${CATALINA_DIR}" \
-        "${DOCKER_IMAGE}" \
-        bash -lc "set -euo pipefail; source \"${CATALINA_DIR}/use_catalina\" >/dev/null; export PATH=\"${CATALINA_DIR}/bin:\${PATH}\"; ${loader_cmd}"
-fi
+CATALINA_DIR="${CATALINA_DIR}" \
+CATALINA_INCLUDE="${CATALINA_DIR}/include" \
+CATALINA_TARGET="${CATALINA_DIR}/target" \
+CATALINA_LIBRARY="${CATALINA_DIR}" \
+LCCDIR="${CATALINA_DIR}" \
+PATH="${CATALINA_DIR}/bin:${PATH}" \
+    bash -lc "${loader_cmd}"
 
 if [ ! -f "${LOADER_OUT_DIR}/XMM_USB.bin" ]; then
     echo "error: Catalina did not create ${LOADER_OUT_DIR}/XMM_USB.bin" >&2

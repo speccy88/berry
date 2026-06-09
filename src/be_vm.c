@@ -517,32 +517,54 @@ static void connect_str(bvm *vm, bstring *a, bvalue *b)
     }
 }
 
+volatile int berry_vm_new_diag_stage;
+volatile int *berry_vm_new_diag_stage_ptr;
+volatile int berry_vm_new_skip_loadlibs;
+
+#define BERRY_VM_NEW_DIAG_STAGE(stage) do { \
+    berry_vm_new_diag_stage = (stage); \
+    if (berry_vm_new_diag_stage_ptr != NULL) { \
+        *berry_vm_new_diag_stage_ptr = (stage); \
+    } \
+} while (0)
+
 BERRY_API bvm* be_vm_new(void)
 {
     VM_TRACE("[vm] start\n");
+    BERRY_VM_NEW_DIAG_STAGE(1);
     bvm *vm = be_os_malloc(sizeof(bvm));
+    BERRY_VM_NEW_DIAG_STAGE(2);
     be_assert(vm != NULL);
     VM_TRACE("[vm] alloc\n");
     memset(vm, 0, sizeof(bvm)); /* clear all members */
+    BERRY_VM_NEW_DIAG_STAGE(3);
     be_gc_init(vm);
     VM_TRACE("[vm] gc\n");
+    BERRY_VM_NEW_DIAG_STAGE(4);
     be_string_init(vm);
     VM_TRACE("[vm] str\n");
+    BERRY_VM_NEW_DIAG_STAGE(5);
     be_stack_init(vm, &vm->callstack, sizeof(bcallframe));
     be_stack_init(vm, &vm->refstack, sizeof(binstance*));
     be_stack_init(vm, &vm->exceptstack, sizeof(struct bexecptframe));
     be_stack_init(vm, &vm->tracestack, sizeof(bcallsnapshot));
     VM_TRACE("[vm] stacks\n");
+    BERRY_VM_NEW_DIAG_STAGE(6);
     vm->stack = be_malloc(vm, sizeof(bvalue) * BE_STACK_START);
     vm->stacktop = vm->stack + BE_STACK_START;
     vm->reg = vm->stack;
     vm->top = vm->reg;
     VM_TRACE("[vm] stackmem\n");
+    BERRY_VM_NEW_DIAG_STAGE(7);
     be_globalvar_init(vm);
     VM_TRACE("[vm] globals\n");
+    BERRY_VM_NEW_DIAG_STAGE(8);
     be_gc_setpause(vm, 1);
-    be_loadlibs(vm);
+    if (!berry_vm_new_skip_loadlibs) {
+        be_loadlibs(vm);
+    }
     VM_TRACE("[vm] libs\n");
+    BERRY_VM_NEW_DIAG_STAGE(9);
     vm->compopt = 0;
     vm->bytesmaxsize = BE_BYTES_MAX_SIZE;
     vm->obshook = NULL;

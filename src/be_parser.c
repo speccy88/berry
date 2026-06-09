@@ -20,6 +20,7 @@
 #include "be_decoder.h"
 #include "be_exec.h"
 #include <limits.h>
+#include <string.h>
 
 #define OP_NOT_BINARY           TokenNone
 #define OP_NOT_UNARY            TokenNone
@@ -1613,31 +1614,55 @@ static void classstaticclass_stmt(bparser *parser, bclass *c_out, bexpdesc *e_ou
     }
 }
 
+static bstring* import_dotted_id(bparser *parser, bstring **name)
+{
+    bstring *full, *part;
+    *name = full = next_token(parser).u.s;
+    match_token(parser, TokenId); /* match and skip ID */
+    while (match_skip(parser, OptDot)) {
+        size_t len1, len2, len;
+        char *buffer;
+        part = next_token(parser).u.s;
+        match_token(parser, TokenId); /* match and skip ID */
+        len1 = (size_t)str_len(full);
+        len2 = (size_t)str_len(part);
+        len = len1 + len2 + 1;
+        buffer = be_malloc(parser->vm, len + 1);
+        memcpy(buffer, str(full), len1);
+        buffer[len1] = '.';
+        memcpy(buffer + len1 + 1, str(part), len2);
+        buffer[len] = '\0';
+        full = be_newstrn(parser->vm, buffer, len);
+        be_free(parser->vm, buffer, len + 1);
+        *name = part;
+    }
+    return full;
+}
+
 static void import_stmt(bparser *parser)
 {
     bstring *name; /* variable name */
     bexpdesc m, v;
-    /* 'import' (ID (['as' ID] | {',' ID}) | STRING 'as' ID ) */
+    /* 'import' (ID ('.' ID)* (['as' ID] | {',' ID ('.' ID)*}) | STRING 'as' ID ) */
     scan_next_token(parser); /* skip 'import' */
     init_exp(&m, ETSTRING, 0);
-    m.v.s = name = next_token(parser).u.s;
     if (next_type(parser) == TokenString) { /* STRING 'as' ID */
+        m.v.s = name = next_token(parser).u.s;
         scan_next_token(parser); /* skip the module path */
         match_token(parser, KeyAs); /* match and skip 'as' */
         name = next_token(parser).u.s;
         match_token(parser, TokenId); /* match and skip ID */
-    } else { /* ID (['as' ID] | {',' ID}) */
-        match_token(parser, TokenId); /* match and skip ID */
+    } else { /* ID ('.' ID)* (['as' ID] | {',' ID ('.' ID)*}) */
+        m.v.s = import_dotted_id(parser, &name);
         if (match_skip(parser, KeyAs)) { /* 'as' */
             name = next_token(parser).u.s;
             match_token(parser, TokenId); /* match and skip ID */
-        } else { /* {',' ID} */
+        } else { /* {',' ID ('.' ID)*} */
             while (match_skip(parser, OptComma)) { /* ',' */
                 new_var(parser, name, &v);
                 be_code_import(parser->finfo, &m, &v); /* code import */
                 init_exp(&m, ETSTRING, 0); /* scanning for next node */
-                m.v.s = name = next_token(parser).u.s;
-                match_token(parser, TokenId); /* match and skip ID */
+                m.v.s = import_dotted_id(parser, &name);
             }
         }
     }

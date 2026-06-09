@@ -138,6 +138,42 @@ static int i_readline(bvm *vm)
     be_return_nil(vm);
 }
 
+static int i_readlines(bvm *vm)
+{
+    be_getmember(vm, 1, ".p");
+    if (be_iscomptr(vm, -1)) {
+        void *fh = be_tocomptr(vm, -1);
+        be_pop(vm, 1);
+        be_newobject(vm, "list");
+        for (;;) {
+            size_t pos = 0, size = READLINE_STEP;
+            char *buffer = be_malloc(vm, size);
+            char *res = be_fgets(fh, buffer, (int)size);
+            while (res) {
+                pos += strlen(buffer + pos);
+                if (!pos || buffer[pos - 1] == '\n') {
+                    break;
+                }
+                buffer = be_realloc(vm, buffer, size, size + READLINE_STEP);
+                res = be_fgets(fh, buffer + pos, READLINE_STEP);
+                size += READLINE_STEP;
+            }
+            if (!pos) {
+                be_free(vm, buffer, size);
+                break;
+            }
+            be_pushnstring(vm, buffer, pos);
+            be_free(vm, buffer, size);
+            be_data_push(vm, -2);
+            be_pop(vm, 1);
+        }
+        be_pop(vm, 1);
+    } else {
+        be_pushnil(vm);
+    }
+    be_return(vm);
+}
+
 static int i_seek(bvm *vm)
 {
     be_getmember(vm, 1, ".p");
@@ -228,6 +264,7 @@ int be_nfunc_open(bvm *vm)
         { "read", i_read },
         { "readbytes", i_readbytes },
         { "readline", i_readline },
+        { "readlines", i_readlines },
         { "seek", i_seek },
         { "tell", i_tell },
         { "size", i_size },

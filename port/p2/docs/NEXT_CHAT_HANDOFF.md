@@ -10,29 +10,29 @@ with 32 MB PSRAM and Catalina/lcc.
 ## Current Working State
 
 - Normal COMPACT P2 Edge 32 MB PSRAM Catalina flash path still works:
-  - `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build`
-  - Boots `[edge32 profile]` from SPI flash.
+ - `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88`
+ - Boots `[edge32 profile]` from SPI flash.
 - XMM unified-memory path now works over serial:
-  - `make p2-xmm-run PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build`
+ - `make p2-xmm-run PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88`
 - XMM unified-memory path now works from standalone SPI flash:
-  - `make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build`
-  - Reset or power-cycle afterward. Boot takes about `25-30` seconds before the
-    Berry banner while the stage-2 loader copies the XMM image from flash to
-    PSRAM.
+ - `make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88`
+ - Reset or power-cycle afterward. Boot takes about `25-30` seconds before the
+ Berry banner while the stage-2 loader copies the XMM image from flash to
+ PSRAM.
 
 ## XMM Flash Implementation
 
 - `p2-xmm-flash` builds `build/p2/catalina/xmm/berry_p2_xmm_flash.binary`.
 - Flash image layout:
-  - `0x00000`: checksum-patched 1024-byte P2 ROM boot block
-  - `0x10000`: size-prefixed stage-2 flash-to-PSRAM loader
-  - `0x40000`: size-prefixed Berry Catalina XMM image
+ - `0x00000`: checksum-patched 1024-byte P2 ROM boot block
+ - `0x10000`: size-prefixed stage-2 flash-to-PSRAM loader
+ - `0x40000`: size-prefixed Berry Catalina XMM image
 - It writes the composite image with stock FlexProp `loadp2` high-memory flash:
-  - `loadp2 -HIMEM=flash @80000000=build/p2/catalina/xmm/berry_p2_xmm_flash.binary`
+ - `loadp2 -HIMEM=flash @80000000=build/p2/catalina/xmm/berry_p2_xmm_flash.binary`
 - Upstream `loadp2` PR opened for a friendlier alias:
-  - `https://github.com/totalspectrum/loadp2/pull/10`
-  - Adds `-FLASHRAW image.binary`, equivalent to writing a prebuilt bootable
-    image directly to SPI flash offset 0.
+ - `https://github.com/totalspectrum/loadp2/pull/10`
+ - Adds `-FLASHRAW image.binary`, equivalent to writing a prebuilt bootable
+ image directly to SPI flash offset 0.
 
 ## Verified On Hardware
 
@@ -48,24 +48,24 @@ Standalone XMM flash boot banner from the latest verified image:
 Standalone XMM flash REPL checks passed:
 
 ```berry
-print(6*7)                              # 42
-s="abc"; print(s+"def")                 # abcdef
-m={"a":2,"b":5}; print(m["a"]+m["b"])  # 7
+print(6*7) # 42
+s="abc"; print(s+"def") # abcdef
+m={"a":2,"b":5}; print(m["a"]+m["b"]) # 7
 ```
 
 Runtime diagnostics passed:
 
 ```berry
-import p2; print(p2.status_info()["build"]["profile"])  # xmm
-import p2; print(p2.heap_info())                         # external_heap true
-import p2; print(p2.psram_info())                        # access xmm+block
+import p2; print(p2.status_info()["build"]["profile"]) # xmm
+import p2; print(p2.heap_info()) # external_heap true
+import p2; print(p2.psram_info()) # access xmm+block
 ```
 
 C allocator checks passed from standalone XMM flash boot:
 
 ```berry
-import p2; print(p2.c_allocator_test(262144))   # ok true
-import p2; print(p2.c_allocator_test(1048576))  # ok true
+import p2; print(p2.c_allocator_test(262144)) # ok true
+import p2; print(p2.c_allocator_test(1048576)) # ok true
 ```
 
 SD/module status from latest hardware verification:
@@ -92,27 +92,27 @@ both mount the card and load `/modules/math.be`.
 ## SD Root Cause Fixed In This Workstream
 
 - `tools/p2/bootstrap/patch-catalina-p2.sh` patch stamp is
-  `berry-p2-patch-v23`.
+ `berry-p2-patch-v23`.
 - Catalina DOSFS direct SD stubs are rebuilt with
-  `__BERRY_P2_DIRECT_SD_IO=1`, avoiding Catalina's upper-PSRAM SD cache in
-  PSRAM/XMM builds and avoiding the auto-started Catalina `-lcx` SD plugin in
-  Berry's direct-SD profile.
+ `__BERRY_P2_DIRECT_SD_IO=1`, avoiding Catalina's upper-PSRAM SD cache in
+ PSRAM/XMM builds and avoiding the auto-started Catalina `-lcx` SD plugin in
+ Berry's direct-SD profile.
 - The replacement `sd_sectread()` / `sd_sectwrite()` stubs now compile with the
-  active `CATALINA_MODEL`. This is critical: compiling them unconditionally as
-  `LARGE` made the COMPACT `edge32` image hang on raw `sd_sectread()`.
+ active `CATALINA_MODEL`. This is critical: compiling them unconditionally as
+ `LARGE` made the COMPACT `edge32` image hang on raw `sd_sectread()`.
 - The low-level SD service lock now fails fast as `sd_busy` instead of spinning
-  indefinitely on a stale/held lock.
+ indefinitely on a stale/held lock.
 - Berry avoids Catalina `_mount()` and performs the same partition/volume setup
-  with one static sector buffer, reducing stack pressure in the near-full Hub
-  image.
+ with one static sector buffer, reducing stack pressure in the near-full Hub
+ image.
 - Berry's mount path now validates FAT boot signatures and falls back to common
-  volume starts (`2048`, `8192`, `32768`, `63`, `1`) when sector 0 is not a
-  valid MBR/superfloppy boot sector.
+ volume starts (`2048`, `8192`, `32768`, `63`, `1`) when sector 0 is not a
+ valid MBR/superfloppy boot sector.
 - The flash deep-power-down call before SD activity is intentional. P2 Edge boot
-  flash and microSD share pins `58..61`; putting flash to sleep before SD
-  transfers prevents the flash chip from driving the shared MISO line.
+ flash and microSD share pins `58..61`; putting flash to sleep before SD
+ transfers prevents the flash chip from driving the shared MISO line.
 - `p2.fs_info()` exposes SD service, raw sector, partition, and volume
-  diagnostics without printing trace noise during normal use.
+ diagnostics without printing trace noise during normal use.
 
 ## Files Changed In This Workstream
 
@@ -135,23 +135,23 @@ both mount the card and load `/modules/math.be`.
 
 - Do not use FlexC for normal P2 validation; Catalina is the verified path.
 - Keep `P2_BOARD` separate from `P2_PROFILE` and `P2_SILICON`:
-  - `P2_BOARD=p2edge` is the no-PSRAM P2 Edge pinout with onboard LEDs on
-    pins `56` and `57`.
-  - `P2_BOARD=p2edge32` is the P2 Edge 32 MB RAM pinout with onboard LEDs on
-    pins `38` and `39`; pins `40..57` are reserved for PSRAM.
-  - Catalina's own `target/p2/P2EDGE.inc` documents the 32 MB PSRAM mapping:
-    data bus starts at pin `40`, PSRAM clock is `56`, PSRAM chip-select is
-    `57`, and `_DEBUG_PIN` is `38`.
-  - Binary release builds should set `P2_BOARD` explicitly.
+ - `P2_BOARD=p2edge` is the no-PSRAM P2 Edge pinout with onboard LEDs on
+ pins `56` and `57`.
+ - `P2_BOARD=p2edge32` is the P2 Edge 32 MB RAM pinout with onboard LEDs on
+ pins `38` and `39`; pins `40..57` are reserved for PSRAM.
+ - Catalina's own `target/p2/P2EDGE.inc` documents the 32 MB PSRAM mapping:
+ data bus starts at pin `40`, PSRAM clock is `56`, PSRAM chip-select is
+ `57`, and `_DEBUG_PIN` is `38`.
+ - Binary release builds should set `P2_BOARD` explicitly.
 - Old silicon is selected with `P2_SILICON=a`; current B/C silicon uses
-  `P2_SILICON=latest|b|c`.
+ `P2_SILICON=latest|b|c`.
 - Do not break the normal `edge32` no-XMM flash target. It remains the recovery
-  image.
+ image.
 - `P2_PROFILE=xmm` must keep Catalina `LARGE` and `-C PSRAM`; losing `-C P2_EDGE
-  -C LARGE` causes an invalid/non-XMM layout.
+ -C LARGE` causes an invalid/non-XMM layout.
 - XMM flash boot is slow by design because it copies from SPI flash to PSRAM on
-  every reset.
+ every reset.
 - Be careful with serial control during hardware tests: opening
-  `/dev/cu.usbserial-P97cvdxp` with a generic serial client can toggle DTR/RTS
-  and reset the board. Prefer one controlled `loadp2 -t` session, `tio` for
-  attach, or a wrapper where `loadp2` owns the reset behavior.
+ `/dev/cu.usbserial-P97cvdxp` with a generic serial client can toggle DTR/RTS
+ and reset the board. Prefer one controlled `loadp2 -t` session, `tio` for
+ attach, or a wrapper where `loadp2` owns the reset behavior.

@@ -6,6 +6,12 @@
 #include "berry_port.h"
 #include "p2_build_info.h"
 
+#ifndef BE_P2_RUN_SD_MAIN
+#define BE_P2_RUN_SD_MAIN 1
+#endif
+
+#define BE_P2_SD_MAIN_PATH "/berry/main.be"
+
 int stackspace[4096];
 
 #if BE_DEBUG
@@ -85,6 +91,29 @@ static void p2_print_banner(void)
     }
 }
 
+static int p2_try_run_sd_main(bvm *vm)
+{
+#if BE_P2_RUN_SD_MAIN && BE_USE_SCRIPT_COMPILER && BE_USE_FILE_SYSTEM
+    int res = be_loadfile(vm, BE_P2_SD_MAIN_PATH);
+
+    if (res == BE_IO_ERROR) {
+        be_pop(vm, be_top(vm));
+        return BE_OK;
+    }
+    if (res == BE_OK) {
+        res = be_pcall(vm, 0);
+    }
+    be_pop(vm, be_top(vm));
+    if (res != BE_OK && res != BE_EXIT) {
+        p2_serial_puts("warning: /berry/main.be failed; continuing to REPL\n");
+    }
+    return res;
+#else
+    (void)vm;
+    return BE_OK;
+#endif
+}
+
 static void berry_p2_main(void)
 {
     bvm *vm;
@@ -97,6 +126,11 @@ static void berry_p2_main(void)
         p2_serial_puts("error: failed to create VM\n");
         for (;;) {
         }
+    }
+
+    if (p2_try_run_sd_main(vm) == BE_EXIT || p2_take_exit_request()) {
+        p2_serial_puts("bye\n");
+        return;
     }
 
     for (;;) {

@@ -5,7 +5,8 @@ CATALINA_DIR="${1:?usage: $0 <catalina-dir> [platform] [model] [clib]}"
 CATALINA_PLATFORM="${2:-P2_EDGE}"
 CATALINA_MODEL="${3:-COMPACT}"
 CATALINA_CLIB="${4:-cix}"
-PATCH_VERSION="berry-p2-patch-v24"
+PATCH_MODE="${5:-direct}"
+PATCH_VERSION="berry-p2-patch-v52-${PATCH_MODE}"
 CATALINA_DIR="$(cd "${CATALINA_DIR}" && pwd -P)"
 STAMP_FILE="${CATALINA_DIR}/.${PATCH_VERSION}-${CATALINA_CLIB}-${CATALINA_MODEL}"
 
@@ -25,6 +26,16 @@ def replace_one(path_str, old, new):
     if new in text:
         return
     if old not in text:
+        if old == "#if defined(__CATALINA_PSRAM) || defined(__CATALINA_HYPER)\n":
+            alts = (
+                "#if (defined(__CATALINA_PSRAM) || defined(__CATALINA_HYPER)) && !defined(__BERRY_P2_DIRECT_SD_IO)\n",
+                "#if (defined(__CATALINA_PSRAM) || defined(__CATALINA_HYPER)) && !defined(__CATALINA_NO_SD_CACHE)\n",
+                "#if (defined(__CATALINA_PSRAM) || defined(__CATALINA_HYPER)) && !defined(__BERRY_P2_DISABLE_SD_CACHE)\n",
+            )
+            for alt in alts:
+                if alt in text:
+                    path.write_text(text.replace(alt, new))
+                    return
         raise SystemExit(f"patch pattern not found in {path}")
     path.write_text(text.replace(old, new))
 
@@ -37,13 +48,13 @@ replace_one(
 replace_one(
     "source/lib/io/dread.c",
     "#if defined(__CATALINA_PSRAM) || defined(__CATALINA_HYPER)\n",
-    "#if (defined(__CATALINA_PSRAM) || defined(__CATALINA_HYPER)) && !defined(__BERRY_P2_DIRECT_SD_IO)\n",
+    "#if (defined(__CATALINA_PSRAM) || defined(__CATALINA_HYPER)) && !defined(__BERRY_P2_DIRECT_SD_IO) && !defined(__BERRY_P2_DISABLE_SD_CACHE) && !defined(__CATALINA_NO_SD_CACHE)\n",
 )
 
 replace_one(
     "source/lib/io/dwrite.c",
     "#if defined(__CATALINA_PSRAM) || defined(__CATALINA_HYPER)\n",
-    "#if (defined(__CATALINA_PSRAM) || defined(__CATALINA_HYPER)) && !defined(__BERRY_P2_DIRECT_SD_IO)\n",
+    "#if (defined(__CATALINA_PSRAM) || defined(__CATALINA_HYPER)) && !defined(__BERRY_P2_DIRECT_SD_IO) && !defined(__BERRY_P2_DISABLE_SD_CACHE) && !defined(__CATALINA_NO_SD_CACHE)\n",
 )
 
 replace_one(
@@ -103,9 +114,43 @@ static char sd_sector[__CATALINA_SECTOR_SIZE];
 #define BERRY_P2_FLASH_RESET_ENABLE 0x66
 #define BERRY_P2_FLASH_RESET_MEMORY 0x99
 #define BERRY_P2_FLASH_DEEP_POWER_DOWN 0xb9
+#define BERRY_P2_SD_BIT_DELAY_US 20
+#define BERRY_P2_SD_IDLE_BYTES 80
+#define BERRY_P2_SD_CMD_RESPONSE_TRIES 1000
+#define BERRY_P2_SD_INIT_READY_TRIES 400
+#define BERRY_P2_SD_READ_INIT_ATTEMPTS 5
+#define BERRY_P2_SD_DATA_TOKEN_TRIES 1000
+
+static unsigned long berry_p2_pin_mask(int pin) {
+   return 1UL << (pin - 32);
+}
+
+static void berry_p2_pin_high(int pin) {
+   unsigned long mask = berry_p2_pin_mask(pin);
+   _OUTB |= mask;
+   _DIRB |= mask;
+}
+
+static void berry_p2_pin_low(int pin) {
+   unsigned long mask = berry_p2_pin_mask(pin);
+   _OUTB &= ~mask;
+   _DIRB |= mask;
+}
+
+static void berry_p2_pin_float(int pin) {
+   _DIRB &= ~berry_p2_pin_mask(pin);
+}
+
+static int berry_p2_pin_read(int pin) {
+   return (_INB & berry_p2_pin_mask(pin)) ? 1 : 0;
+}
 
 static int berry_p2_sd_ready;
 static int berry_p2_sd_high_capacity;
+static int berry_p2_sd_init_failed;
+volatile int berry_p2_sd_read_diag_phase;
+volatile int berry_p2_sd_read_diag_response;
+volatile int berry_p2_sd_read_diag_token;
 
 static unsigned char berry_p2_transfer_pin(int do_pin, int di_pin, int clk_pin, unsigned char value) {
    unsigned char in = 0;
@@ -113,17 +158,17 @@ static unsigned char berry_p2_transfer_pin(int do_pin, int di_pin, int clk_pin, 
 
    for (bit = 0; bit < 8; bit++) {
       if (value & 0x80) {
-         _pinh(di_pin);
+         berry_p2_pin_high(di_pin);
       }
       else {
-         _pinl(di_pin);
+         berry_p2_pin_low(di_pin);
       }
       value <<= 1;
-      _waitus(2);
-      _pinh(clk_pin);
-      _waitus(2);
-      in = (unsigned char)((in << 1) | (_pinr(do_pin) ? 1 : 0));
-      _pinl(clk_pin);
+      _waitus(BERRY_P2_SD_BIT_DELAY_US);
+      berry_p2_pin_high(clk_pin);
+      _waitus(BERRY_P2_SD_BIT_DELAY_US);
+      in = (unsigned char)((in << 1) | (berry_p2_pin_read(do_pin) ? 1 : 0));
+      berry_p2_pin_low(clk_pin);
    }
    return in;
 }
@@ -137,27 +182,27 @@ static unsigned char berry_p2_flash_transfer(unsigned char value) {
 }
 
 static void berry_p2_flash_command(unsigned char command) {
-   _pinh(BERRY_P2_FLASH_CS);
-   _pinl(BERRY_P2_FLASH_CLK);
-   _pinl(BERRY_P2_FLASH_DI);
-   _pinf(BERRY_P2_FLASH_DO);
+   berry_p2_pin_high(BERRY_P2_FLASH_CS);
+   berry_p2_pin_low(BERRY_P2_FLASH_CLK);
+   berry_p2_pin_low(BERRY_P2_FLASH_DI);
+   berry_p2_pin_float(BERRY_P2_FLASH_DO);
    _waitus(2);
-   _pinl(BERRY_P2_FLASH_CS);
+   berry_p2_pin_low(BERRY_P2_FLASH_CS);
    (void)berry_p2_flash_transfer(command);
-   _pinh(BERRY_P2_FLASH_CS);
+   berry_p2_pin_high(BERRY_P2_FLASH_CS);
    _waitus(2);
 }
 
 static void berry_p2_flash_sleep(void) {
    berry_p2_flash_command(BERRY_P2_FLASH_RESET_ENABLE);
    berry_p2_flash_command(BERRY_P2_FLASH_RESET_MEMORY);
-   _waitms(1);
+   _waitms(100);
    berry_p2_flash_command(BERRY_P2_FLASH_DEEP_POWER_DOWN);
    _waitus(10);
 }
 
 static void berry_p2_sd_deselect(void) {
-   _pinh(BERRY_P2_SD_CS);
+   berry_p2_pin_high(BERRY_P2_SD_CS);
    (void)berry_p2_sd_transfer(0xff);
 }
 
@@ -165,12 +210,13 @@ static void berry_p2_sd_idle_clocks(void) {
    int i;
 
    berry_p2_flash_sleep();
-   _pinh(BERRY_P2_SD_CS);
-   _pinl(BERRY_P2_SD_CLK);
-   _pinh(BERRY_P2_SD_DI);
-   _pinf(BERRY_P2_SD_DO);
+
+   berry_p2_pin_high(BERRY_P2_SD_CS);
+   berry_p2_pin_low(BERRY_P2_SD_CLK);
+   berry_p2_pin_high(BERRY_P2_SD_DI);
+   berry_p2_pin_float(BERRY_P2_SD_DO);
    _waitms(1);
-   for (i = 0; i < 10; i++) {
+   for (i = 0; i < BERRY_P2_SD_IDLE_BYTES; i++) {
       (void)berry_p2_sd_transfer(0xff);
    }
 }
@@ -186,7 +232,7 @@ static unsigned char berry_p2_sd_command(
    int i;
 
    berry_p2_sd_deselect();
-   _pinl(BERRY_P2_SD_CS);
+   berry_p2_pin_low(BERRY_P2_SD_CS);
    (void)berry_p2_sd_transfer(0xff);
    (void)berry_p2_sd_transfer((unsigned char)(0x40 | cmd));
    (void)berry_p2_sd_transfer((unsigned char)(arg >> 24));
@@ -195,7 +241,7 @@ static unsigned char berry_p2_sd_command(
    (void)berry_p2_sd_transfer((unsigned char)arg);
    (void)berry_p2_sd_transfer(crc);
 
-   for (i = 0; i < 16; i++) {
+   for (i = 0; i < BERRY_P2_SD_CMD_RESPONSE_TRIES; i++) {
       response = berry_p2_sd_transfer(0xff);
       if ((response & 0x80) == 0) {
          break;
@@ -213,26 +259,48 @@ static int berry_p2_sd_init_direct(void) {
    unsigned char r;
    int tries;
 
+   berry_p2_sd_read_diag_phase = 10;
+   berry_p2_sd_read_diag_response = -1;
+   berry_p2_sd_read_diag_token = -1;
+   if (berry_p2_sd_init_failed) {
+      berry_p2_sd_read_diag_phase = 11;
+      return -1;
+   }
    berry_p2_sd_ready = 0;
    berry_p2_sd_high_capacity = 0;
    berry_p2_sd_idle_clocks();
 
-   r = berry_p2_sd_command(0, 0, 0x95, 0, 0);
+   for (tries = 0; tries < 5; tries++) {
+      r = berry_p2_sd_command(0, 0, 0x95, 0, 0);
+      berry_p2_sd_read_diag_phase = 20;
+      berry_p2_sd_read_diag_response = (int)r;
+      if (r == 0x01) {
+         break;
+      }
+      berry_p2_sd_idle_clocks();
+      _waitms(5);
+   }
    if (r != 0x01) {
       return -1;
    }
 
    r = berry_p2_sd_command(8, 0x1aa, 0x87, extra, 4);
-   if (r != 0x01 || extra[2] != 0x01 || extra[3] != 0xaa) {
+   berry_p2_sd_read_diag_phase = 30;
+   berry_p2_sd_read_diag_response = (int)r;
+   if ((r & 0x80) != 0 || extra[2] != 0x01 || extra[3] != 0xaa) {
       return -1;
    }
 
-   for (tries = 0; tries < 1000; tries++) {
+   for (tries = 0; tries < BERRY_P2_SD_INIT_READY_TRIES; tries++) {
       r = berry_p2_sd_command(55, 0, 0x01, 0, 0);
+      berry_p2_sd_read_diag_phase = 40;
+      berry_p2_sd_read_diag_response = (int)r;
       if (r > 0x01) {
          return -1;
       }
       r = berry_p2_sd_command(41, 0x40000000, 0x01, 0, 0);
+      berry_p2_sd_read_diag_phase = 41;
+      berry_p2_sd_read_diag_response = (int)r;
       if (r == 0x00) {
          break;
       }
@@ -243,17 +311,23 @@ static int berry_p2_sd_init_direct(void) {
    }
 
    r = berry_p2_sd_command(58, 0, 0x01, extra, 4);
+   berry_p2_sd_read_diag_phase = 50;
+   berry_p2_sd_read_diag_response = (int)r;
    if (r != 0x00) {
       return -1;
    }
    berry_p2_sd_high_capacity = (extra[0] & 0x40) ? 1 : 0;
 
    r = berry_p2_sd_command(16, 512, 0x01, 0, 0);
+   berry_p2_sd_read_diag_phase = 60;
+   berry_p2_sd_read_diag_response = (int)r;
    if (r != 0x00 && !berry_p2_sd_high_capacity) {
       return -1;
    }
 
    berry_p2_sd_ready = 1;
+   berry_p2_sd_init_failed = 0;
+   berry_p2_sd_read_diag_phase = 70;
    return 0;
 }
 
@@ -262,12 +336,21 @@ static int berry_p2_sd_write_direct(char *buffer, unsigned long sector) {
    unsigned char response = 0xff;
    int i;
 
-   if (!berry_p2_sd_ready && berry_p2_sd_init_direct() != 0) {
-      return -1;
+   if (!berry_p2_sd_ready) {
+      for (i = 0; i < BERRY_P2_SD_READ_INIT_ATTEMPTS && !berry_p2_sd_ready; i++) {
+         if (berry_p2_sd_init_direct() == 0) {
+            break;
+         }
+         berry_p2_sd_idle_clocks();
+         _waitms(20);
+      }
+      if (!berry_p2_sd_ready) {
+         return -1;
+      }
    }
 
    arg = berry_p2_sd_high_capacity ? sector : (sector << 9);
-   _pinl(BERRY_P2_SD_CS);
+   berry_p2_pin_low(BERRY_P2_SD_CS);
    (void)berry_p2_sd_transfer(0xff);
    (void)berry_p2_sd_transfer(0x40 | 24);
    (void)berry_p2_sd_transfer((unsigned char)(arg >> 24));
@@ -276,7 +359,7 @@ static int berry_p2_sd_write_direct(char *buffer, unsigned long sector) {
    (void)berry_p2_sd_transfer((unsigned char)arg);
    (void)berry_p2_sd_transfer(0x01);
 
-   for (i = 0; i < 16; i++) {
+   for (i = 0; i < BERRY_P2_SD_CMD_RESPONSE_TRIES; i++) {
       response = berry_p2_sd_transfer(0xff);
       if ((response & 0x80) == 0) {
          break;
@@ -296,7 +379,12 @@ static int berry_p2_sd_write_direct(char *buffer, unsigned long sector) {
    (void)berry_p2_sd_transfer(0xff);
    (void)berry_p2_sd_transfer(0xff);
 
-   response = berry_p2_sd_transfer(0xff);
+   for (i = 0; i < 1000; i++) {
+      response = berry_p2_sd_transfer(0xff);
+      if (response != 0xff) {
+         break;
+      }
+   }
    if ((response & 0x1f) != 0x05) {
       berry_p2_sd_deselect();
       berry_p2_sd_ready = 0;
@@ -379,7 +467,7 @@ unsigned long sd_sectwrite(char * buffer, long sector) {
    }
    retval = berry_p2_sd_write_direct(sd_sector, (unsigned long)sector);
 #else
-   retval = _long_service_2(SVC_SD_WRITE, (long)buffer, sector);
+   retval = sd_service_2_timed(SVC_SD_WRITE, (long)buffer, sector);
 #endif
    return retval == 3 ? 0 : retval;
 
@@ -411,9 +499,43 @@ secread.write_text(
 #define BERRY_P2_FLASH_RESET_ENABLE 0x66
 #define BERRY_P2_FLASH_RESET_MEMORY 0x99
 #define BERRY_P2_FLASH_DEEP_POWER_DOWN 0xb9
+#define BERRY_P2_SD_BIT_DELAY_US 5
+#define BERRY_P2_SD_IDLE_BYTES 20
+#define BERRY_P2_SD_CMD_RESPONSE_TRIES 100
+#define BERRY_P2_SD_INIT_READY_TRIES 100
+#define BERRY_P2_SD_READ_INIT_ATTEMPTS 1
+#define BERRY_P2_SD_DATA_TOKEN_TRIES 1000
+
+static unsigned long berry_p2_pin_mask(int pin) {
+   return 1UL << (pin - 32);
+}
+
+static void berry_p2_pin_high(int pin) {
+   unsigned long mask = berry_p2_pin_mask(pin);
+   _OUTB |= mask;
+   _DIRB |= mask;
+}
+
+static void berry_p2_pin_low(int pin) {
+   unsigned long mask = berry_p2_pin_mask(pin);
+   _OUTB &= ~mask;
+   _DIRB |= mask;
+}
+
+static void berry_p2_pin_float(int pin) {
+   _DIRB &= ~berry_p2_pin_mask(pin);
+}
+
+static int berry_p2_pin_read(int pin) {
+   return (_INB & berry_p2_pin_mask(pin)) ? 1 : 0;
+}
 
 static int berry_p2_sd_ready;
 static int berry_p2_sd_high_capacity;
+static int berry_p2_sd_init_failed;
+extern volatile int berry_p2_sd_read_diag_phase;
+extern volatile int berry_p2_sd_read_diag_response;
+extern volatile int berry_p2_sd_read_diag_token;
 
 static unsigned char berry_p2_flash_transfer(unsigned char value) {
    unsigned char in = 0;
@@ -421,37 +543,37 @@ static unsigned char berry_p2_flash_transfer(unsigned char value) {
 
    for (bit = 0; bit < 8; bit++) {
       if (value & 0x80) {
-         _pinh(BERRY_P2_FLASH_DI);
+         berry_p2_pin_high(BERRY_P2_FLASH_DI);
       }
       else {
-         _pinl(BERRY_P2_FLASH_DI);
+         berry_p2_pin_low(BERRY_P2_FLASH_DI);
       }
       value <<= 1;
       _waitus(1);
-      _pinh(BERRY_P2_FLASH_CLK);
+      berry_p2_pin_high(BERRY_P2_FLASH_CLK);
       _waitus(1);
-      in = (unsigned char)((in << 1) | (_pinr(BERRY_P2_FLASH_DO) ? 1 : 0));
-      _pinl(BERRY_P2_FLASH_CLK);
+      in = (unsigned char)((in << 1) | (berry_p2_pin_read(BERRY_P2_FLASH_DO) ? 1 : 0));
+      berry_p2_pin_low(BERRY_P2_FLASH_CLK);
    }
    return in;
 }
 
 static void berry_p2_flash_command(unsigned char command) {
-   _pinh(BERRY_P2_FLASH_CS);
-   _pinl(BERRY_P2_FLASH_CLK);
-   _pinl(BERRY_P2_FLASH_DI);
-   _pinf(BERRY_P2_FLASH_DO);
+   berry_p2_pin_high(BERRY_P2_FLASH_CS);
+   berry_p2_pin_low(BERRY_P2_FLASH_CLK);
+   berry_p2_pin_low(BERRY_P2_FLASH_DI);
+   berry_p2_pin_float(BERRY_P2_FLASH_DO);
    _waitus(2);
-   _pinl(BERRY_P2_FLASH_CS);
+   berry_p2_pin_low(BERRY_P2_FLASH_CS);
    (void)berry_p2_flash_transfer(command);
-   _pinh(BERRY_P2_FLASH_CS);
+   berry_p2_pin_high(BERRY_P2_FLASH_CS);
    _waitus(2);
 }
 
 static void berry_p2_flash_sleep(void) {
    berry_p2_flash_command(BERRY_P2_FLASH_RESET_ENABLE);
    berry_p2_flash_command(BERRY_P2_FLASH_RESET_MEMORY);
-   _waitms(1);
+   _waitms(100);
    berry_p2_flash_command(BERRY_P2_FLASH_DEEP_POWER_DOWN);
    _waitus(10);
 }
@@ -462,23 +584,23 @@ static unsigned char berry_p2_sd_transfer(unsigned char value) {
 
    for (bit = 0; bit < 8; bit++) {
       if (value & 0x80) {
-         _pinh(BERRY_P2_SD_DI);
+         berry_p2_pin_high(BERRY_P2_SD_DI);
       }
       else {
-         _pinl(BERRY_P2_SD_DI);
+         berry_p2_pin_low(BERRY_P2_SD_DI);
       }
       value <<= 1;
-      _waitus(2);
-      _pinh(BERRY_P2_SD_CLK);
-      _waitus(2);
-      in = (unsigned char)((in << 1) | (_pinr(BERRY_P2_SD_DO) ? 1 : 0));
-      _pinl(BERRY_P2_SD_CLK);
+      _waitus(BERRY_P2_SD_BIT_DELAY_US);
+      berry_p2_pin_high(BERRY_P2_SD_CLK);
+      _waitus(BERRY_P2_SD_BIT_DELAY_US);
+      in = (unsigned char)((in << 1) | (berry_p2_pin_read(BERRY_P2_SD_DO) ? 1 : 0));
+      berry_p2_pin_low(BERRY_P2_SD_CLK);
    }
    return in;
 }
 
 static void berry_p2_sd_deselect(void) {
-   _pinh(BERRY_P2_SD_CS);
+   berry_p2_pin_high(BERRY_P2_SD_CS);
    (void)berry_p2_sd_transfer(0xff);
 }
 
@@ -486,12 +608,13 @@ static void berry_p2_sd_idle_clocks(void) {
    int i;
 
    berry_p2_flash_sleep();
-   _pinh(BERRY_P2_SD_CS);
-   _pinl(BERRY_P2_SD_CLK);
-   _pinh(BERRY_P2_SD_DI);
-   _pinf(BERRY_P2_SD_DO);
+
+   berry_p2_pin_high(BERRY_P2_SD_CS);
+   berry_p2_pin_low(BERRY_P2_SD_CLK);
+   berry_p2_pin_high(BERRY_P2_SD_DI);
+   berry_p2_pin_float(BERRY_P2_SD_DO);
    _waitms(1);
-   for (i = 0; i < 10; i++) {
+   for (i = 0; i < BERRY_P2_SD_IDLE_BYTES; i++) {
       (void)berry_p2_sd_transfer(0xff);
    }
 }
@@ -507,7 +630,7 @@ static unsigned char berry_p2_sd_command(
    int i;
 
    berry_p2_sd_deselect();
-   _pinl(BERRY_P2_SD_CS);
+   berry_p2_pin_low(BERRY_P2_SD_CS);
    (void)berry_p2_sd_transfer(0xff);
    (void)berry_p2_sd_transfer((unsigned char)(0x40 | cmd));
    (void)berry_p2_sd_transfer((unsigned char)(arg >> 24));
@@ -516,7 +639,7 @@ static unsigned char berry_p2_sd_command(
    (void)berry_p2_sd_transfer((unsigned char)arg);
    (void)berry_p2_sd_transfer(crc);
 
-   for (i = 0; i < 16; i++) {
+   for (i = 0; i < BERRY_P2_SD_CMD_RESPONSE_TRIES; i++) {
       response = berry_p2_sd_transfer(0xff);
       if ((response & 0x80) == 0) {
          break;
@@ -534,26 +657,48 @@ static int berry_p2_sd_init_direct(void) {
    unsigned char r;
    int tries;
 
+   berry_p2_sd_read_diag_phase = 10;
+   berry_p2_sd_read_diag_response = -1;
+   berry_p2_sd_read_diag_token = -1;
+   if (berry_p2_sd_init_failed) {
+      berry_p2_sd_read_diag_phase = 11;
+      return -1;
+   }
    berry_p2_sd_ready = 0;
    berry_p2_sd_high_capacity = 0;
    berry_p2_sd_idle_clocks();
 
-   r = berry_p2_sd_command(0, 0, 0x95, 0, 0);
+   for (tries = 0; tries < 5; tries++) {
+      r = berry_p2_sd_command(0, 0, 0x95, 0, 0);
+      berry_p2_sd_read_diag_phase = 20;
+      berry_p2_sd_read_diag_response = (int)r;
+      if (r == 0x01) {
+         break;
+      }
+      berry_p2_sd_idle_clocks();
+      _waitms(5);
+   }
    if (r != 0x01) {
       return -1;
    }
 
    r = berry_p2_sd_command(8, 0x1aa, 0x87, extra, 4);
-   if (r != 0x01 || extra[2] != 0x01 || extra[3] != 0xaa) {
+   berry_p2_sd_read_diag_phase = 30;
+   berry_p2_sd_read_diag_response = (int)r;
+   if ((r & 0x80) != 0 || extra[2] != 0x01 || extra[3] != 0xaa) {
       return -1;
    }
 
-   for (tries = 0; tries < 1000; tries++) {
+   for (tries = 0; tries < BERRY_P2_SD_INIT_READY_TRIES; tries++) {
       r = berry_p2_sd_command(55, 0, 0x01, 0, 0);
+      berry_p2_sd_read_diag_phase = 40;
+      berry_p2_sd_read_diag_response = (int)r;
       if (r > 0x01) {
          return -1;
       }
       r = berry_p2_sd_command(41, 0x40000000, 0x01, 0, 0);
+      berry_p2_sd_read_diag_phase = 41;
+      berry_p2_sd_read_diag_response = (int)r;
       if (r == 0x00) {
          break;
       }
@@ -564,17 +709,23 @@ static int berry_p2_sd_init_direct(void) {
    }
 
    r = berry_p2_sd_command(58, 0, 0x01, extra, 4);
+   berry_p2_sd_read_diag_phase = 50;
+   berry_p2_sd_read_diag_response = (int)r;
    if (r != 0x00) {
       return -1;
    }
    berry_p2_sd_high_capacity = (extra[0] & 0x40) ? 1 : 0;
 
    r = berry_p2_sd_command(16, 512, 0x01, 0, 0);
+   berry_p2_sd_read_diag_phase = 60;
+   berry_p2_sd_read_diag_response = (int)r;
    if (r != 0x00 && !berry_p2_sd_high_capacity) {
       return -1;
    }
 
    berry_p2_sd_ready = 1;
+   berry_p2_sd_init_failed = 0;
+   berry_p2_sd_read_diag_phase = 70;
    return 0;
 }
 
@@ -583,12 +734,25 @@ static int berry_p2_sd_read_direct(char *buffer, unsigned long sector) {
    unsigned char token = 0xff;
    int i;
 
-   if (!berry_p2_sd_ready && berry_p2_sd_init_direct() != 0) {
-      return -1;
+   berry_p2_sd_read_diag_phase = 100;
+   berry_p2_sd_read_diag_response = -1;
+   berry_p2_sd_read_diag_token = -1;
+   if (!berry_p2_sd_ready) {
+      for (i = 0; i < BERRY_P2_SD_READ_INIT_ATTEMPTS && !berry_p2_sd_ready; i++) {
+         if (berry_p2_sd_init_direct() == 0) {
+            break;
+         }
+         berry_p2_sd_idle_clocks();
+         _waitms(20);
+      }
+      if (!berry_p2_sd_ready) {
+         berry_p2_sd_read_diag_phase = 101;
+         return -1;
+      }
    }
 
    arg = berry_p2_sd_high_capacity ? sector : (sector << 9);
-   _pinl(BERRY_P2_SD_CS);
+   berry_p2_pin_low(BERRY_P2_SD_CS);
    (void)berry_p2_sd_transfer(0xff);
    (void)berry_p2_sd_transfer(0x40 | 17);
    (void)berry_p2_sd_transfer((unsigned char)(arg >> 24));
@@ -597,8 +761,10 @@ static int berry_p2_sd_read_direct(char *buffer, unsigned long sector) {
    (void)berry_p2_sd_transfer((unsigned char)arg);
    (void)berry_p2_sd_transfer(0x01);
 
-   for (i = 0; i < 16; i++) {
+   for (i = 0; i < BERRY_P2_SD_CMD_RESPONSE_TRIES; i++) {
       token = berry_p2_sd_transfer(0xff);
+      berry_p2_sd_read_diag_phase = 110;
+      berry_p2_sd_read_diag_response = (int)token;
       if ((token & 0x80) == 0) {
          break;
       }
@@ -609,8 +775,10 @@ static int berry_p2_sd_read_direct(char *buffer, unsigned long sector) {
       return -1;
    }
 
-   for (i = 0; i < 20000; i++) {
+   for (i = 0; i < BERRY_P2_SD_DATA_TOKEN_TRIES; i++) {
       token = berry_p2_sd_transfer(0xff);
+      berry_p2_sd_read_diag_phase = 120;
+      berry_p2_sd_read_diag_token = (int)token;
       if (token == 0xfe) {
          break;
       }
@@ -704,16 +872,9 @@ unsigned long sd_sectread(char * buffer, long sector) {
    unsigned long retval;
 
 #if defined(__BERRY_P2_DIRECT_SD_IO)
-   int i;
-
-   retval = berry_p2_sd_read_direct(sd_sector, (unsigned long)sector);
-   if (retval == 0) {
-      for (i = 0; i < __CATALINA_SECTOR_SIZE; i++) {
-         buffer[i] = sd_sector[i];
-      }
-   }
+   retval = berry_p2_sd_read_direct(buffer, (unsigned long)sector);
 #else
-   retval = _long_service_2(SVC_SD_READ, (long)buffer, sector);
+   retval = sd_service_2_timed(SVC_SD_READ, (long)buffer, sector);
 #endif
    return retval;
 
@@ -727,13 +888,23 @@ source "${LCCDIR}/use_catalina" >/dev/null
 
 model_compile_flags=(-C "${CATALINA_MODEL}" -C "${CATALINA_PLATFORM}")
 if [ "${CATALINA_MODEL}" = "LARGE" ]; then
-   model_compile_flags+=(-C PSRAM)
+    model_compile_flags+=(-C PSRAM)
 fi
-io_compile_flags=(-p2 -W-w "${model_compile_flags[@]}" -D__CATALINA_SIMPLE_IO=0 -D__CATALINA_SDCARD_IO=1 -D__BERRY_P2_DIRECT_SD_IO -DNOFLOAT)
-sector_compile_flags=(-p2 -W-w "${model_compile_flags[@]}" -D__CATALINA_SIMPLE_IO=0 -D__CATALINA_SDCARD_IO=1 -D__BERRY_P2_DIRECT_SD_IO)
+if [ "${PATCH_MODE}" = "service-no-cache" ]; then
+   io_compile_flags=(-p2 -W-w "${model_compile_flags[@]}" -D__CATALINA_SIMPLE_IO=0 -D__CATALINA_SDCARD_IO=1 -D__BERRY_P2_DISABLE_SD_CACHE -DAPPLY_PATCHES=1 -DNOFLOAT)
+   sector_compile_flags=(-p2 -W-w "${model_compile_flags[@]}" -D__CATALINA_SIMPLE_IO=0 -D__CATALINA_SDCARD_IO=1 -D__BERRY_P2_DISABLE_SD_CACHE)
+else
+   io_compile_flags=(-p2 -W-w "${model_compile_flags[@]}" -D__CATALINA_SIMPLE_IO=0 -D__CATALINA_SDCARD_IO=1 -D__BERRY_P2_DIRECT_SD_IO -DAPPLY_PATCHES=1 -DNOFLOAT)
+   sector_compile_flags=(-p2 -W-w "${model_compile_flags[@]}" -D__CATALINA_SIMPLE_IO=0 -D__CATALINA_SDCARD_IO=1 -D__BERRY_P2_DIRECT_SD_IO)
+fi
 io_src_dir="${CATALINA_DIR}/source/lib/io"
 lib_src_dir="${CATALINA_DIR}/source/lib/catalina"
-lib_dst_dir="${CATALINA_DIR}/lib/p2/cmm/${CATALINA_CLIB}"
+if [ "${CATALINA_MODEL}" = "LARGE" ]; then
+   lib_model_dir="xmm"
+else
+   lib_model_dir="cmm"
+fi
+lib_dst_dir="${CATALINA_DIR}/lib/p2/${lib_model_dir}/${CATALINA_CLIB}"
 build_tmp_dir="${CATALINA_DIR}/build/tmp"
 
 mkdir -p "${build_tmp_dir}"
@@ -742,9 +913,11 @@ mkdir -p "${build_tmp_dir}"
 ( cd "${build_tmp_dir}" && catalina -S "${io_compile_flags[@]}" -o dread "${io_src_dir}/dread.c" >/dev/null )
 ( cd "${build_tmp_dir}" && catalina -S "${io_compile_flags[@]}" -o dwrite "${io_src_dir}/dwrite.c" >/dev/null )
 ( cd "${build_tmp_dir}" && catalina -S "${io_compile_flags[@]}" -o dgnext "${io_src_dir}/dgnext.c" >/dev/null )
+( cd "${build_tmp_dir}" && catalina -S "${io_compile_flags[@]}" -o dgfreed "${io_src_dir}/dgfreed.c" >/dev/null )
 ( cd "${build_tmp_dir}" && catalina -S "${sector_compile_flags[@]}" -o secread "${lib_src_dir}/secread.c" >/dev/null )
 ( cd "${build_tmp_dir}" && catalina -S "${sector_compile_flags[@]}" -o secwrite "${lib_src_dir}/secwrite.c" >/dev/null )
 
+if [ "${lib_model_dir}" != "xmm" ]; then
 python3 - "${build_tmp_dir}/dgnext" <<'PY'
 from pathlib import Path
 import sys
@@ -755,11 +928,13 @@ text = text.replace("cviu_m1 ' zero extend", "#$ff ' zero extend")
 text = text.replace("cviu_m2 ' zero extend", "#$ffff ' zero extend")
 path.write_text(text)
 PY
+fi
 
 cp "${build_tmp_dir}/cache_sd" "${lib_dst_dir}/cache_sd.s"
 cp "${build_tmp_dir}/dread" "${lib_dst_dir}/dread.s"
 cp "${build_tmp_dir}/dwrite" "${lib_dst_dir}/dwrite.s"
 cp "${build_tmp_dir}/dgnext" "${lib_dst_dir}/dgnext.s"
+cp "${build_tmp_dir}/dgfreed" "${lib_dst_dir}/dgfreed.s"
 cp "${build_tmp_dir}/secread" "${lib_dst_dir}/secread.s"
 cp "${build_tmp_dir}/secwrite" "${lib_dst_dir}/secwrite.s"
 

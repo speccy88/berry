@@ -18,14 +18,14 @@ This document started as the implementation backlog for matching and then surpas
 - Standard const native modules still flow through `port/p2/overrides/be_modtab_p2.c`.
 - P2 hardware modules are cached during `be_loadlibs()` in `port/p2/overrides/be_libs_p2.c` because Catalina/P2 currently hangs when some const native function attributes are called directly.
 - Existing P2 native modules and overrides should be used as templates:
-  - `port/p2/overrides/be_prop2lib.c`
-  - `port/p2/overrides/be_p2lib_p2.c`
-  - `port/p2/overrides/be_i2clib_p2.c`
-  - `port/p2/overrides/be_spilib_p2.c`
-  - `port/p2/overrides/be_workerlib_p2.c`
-  - `port/p2/overrides/be_threadslib_p2.c`
-  - `port/p2/overrides/be_spin2lib_p2.c`
-  - `port/p2/overrides/be_libs_p2.c`
+ - `port/p2/overrides/be_prop2lib.c`
+ - `port/p2/overrides/be_p2lib_p2.c`
+ - `port/p2/overrides/be_i2clib_p2.c`
+ - `port/p2/overrides/be_spilib_p2.c`
+ - `port/p2/overrides/be_workerlib_p2.c`
+ - `port/p2/overrides/be_threadslib_p2.c`
+ - `port/p2/overrides/be_spin2lib_p2.c`
+ - `port/p2/overrides/be_libs_p2.c`
 - Native functions use the Berry C API style: `int fn(bvm *vm)`, extract args with `be_toint()` / `be_tostring()`-style helpers, push returns with `be_pushint()` / `be_pushstring()` / lists, then return via the repo's existing convention.
 
 ## v0.9.4 Implementation Summary
@@ -37,45 +37,45 @@ This document started as the implementation backlog for matching and then surpas
 - `spi`: implemented module-global init/select/deselect/write/read/transfer/stop.
 - `rtos`: owns the public concurrency API: worker-backed task/cog start, stop/state/error, queues, events, timers, and locks.
 - `spin2`: implemented SD binary listing, Hub-RAM load/start, integer mailbox call, stop, info, and `make spin2` tooling.
-- Build/release: Catalina 8.8.9 Docker build path works, FlexC is documented as non-preferred for Berry P2 builds, RAM image size is guarded against the 512 KiB Hub RAM limit, no-PSRAM P2 Edge pins 56/57 are usable as LEDs, and flash-loader binary generation remains available.
+- Build/release: Catalina 8.8.9 native Catalina build path works, FlexC is documented as non-preferred for Berry P2 builds, RAM image size is guarded against the 512 KiB Hub RAM limit, no-PSRAM P2 Edge pins 56/57 are usable as LEDs, and flash-loader binary generation remains available.
 
 ## Current Maintenance Notes
 
 - SD card support is live-verified again on hardware. The failure mode was not
-  the card: the full P2 image was relying on Catalina libc `malloc` for file and
-  directory handles while running close to the Hub RAM limit. The runtime now
-  uses fixed pools for `open()` and `os.listdir()`.
+ the card: the full P2 image was relying on Catalina libc `malloc` for file and
+ directory handles while running close to the Hub RAM limit. The runtime now
+ uses fixed pools for `open()` and `os.listdir()`.
 - Directory listing filters raw DOSFS entries so stale, erased, hidden, volume,
-  reserved, and non-printable 8.3 names do not leak into Berry lists.
+ reserved, and non-printable 8.3 names do not leak into Berry lists.
 - `i2c` and `spi` transfer helpers avoid Catalina libc heap allocation for their
-  bounded read/transfer buffers.
+ bounded read/transfer buffers.
 - P2 module APIs are documented in [`P2_MODULES.md`](./P2_MODULES.md). Keep that
-  reference updated whenever a P2-facing function or method changes.
+ reference updated whenever a P2-facing function or method changes.
 - `modules/wifi.be` and `examples/wifi/detect.be` contain the first
-  WiFiNINA/AirLift SPI transport skeleton. ESP32-C6 READY/BUSY detection is
-  still the next hardware step before higher-level WiFi APIs are added.
+ WiFiNINA/AirLift SPI transport skeleton. ESP32-C6 READY/BUSY detection is
+ still the next hardware step before higher-level WiFi APIs are added.
 
 ## Reference Sources
 
 - Catalina repo/tag to compare against: `rosshigson/Catalina` around commit `a6f714c5` / tag `v8.8.9`.
 - Catalina Lua P2 hardware APIs: `lua_p2.c` and Lua companion scripts.
 - Catalina I2C driver examples:
-  - `demos/catalyst/time/i2c_driver.c`
-  - `demos/catalyst/time/rtc_driver.c`
+ - `demos/catalyst/time/i2c_driver.c`
+ - `demos/catalyst/time/rtc_driver.c`
 - Catalina SPI references:
-  - `include/spi.h`
-  - `demos/spi/dump_eeprom.c`
-  - `demos/spi/README.TXT`
+ - `include/spi.h`
+ - `demos/spi/dump_eeprom.c`
+ - `demos/spi/README.TXT`
 
 ## Phase 0: Toolchain And Build Hygiene
 
-- Keep Catalina `v8.8.9` support working in Docker.
+- Keep Catalina `v8.8.9` support working with native Catalina.
 - Preserve the fix that maps `-lcix` to `cix` when patching Catalina P2 libraries.
 - Keep `bmapkey` bit-fields C-standard compatible for Cake 0.13.24.
 - Add a documented command for building against a source-built Catalina cache:
-  ```sh
-  make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build
-  ```
+ ```sh
+ make p2 TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
+ ```
 - Add a repeatable helper script for building Catalina `v8.8.9` binaries and P2 COMPACT libraries from source, if we decide this should become supported workflow.
 
 ## Phase 1: Digital I/O `p2` Module
@@ -99,15 +99,15 @@ Goal: make the P2 module comparable to Catalina Lua's `propeller` basics.
 - `p2.status()`: print build image size, heap bars, clock info, and all 8 cog states.
 - Ensure pins 56 and 57 are accessible on P2 Edge boards without PSRAM.
 - Add examples:
-  ```berry
-  import p2
-  while true
-      p2.high(56)
-      rtos.sleep_ms(250)
-      p2.low(56)
-      rtos.sleep_ms(250)
-  end
-  ```
+ ```berry
+ import p2
+ while true
+ p2.high(56)
+ rtos.sleep_ms(250)
+ p2.low(56)
+ rtos.sleep_ms(250)
+ end
+ ```
 
 ## Phase 2: I2C Module
 
@@ -128,11 +128,11 @@ Goal: practical bus support first, with `i2c.scan()` especially reliable.
 - Validate pins, addresses, counts, init state, and transfer sizes.
 - Test target: BMP180 on SDA pin 24 and SCL pin 25.
 - Add example:
-  ```berry
-  import i2c
-  i2c.init(25, 24, 400)
-  print(i2c.scan())
-  ```
+ ```berry
+ import i2c
+ i2c.init(25, 24, 400)
+ print(i2c.scan())
+ ```
 
 ## Phase 3: SPI Module
 
@@ -151,14 +151,14 @@ Goal: full-duplex byte transfer with simple module-global state.
 - Validate pins, mode, speed, init state, transfer size, and byte values.
 - Optionally add future helpers for EEPROM/flash/SD based on Catalina `spi.h`.
 - Add example:
-  ```berry
-  import spi
-  spi.init(10, 11, 12, 13, 0, 1000)
-  spi.select()
-  id = spi.transfer("\x9F\x00\x00\x00")
-  spi.deselect()
-  print(id)
-  ```
+ ```berry
+ import spi
+ spi.init(10, 11, 12, 13, 0, 1000)
+ spi.select()
+ id = spi.transfer("\x9F\x00\x00\x00")
+ spi.deselect()
+ print(id)
+ ```
 
 ## Phase 4: Worker And Cog Management
 
@@ -177,23 +177,23 @@ Goal: keep the worker backend as an internal implementation detail behind the RT
 - `rtos.stop()`, `rtos.state()`, `rtos.error()`: manage the worker-backed task cog.
 - Ensure worker-side script/function environment is explicit; no hidden built-in task functions.
 - Keep worker-task examples in normal `.be` files under `examples/rtos/workers/`:
-  ```berry
-  import rtos
+ ```berry
+ import rtos
 
-  def packet_reader(delay_ms)
-      while true
-          rtos.put("rx_packets", 1)
-          rtos.sleep_ms(delay_ms)
-      end
-  end
-  ```
+ def packet_reader(delay_ms)
+ while true
+ rtos.put("rx_packets", 1)
+ rtos.sleep_ms(delay_ms)
+ end
+ end
+ ```
 - Test worker-side dispatch from the main VM:
-  ```berry
-  import rtos
-  rtos.channel("rx_packets")
-  rtos.load_file("/examples/rtos/workers/packet_reader.be")
-  rtos.cog_start("packet_reader", 50)
-  ```
+ ```berry
+ import rtos
+ rtos.channel("rx_packets")
+ rtos.load_file("/examples/rtos/workers/packet_reader.be")
+ rtos.cog_start("packet_reader", 50)
+ ```
 - `p2.cog_stop(cog_id)` remains a low-level direct cog stop helper; prefer `rtos.stop()` for worker-owned cogs.
 
 ## Phase 5: Threads And Channels
@@ -220,9 +220,9 @@ Goal: add repo support for Spin2 source assets without coupling it too tightly t
 - Add top-level `spin2/` directory for `.spin2` sources.
 - Add `spin2/build/` output directory, likely ignored except sample metadata.
 - Add a helper script or Make target to compile:
-  ```sh
-  flexspin -2 -o spin2/build/Name.bin spin2/Name.spin2
-  ```
+ ```sh
+ flexspin -2 -o spin2/build/Name.bin spin2/Name.spin2
+ ```
 - Decide whether sample Spin2 binaries are checked in or generated only.
 - Add a sample Spin2 object using the Berry-compatible mailbox/call-table convention.
 - Document expected SD-card deployment path, e.g. `/sd/spin2/` or `/SPIN2/`.
@@ -250,30 +250,30 @@ Status: v1 convention documented and implemented by the native module and sample
 Goal: define a simple ABI we can implement and document.
 
 - Binary header v1:
-  - Long 0: method count.
-  - Next longs: method entry offsets or Hub-relative addresses.
-  - Optional later fields: ABI version, mailbox offset, method metadata offset.
+ - Long 0: method count.
+ - Next longs: method entry offsets or Hub-relative addresses.
+ - Optional later fields: ABI version, mailbox offset, method metadata offset.
 - Mailbox v1:
-  - State.
-  - Method ID.
-  - Argument count.
-  - Integer arguments.
-  - Integer result.
-  - Error/status code.
+ - State.
+ - Method ID.
+ - Argument count.
+ - Integer arguments.
+ - Integer result.
+ - Error/status code.
 - Synchronization:
-  - Start with lock or volatile state polling.
-  - Add `COGATN` if it proves reliable and worth the complexity.
+ - Start with lock or volatile state polling.
+ - Add `COGATN` if it proves reliable and worth the complexity.
 - `spin2.call()` v1 limitations:
-  - Integer args only.
-  - Single integer return.
-  - Blocking call by default.
-  - Optional fire-and-forget for methods that never return.
+ - Integer args only.
+ - Single integer return.
+ - Blocking call by default.
+ - Optional fire-and-forget for methods that never return.
 - Future TODOs:
-  - `spin2.list_methods(handle)`.
-  - Parse method names and arity from a manifest.
-  - Support strings/lists through shared buffers.
-  - Async calls and timeouts.
-  - Idiomatic wrappers for common objects like SmartSerial.
+ - `spin2.list_methods(handle)`.
+ - Parse method names and arity from a manifest.
+ - Support strings/lists through shared buffers.
+ - Async calls and timeouts.
+ - Idiomatic wrappers for common objects like SmartSerial.
 
 ## Phase 9: Smart Pin And Optional P2 Features
 
@@ -303,19 +303,19 @@ Status: examples added for the implemented v1 APIs and organized by module.
 
 ## Phase 11: Tests And Hardware Verification
 
-- Always build with Catalina Docker before claiming success.
+- Always build with native Catalina before claiming success.
 - Verify both RAM and flash-loader binaries:
-  ```sh
-  make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1
-  make build/p2/catalina/full/berry_p2_flash_loader.binary TOOLCHAIN=catalina CATALINA_USE_DOCKER=1
-  ```
+ ```sh
+ make p2 TOOLCHAIN=catalina
+ make build/p2/catalina/full/berry_p2_flash_loader.binary TOOLCHAIN=catalina
+ ```
 - On hardware, test:
-  - Pin 56 and 57 high/low/toggle/read on the no-PSRAM Catalina profile (`CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, no `-lpsram`). Pin 57 is PSRAM chip-select on PSRAM builds.
-  - `os` SD-card file operations.
-  - `i2c.scan()` with BMP180 on SDA 24 / SCL 25.
-  - SPI transfer with a known JEDEC-ID device.
-  - Worker cog blink does not hang main REPL.
-  - Spin2 binary can load, start, call, and stop from SD.
+ - Pin 56 and 57 high/low/toggle/read on the no-PSRAM Catalina profile (`CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, no `-lpsram`). Pin 57 is PSRAM chip-select on PSRAM builds.
+ - `os` SD-card file operations.
+ - `i2c.scan()` with BMP180 on SDA 24 / SCL 25.
+ - SPI transfer with a known JEDEC-ID device.
+ - Worker cog blink does not hang main REPL.
+ - Spin2 binary can load, start, call, and stop from SD.
 
 ## Open Design Decisions
 

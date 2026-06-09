@@ -7,13 +7,13 @@ This guide is the short path for bringing up Berry on a Propeller 2 board from t
 Use Catalina for normal P2 work. FlexC remains in the tree for historical and debugging work, but Catalina is the verified path for this port.
 
 ```sh
-make p2 TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build
+make p2 TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
 ```
 
 For the verified P2 Edge 32 MB RAM board path, use the convenience target and the known serial port when available:
 
 ```sh
-make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build
+make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
 ```
 
 For the no-external-RAM P2 Edge profile, keep the default COMPACT Catalina setup with `CATALINA_CLIB=-lcx` and no `-lpsram`.
@@ -21,7 +21,7 @@ For the no-external-RAM P2 Edge profile, keep the default COMPACT Catalina setup
 For the experimental huge-heap PSRAM/XMM profile on the P2 Edge 32 MB board:
 
 ```sh
-make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_USE_DOCKER=1 CATALINA_DIR=.third_party_cache/catalina-v8.8.9-build
+make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
 ```
 
 Standalone XMM flash boot currently takes about `25-30` seconds before the Berry prompt. The current verified `p2.status()` output reports `15728640 B` main heap and `Berry heap in PSRAM`.

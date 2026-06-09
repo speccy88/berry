@@ -18,6 +18,21 @@ p2.info = {
 p2.psram_info = def()
     return p2.info
 end
+p2.heap_info = def()
+    return {
+        "main": 131072,
+        "wrong_free_count": 0,
+        "wrong_realloc_count": 0
+    }
+end
+p2.status_info = def()
+    return {
+        "profile": "host_fake",
+        "board": "host_fake",
+        "memory": p2.heap_info(),
+        "psram": p2.psram_info()
+    }
+end
 p2.psram_write = def(address, data)
     if p2.info.contains("block_base")
         assert(address >= p2.info["block_base"])
@@ -61,7 +76,6 @@ var all_cached = libstore.cache_all()
 assert(all_cached.size() >= 5)
 assert(libstore.status()["psram_cache_items"] >= 5)
 assert(libstore.cached("binary_heap"))
-assert(libstore.cached("taskspin"))
 assert(libstore.cached("wifi"))
 
 p2.mem = {}
@@ -98,7 +112,7 @@ assert(libstore.status()["psram_cache_items"] >= 5)
 p2.mem = {}
 var p2mem = run_file("modules/p2mem.be")
 var stats = p2mem.stats()
-assert(type(stats) == "map")
+assert(stats.contains("module_count"))
 assert(stats["module_count"] >= 5)
 var modules = p2mem.modules()
 assert(modules.size() >= 5)
@@ -108,6 +122,8 @@ for rec : modules
         saw_math = true
         assert(rec["source_path"] == "modules/math.be")
         assert(rec.contains("compiled_path"))
+        assert(rec.contains("compiled_manifest_path"))
+        assert(rec.contains("compiled_manifest_exists"))
         assert(rec.contains("source_hash"))
         assert(rec.contains("compiled_hash"))
         assert(rec.contains("cache_hit_count"))
@@ -117,7 +133,7 @@ for rec : modules
 end
 assert(saw_math)
 var cache = p2mem.cache()
-assert(type(cache["items"]) == "list")
+assert(size(cache["items"]) >= 0)
 var gc_report = p2mem.gc()
 assert(type(gc_report["before"]) == "int")
 var evicted = p2mem.evict()

@@ -1,21 +1,21 @@
-import taskspin
-
-taskspin.reset()
+import task
 
 var log = []
 
-def step(id, state)
-    state["count"] += 1
-    log.push(state["name"] + str(state["count"]))
-    return state["count"] >= state["limit"] ? taskspin.STOP : taskspin.RUN
+def counter(name, limit, delay_ms)
+    var runs = task.task_info(task.current())["runs"]
+    log.push(name + str(runs))
+    print(name, runs)
+    if runs >= limit
+        return task.done
+    end
+    return task.sleep(delay_ms)
 end
 
-var a = taskspin.TASKSPIN(-1, step, {"name": "A", "count": 0, "limit": 2}, 287)
-var b = taskspin.TASKSPIN(-1, step, {"name": "B", "count": 0, "limit": 3}, 286)
+a = task.start(counter, "A", 2, 100)
+b = task.start(counter, "B", 3, 150)
 
-print("tasks:", a, b)
-while taskspin.info()["tasks"] > 0
-    taskspin.TASKNEXT()
-end
+task.run(20)
 
-print("log:", log)
+print("tasks", task.list())
+print("log", log)

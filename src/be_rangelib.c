@@ -162,6 +162,7 @@ void be_load_rangelib(bvm *vm)
         { "tostring", m_tostring },
         { "lower", m_lower },
         { "upper", m_upper },
+        { "incr", m_incr },
         { "setrange", m_setrange },
         { "iter", m_iter },
         { NULL, NULL }

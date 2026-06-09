@@ -8,6 +8,7 @@
 #define BE_P2_PROFILE_FULL              2
 #define BE_P2_PROFILE_EDGE32            3
 #define BE_P2_PROFILE_XMM               4
+#define BE_P2_PROFILE_SDDIAG            5
 
 #define BE_P2_BOARD_P2EDGE              1
 #define BE_P2_BOARD_P2EDGE32            2
@@ -20,7 +21,7 @@
 #endif
 
 #ifndef BE_P2_BOARD
-#if BE_P2_PROFILE == BE_P2_PROFILE_EDGE32 || BE_P2_PROFILE == BE_P2_PROFILE_XMM
+#if BE_P2_PROFILE == BE_P2_PROFILE_EDGE32 || BE_P2_PROFILE == BE_P2_PROFILE_XMM || BE_P2_PROFILE == BE_P2_PROFILE_SDDIAG
 #define BE_P2_BOARD                     BE_P2_BOARD_P2EDGE32
 #else
 #define BE_P2_BOARD                     BE_P2_BOARD_P2EDGE
@@ -94,26 +95,28 @@
 #define BE_P2_STACK_SLOTS               512
 #define BE_P2_BYTES_MAX                 2048
 
-#elif BE_P2_PROFILE == BE_P2_PROFILE_EDGE32 || BE_P2_PROFILE == BE_P2_PROFILE_XMM
+#elif BE_P2_PROFILE == BE_P2_PROFILE_EDGE32 || BE_P2_PROFILE == BE_P2_PROFILE_XMM || BE_P2_PROFILE == BE_P2_PROFILE_SDDIAG
 #if BE_P2_PROFILE == BE_P2_PROFILE_XMM
 #define BE_P2_PROFILE_NAME              "xmm"
+#elif BE_P2_PROFILE == BE_P2_PROFILE_SDDIAG
+#define BE_P2_PROFILE_NAME              "sddiag"
 #else
 #define BE_P2_PROFILE_NAME              "edge32"
 #endif
 
-#define BE_USE_JSON                     1
+#define BE_USE_JSON                     (BE_P2_PROFILE != BE_P2_PROFILE_SDDIAG)
 #define BE_USE_MATH                     0
 #define BE_USE_OS                       1
 #define BE_USE_FILE                     1
-#define BE_USE_INTROSPECT               1
+#define BE_USE_INTROSPECT               (BE_P2_PROFILE != BE_P2_PROFILE_SDDIAG)
 #define BE_USE_SOLIDIFY                 0
 #define BE_USE_DEBUG                    0
 
-#define BE_P2_USE_PROP2_GLOBALS         1
+#define BE_P2_USE_PROP2_GLOBALS         (BE_P2_PROFILE != BE_P2_PROFILE_SDDIAG)
 #define BE_P2_USE_P2_MODULE             1
-#define BE_P2_USE_I2C_MODULE            1
-#define BE_P2_USE_SPI_MODULE            1
-#define BE_P2_USE_RTOS_MODULE           1
+#define BE_P2_USE_I2C_MODULE            (BE_P2_PROFILE != BE_P2_PROFILE_SDDIAG)
+#define BE_P2_USE_SPI_MODULE            (BE_P2_PROFILE != BE_P2_PROFILE_SDDIAG)
+#define BE_P2_USE_RTOS_MODULE           0
 #define BE_P2_USE_THREADS_MODULE        0
 #define BE_P2_USE_SPIN2_MODULE          0 /* archived: replace with real closure/VM path */
 #define BE_P2_USE_WORKER_MODULE         0
@@ -127,6 +130,8 @@
  * window through BE_P2_PSRAM_BLOCK_BASE. */
 #define BE_P2_XMM_RUNTIME_RESERVE_BYTES (1 * 1024 * 1024)
 #define BE_P2_HEAP_SIZE                 (15 * 1024 * 1024)
+#elif BE_P2_PROFILE == BE_P2_PROFILE_SDDIAG
+#define BE_P2_HEAP_SIZE                 (96 * 1024)
 #else
 #define BE_P2_HEAP_SIZE                 (128 * 1024)
 #endif
@@ -149,7 +154,7 @@
 #define BE_P2_USE_P2_MODULE             1
 #define BE_P2_USE_I2C_MODULE            1
 #define BE_P2_USE_SPI_MODULE            1
-#define BE_P2_USE_RTOS_MODULE           1
+#define BE_P2_USE_RTOS_MODULE           0
 #define BE_P2_USE_THREADS_MODULE        0
 #define BE_P2_USE_SPIN2_MODULE          0 /* archived: replace with real closure/VM path */
 #define BE_P2_USE_WORKER_MODULE         0
@@ -181,7 +186,7 @@
 #endif
 
 #ifndef BE_P2_EXTERNAL_RAM_BYTES
-#if BE_P2_PROFILE == BE_P2_PROFILE_EDGE32 || BE_P2_PROFILE == BE_P2_PROFILE_XMM
+#if BE_P2_PROFILE == BE_P2_PROFILE_EDGE32 || BE_P2_PROFILE == BE_P2_PROFILE_XMM || BE_P2_PROFILE == BE_P2_PROFILE_SDDIAG
 #define BE_P2_EXTERNAL_RAM_BYTES        (32 * 1024 * 1024)
 #else
 #define BE_P2_EXTERNAL_RAM_BYTES        0
@@ -220,6 +225,10 @@
 #define BE_P2_ENABLE_TIME_MODULE        0
 #endif
 
+#ifndef BE_P2_ENABLE_SD_DIAGNOSTICS
+#define BE_P2_ENABLE_SD_DIAGNOSTICS     (BE_P2_PROFILE == BE_P2_PROFILE_SDDIAG)
+#endif
+
 #include "p2_heap.h"
 
 /*
@@ -252,8 +261,17 @@
 
 #define BE_USE_FILE_SYSTEM              BE_USE_FILE
 #define BE_USE_SCRIPT_COMPILER          1
-#define BE_USE_BYTECODE_SAVER           0
-#define BE_USE_BYTECODE_LOADER          0
+#ifndef BE_P2_ENABLE_BYTECODE_SAVER
+#define BE_P2_ENABLE_BYTECODE_SAVER     0
+#endif
+#ifndef BE_P2_ENABLE_BYTECODE_LOADER
+#define BE_P2_ENABLE_BYTECODE_LOADER    0
+#endif
+#ifndef BE_P2_ENABLE_BYTECODE_EXECUTION
+#define BE_P2_ENABLE_BYTECODE_EXECUTION 0
+#endif
+#define BE_USE_BYTECODE_SAVER           BE_P2_ENABLE_BYTECODE_SAVER
+#define BE_USE_BYTECODE_LOADER          BE_P2_ENABLE_BYTECODE_LOADER
 #define BE_USE_SHARED_LIB               0
 #define BE_USE_OVERLOAD_HASH            0
 

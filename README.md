@@ -29,7 +29,7 @@ The active Propeller 2 docs are split by purpose:
 - [`docs/p2-api.md`](./docs/p2-api.md): current `p2` API snapshot.
 - [`docs/smartpins.md`](./docs/smartpins.md): raw smart-pin API and remaining mode-family roadmap.
 - [`docs/cogs.md`](./docs/cogs.md): current cog/child-VM model and closure-transfer policy.
-- [`docs/tasks.md`](./docs/tasks.md): cooperative `task` and `taskspin` modules.
+- [`docs/tasks.md`](./docs/tasks.md): cooperative `task` module.
 - [`docs/pasm.md`](./docs/pasm.md): safe `p2.asm` facade and future PASM ABI rules.
 - [`docs/debugging.md`](./docs/debugging.md): query-based diagnostics and debug flag policy.
 - [`docs/performance.md`](./docs/performance.md): benchmark plan and reporting format.
@@ -138,37 +138,92 @@ commands before Enter.
 
 ```berry
 import p2
-import rtos
 
 p2.pinmode(56, p2.OUTPUT)
 p2.high(56)
-rtos.sleep_ms(250)
+p2.waitms(250)
 p2.low(56)
 print(p2.cogid())
 print(p2.sbrk())
 p2.status()
 ```
 
-#### `rtos` Module
+#### `p2.cog` Function-Entity Task Handles
 
-The `rtos` module owns P2 concurrency: process-style task spawn/cog start, cooperative sleep/yield, hardware locks, named queues, event flags, counter timers, deferred event callbacks, and debug maps. The older experimental `worker` and `threads` modules are no longer exported in the normal P2 profile; their backend pieces are folded under `rtos`. The current implementation supports the main VM plus one child Berry VM/cog, with shared Hub-RAM queues/events/locks shaped for a later multi-VM heap expansion.
+The `p2.cog` namespace adds a small handle-based task API for launching
+supported native work from a Berry function entity. On the P2 Edge 32 MB/XMM
+profile, the onboard LEDs are pins `38` and `39`, so a blinker can be declared
+as a normal Berry function and spawned twice with different rates:
 
 ```berry
-import rtos
+import p2
 
-rtos.channel("sensor")
-rtos.load_file("/examples/rtos/workers/packet_reader.be")
-rtos.newcog("packet_reader", 100)
-print(rtos.get("sensor", 500))
-rtos.stop()
+def blinker(pin, ms)
+    return p2.cog.blinker(pin, ms)
+end
 
-lock = rtos.new_lock()
-rtos.lock(lock)
-rtos.unlock(lock)
-rtos.delete_lock(lock)
+h38 = p2.cog.spawn(blinker, 38, 250)
+h39 = p2.cog.spawn(blinker, 39, 700)
+
+print(p2.cog.info(h38))
+print(p2.cog.info(h39))
+
+p2.cog.stop(h38)
+p2.cog.stop(h39)
 ```
 
-Use `rtos.load_file(path)` for readable child-task code stored on the SD card. `rtos.load_str(source)` is available when generated source is useful, and `rtos.load(source)` remains as the compatibility alias for `rtos.load_str(source)`. Child code runs in a separate Berry VM on another cog, so functions or closures defined only in the main VM cannot be passed directly yet. The preferred process spelling is `rtos.newcog("function_name", ...int_args)` after loading the task source. `rtos.newcog(function, ...)` is reserved for the real closure-transfer path and currently raises a clear runtime error instead of sharing unsafe VM pointers.
+Use `p2.cog.spawn(function, ...args)` to pass the function entity, not
+`function(...)`, which would call it immediately on the current cog. The setup
+function currently returns a native task descriptor such as
+`p2.cog.blinker(pin, ms)`, and `spawn()` returns an integer handle that can be
+inspected or stopped later.
+
+Useful helpers include:
+
+- `p2.cog.blinker(pin, ms)`: create a native blinker task descriptor.
+- `p2.cog.spawn(function, ...args)`: call the setup function and launch the resulting supported task on another cog.
+- `p2.cog.spawn(task_descriptor)`: launch an explicit descriptor directly.
+- `p2.cog.stop(handle)`: stop a spawned task handle.
+- `p2.cog.info(handle)` / `p2.cog.info()`: inspect one handle or all active handles.
+- `p2.cog.capabilities()`: report supported task-handle features for the current build.
+
+The current blinker path runs the actual toggle loop in a native/PASM backend
+after the Berry setup function returns its descriptor. Arbitrary Berry bytecode
+closure execution inside another isolated cog VM remains future work.
+
+#### `task` Cooperative Scheduler
+
+The `task` module is the friendly cooperative scheduler API for work that should
+share the current Berry VM inside one cog. A task function runs one step, then
+returns what the scheduler should do next:
+
+```berry
+import p2
+import task
+
+def blink(pin, ms)
+    p2.toggle(pin)
+    return task.sleep(ms)
+end
+
+h38 = task.start(blink, 38, 250)
+h39 = task.start(blink, 39, 700)
+
+task.run()
+```
+
+Useful helpers include `task.start(fn, ...args)`, `task.next()`, `task.run()`,
+`task.stop(handle)`, `task.pause(handle)`, `task.resume(handle)`,
+`task.status(handle)`, `task.list()`, `task.info()`, `task.sleep(ms)`,
+`task.wait(event, timeout_ms)`, `task.signal(event)`, and `task.clear(event)`.
+On P2, sleeps use the hardware counter and the `"attention"` event maps to cog
+attention. V1 is cooperative, not preemptive, and does not provide independent
+Berry stacks.
+
+#### Retired `rtos` / `taskspin` APIs
+
+The older `rtos` native module and Spin2-shaped `taskspin.be` source module have been retired from the active P2 surface. New cooperative work should use `task`; native cog handle experiments should use `p2.cog`.
+
 
 The global `run_file(path)` helper compiles and runs a `.be` file from the current VM, which makes it useful from the REPL or from another script:
 
@@ -322,7 +377,7 @@ print(open("/TMPD/TEST.TXT", "r").read())
 
 #### Propeller 2 Hardware Helpers
 
-Propeller 2 hardware helpers are exposed through the `p2` module for clocks, counters, pins, smartpins, CORDIC, locks, attention, and cog inspection. Task sleep and process-style cog startup live in `rtos` so those concepts have one public home. The older `prop2_*` globals remain available for compatibility, but new examples should use `p2` and `rtos`.
+Propeller 2 hardware helpers are exposed through the `p2` module for clocks, counters, pins, smartpins, CORDIC, locks, attention, and cog inspection. Cooperative task sleep lives in `task.sleep()`, and native cog handle experiments live under `p2.cog`. The older `prop2_*` globals remain available for compatibility, but new examples should use `p2`, `p2.cog`, and `task`.
 
 ```berry
 import p2
@@ -335,7 +390,7 @@ p2.pin_write(56, 0) # active-low LED on the tested no-PSRAM board
 print(p2.pin_read(56))
 ```
 
-P2 module examples live under `examples/p2/`; other modules use their own directories such as `examples/i2c/`, `examples/spi/`, `examples/rtos/`, and `examples/spin2/`. General Berry examples such as quicksort, REPL, and string handling live under `examples/core/`.
+P2 module examples live under `examples/p2/`; other modules use their own directories such as `examples/i2c/`, `examples/spi/`, and `examples/spin2/`. General Berry examples such as quicksort, REPL, and string handling live under `examples/core/`.
 
 The fuller P2 module API reference lives in [`docs/P2_MODULES.md`](./docs/P2_MODULES.md).
 The longer-term P2 Berry system plan lives in [`docs/P2_SYSTEM_ROADMAP.md`](./docs/P2_SYSTEM_ROADMAP.md).
@@ -370,7 +425,7 @@ assertions.
 
 The P2 runtime also adds `/modules` to the default lazy import path, so SD
 libraries such as `binary_heap.be`, `wifi.be`, `libstore.be`, and
-`taskspin.be` can be imported without enabling the larger upstream `sys`
+`task.be` can be imported without enabling the larger upstream `sys`
 module. On edge32, PSRAM is exposed as block-transfer storage for future library
 cache work; the active Berry heap remains in Hub RAM.
 

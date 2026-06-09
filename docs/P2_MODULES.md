@@ -435,7 +435,101 @@ and probes the current SD-first library store:
 - `libstore.psram() -> map`: returns `p2.psram_info()`.
 - `libstore.exists(name) -> bool`: true when `/modules/<name>.be` exists.
 - `libstore.source_path(name) -> string or nil`: returns the SD source path.
-- `libstore.info(name) -> map`: return SD path/cache metadata for one module.
+- `libstore.compiled_path(name) -> string or nil`: returns a staged `.bec`
+  candidate path if present. The current P2 port detects `.bec` files but does
+  not execute them yet.
+- `libstore.compiled_manifest_path(name) -> string or nil`: returns a staged
+  `<module>.bec.json` freshness sidecar when present.
+- `libstore.compile_cache_plan_many(names) -> map`: returns bulk `.bec` emit
+  plans for an explicit module list, including emit blocker-reason counts.
+- `libstore.compile_cache_plan_many_text(names) -> string`: returns bulk `.bec`
+  emit plans for an explicit module list as JSON text.
+- `libstore.compile_cache_plan_all() -> map`: returns bulk `.bec` emit plans for
+  all discovered SD modules.
+- `libstore.compile_cache_plan_all_text() -> string`: returns bulk `.bec` emit
+  plans for all discovered SD modules as JSON text.
+- `libstore.compile_cache_provision_plan(names) -> map`: returns a dry-run
+  `.bec` emit provisioning plan for an explicit module list.
+- `libstore.compile_cache_provision_plan_text(names) -> string`: returns the
+  dry-run emit provisioning plan as JSON text.
+- `libstore.compile_cache_provision_plan_all() -> map`: returns a dry-run
+  `.bec` emit provisioning plan for all discovered SD modules.
+- `libstore.compile_cache_provision_plan_all_text() -> string`: returns the
+  all-module dry-run emit provisioning plan as JSON text.
+- `libstore.compile_cache_emittable(names) -> list`: returns dry-run emit plans
+  that can currently emit for an explicit module list.
+- `libstore.compile_cache_emittable_text(names) -> string`: returns dry-run
+  emittable plans as JSON text.
+- `libstore.compile_cache_blocked(names) -> list`: returns dry-run emit plans
+  currently blocked from emission for an explicit module list.
+- `libstore.compile_cache_blocked_text(names) -> string`: returns dry-run
+  blocked emit plans as JSON text.
+- `libstore.compile_cache_emittable_all() -> list`: returns all discovered
+  modules that can currently emit `.bec` cache output.
+- `libstore.compile_cache_emittable_all_text() -> string`: returns all-module
+  dry-run emittable plans as JSON text.
+- `libstore.compile_cache_blocked_all() -> list`: returns all discovered
+  modules currently blocked from `.bec` cache emission.
+- `libstore.compile_cache_blocked_all_text() -> string`: returns all-module
+  dry-run blocked emit plans as JSON text.
+- `libstore.compile_cache_emit_many(names) -> map`: explicitly attempts `.be`
+  to `.bec` emission for a module list and reports per-module success/failure.
+- `libstore.compile_cache_emit_all() -> map`: explicitly attempts `.be` to
+  `.bec` emission for all discovered SD modules.
+- `libstore.compiled_validation(name) -> map`: reports whether a staged `.bec`
+  candidate has comparable/fresh sidecar metadata and whether the current build
+  has validator/execution support. Default builds report validator support as
+  unavailable; opt-in builds must set both `BE_P2_ENABLE_BYTECODE_LOADER` and
+  `BE_P2_ENABLE_BYTECODE_EXECUTION` before fresh metadata can be treated as
+  executable bytecode.
+- `libstore.compiled_load_plan(name) -> map`: reports whether a staged `.bec`
+  can be loaded and, when it cannot, the exact blocked reason.
+- `libstore.compiled_status(name) -> map`: returns one consolidated diagnostics
+  bundle for staged `.bec` freshness, validation, load, and emit state.
+- `libstore.compiled_status_text(name) -> string`: returns the consolidated
+  diagnostics bundle as JSON text for tooling and smoke scripts.
+- `libstore.compiled_inventory() -> list`: returns consolidated `.bec`
+  diagnostics for all discovered SD modules.
+- `libstore.compiled_inventory_text() -> string`: returns the compiled
+  inventory as JSON text.
+- `libstore.compiled_summary() -> map`: returns aggregate readiness counts for
+  staged `.bec` source, manifests, loadability, emit support, and load/emit
+  blocker reasons.
+- `libstore.compiled_summary_text() -> string`: returns the compiled summary as
+  JSON text.
+- `libstore.compiled_loadable() -> list`: returns compiled-status records that
+  can currently load.
+- `libstore.compiled_loadable_text() -> string`: returns loadable candidate
+  records as JSON text.
+- `libstore.compiled_emittable() -> list`: returns compiled-status records that
+  can currently emit `.bec` cache output.
+- `libstore.compiled_emittable_text() -> string`: returns emittable candidate
+  records as JSON text.
+- `libstore.compiled_blocked() -> list`: returns compiled-status records blocked
+  from load or emit.
+- `libstore.compiled_blocked_text() -> string`: returns blocked candidate
+  records as JSON text.
+- `libstore.compiled_provision_plan() -> map`: returns one conservative
+  provisioning diagnostics map with summary, candidate lists, blocked records,
+  and a recommendation.
+- `libstore.compiled_provision_plan_text() -> string`: returns the provisioning
+  diagnostics map as JSON text.
+- `libstore.load_compiled(name)`: future explicit `.bec` execution hook. Current
+  default builds raise `unsupported_error` with the load-plan reason instead of
+  silently pretending bytecode execution is available.
+- `libstore.compiled_freshness(name) -> map`: compares staged source,
+  bytecode, and optional sidecar metadata. Matching sidecars can prove
+  `fresh == true`, but default `.bec` execution remains disabled until an
+  opt-in `BE_P2_ENABLE_BYTECODE_LOADER` build plus
+  `BE_P2_ENABLE_BYTECODE_EXECUTION` policy reports support.
+- `libstore.resolve(name) -> map`: returns source/compiled candidates plus the
+  selected path, selected kind, and decision reason. Current `.bec` candidates
+  report source fallback when matching `.be` source is present.
+- `libstore.info(name) -> map`: return SD path/cache metadata for one module,
+  including `compiled_path`, `compiled_exists`, `compiled_supported`,
+  `compiled_loader_supported`, `compiled_validator_supported`,
+  `compiled_loader_reason`, and
+  `selected_path`, `selected_kind`, `resolve_reason`, and `source_fallback`.
 - `libstore.cached(name) -> bool`: true when the module source is already in
   the current PSRAM cache directory.
 - `libstore.cache_window() -> map`: compute the safe PSRAM cache window from

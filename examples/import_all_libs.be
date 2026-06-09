@@ -9,14 +9,20 @@ end
 print("Trying safe imports for currently supported SD modules")
 
 import binary_heap
+import configstore
 import math
+import p2compat
+import p2ipc
 import p2mem
-import taskspin
+import task
 
 print("binary_heap:", type(binary_heap))
+print("configstore:", configstore.path("app"))
 print("math.sqrt(81):", math.sqrt(81))
+print("p2compat unsupported:", p2compat.unsupported().size())
+print("p2ipc:", type(p2ipc))
 print("p2mem modules:", p2mem.modules().size())
-print("taskspin max tasks:", taskspin.info()["max_tasks"])
+print("task max tasks:", task.info()["max_tasks"])
 
 try
     import wifi

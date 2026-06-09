@@ -31,12 +31,13 @@ stage1
         hubset  ##clk | %1111_01_11
 
         drvh    #spi_cs
-        drvl    #spi_clk
+        drvh    #spi_clk
         drvl    #spi_di
 
         mov     pb,##loader_flash_addr
         mov     ptra,#0
         outl    #spi_cs
+        outl    #spi_clk
         callpa  #read_data,#send_byte
 
         getbyte pa,pb,#2
@@ -57,7 +58,9 @@ stage1
         wrbyte  pa,ptra++
         djnz    pb,#.loop
 
+        outh    #spi_clk
         outh    #spi_cs
+        outh    #spi_di
         coginit #0,#0
 
 send_byte

@@ -16,6 +16,11 @@ SIZE_PATTERNS = {
     "file": re.compile(r"^file\s*=\s*(\d+)\s+bytes$", re.MULTILINE),
 }
 
+DEFINE_STRING_PATTERNS = {
+    "date": re.compile(r'^#define\s+P2_BUILD_DATE_STR\s+"([^"]*)"', re.MULTILINE),
+    "time": re.compile(r'^#define\s+P2_BUILD_TIME_STR\s+"([^"]*)"', re.MULTILINE),
+}
+
 
 def read_text(path: pathlib.Path | None) -> str:
     if not path or not path.is_file():
@@ -32,11 +37,21 @@ def parse_sizes(text: str) -> dict[str, int]:
     return sizes
 
 
+def parse_define_strings(text: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for key, pattern in DEFINE_STRING_PATTERNS.items():
+        match = pattern.search(text)
+        if match:
+            values[key] = match.group(1)
+    return values
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--log", required=True)
     parser.add_argument("--binary", required=True)
     parser.add_argument("--header", required=True)
+    parser.add_argument("--preserve-timestamp-from")
     args = parser.parse_args()
 
     log_path = pathlib.Path(args.log) if args.log else None
@@ -50,9 +65,14 @@ def main() -> int:
     if not binary_size:
         binary_size = sizes["file"]
 
-    now = dt.datetime.now()
-    build_date = now.strftime("%b %d %Y")
-    build_time = now.strftime("%H:%M:%S")
+    preserved = parse_define_strings(read_text(pathlib.Path(args.preserve_timestamp_from))) if args.preserve_timestamp_from else {}
+    if "date" in preserved and "time" in preserved:
+        build_date = preserved["date"]
+        build_time = preserved["time"]
+    else:
+        now = dt.datetime.now()
+        build_date = now.strftime("%b %d %Y")
+        build_time = now.strftime("%H:%M:%S")
 
     header = f"""#ifndef P2_BUILD_INFO_H
 #define P2_BUILD_INFO_H

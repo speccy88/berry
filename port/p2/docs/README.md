@@ -128,6 +128,8 @@ compatibility submodules over the current native helpers:
   `p2.clock.waitus(us)`, `p2.clock.waitms(ms)`, `p2.clock.waitsec(sec)`,
   `p2.clock.waitcnt(tick)`, and `p2.clock.hubset(value)`
 - `p2.cog.id()`, `p2.cog.check(cog_id)`, `p2.cog.stop(cog_id)`,
+  `p2.cog.spawn(closure, ...primitive_args)`,
+  `p2.cog.stop(handle)`, `p2.cog.info(handle)`, `p2.cog.info()`,
   `p2.cog.attention(mask)`, `p2.cog.poll_attention()`, and
   `p2.cog.wait_attention()`
 - `p2.lock.new()`, `p2.lock.ret(lock_id)`, `p2.lock.try(lock_id)`,
@@ -147,6 +149,37 @@ compatibility submodules over the current native helpers:
 
 The existing flat names remain supported for current examples and compatibility.
 The grouped API is covered by `/tests/p2/smoke_p2_api.be`.
+
+`p2.cog.spawn()` is an interim closure-cog proof path. It stores the live Berry
+closure in the main VM, starts a separate C cog, and calls the closure with the
+provided primitive arguments while the REPL/main cog is idle at the prompt. The
+closure must return quickly; returning an integer schedules the next call after
+that many milliseconds, and returning `false`, `nil`, or a negative integer
+stops the handle. This is intentionally not yet independent per-cog VM/GC
+isolation. `p2.cog.info(handle)["model"]` reports `shared_vm_repl_idle` for
+this proof path.
+
+The hardware-verified p38/p39 LED form,
+`p2.cog.spawn(closure, pin, rate_ms)`, is promoted to the safer native GPIO
+blinker model when both arguments are positive integers and the pin is in
+`0..63`. The closure is still invoked once on the main REPL cog during setup and
+must return a positive integer delay; the spawned cog then runs a native toggle
+loop with a 2048-byte stack. `p2.cog.info(handle)["model"]` reports
+`native_blink` for this fast path.
+
+Other closure-cog shapes are rejected by the default firmware because repeated
+shared-VM Berry callbacks from multiple background cogs are not hardware-safe
+yet. The legacy dispatcher is available only for diagnostics with the explicit
+`BE_P2_ENABLE_UNSAFE_SHARED_VM_COG` build flag.
+
+`p2.cog.capabilities()` reports the current closure-cog contract at runtime:
+the native blinker shape is supported, unsupported shapes are rejected in the
+default firmware, and isolated arbitrary closure execution is still reported as
+not available.
+
+`p2.cog.info()` returns all current closure-cog handles;
+stopped handles remain inspectable until explicitly stopped or reclaimed before
+a later spawn when slots are needed.
 
 ## RTOS Module
 
@@ -212,6 +245,18 @@ RTOS examples live in `../../../examples/rtos/`:
 - `newcog_process_info.be`: use the new process spelling and inspect backend
   limits.
 - `load_str_inline.be`: compatibility example for loading generated source strings into the child VM.
+
+Closure-cog examples:
+
+- `examples/cog_closure_blink.be`: pass one Berry blinker closure to two cog
+  handles with different rates for Edge32 LEDs on pins 38 and 39, then stop
+  them later with `p2.cog.stop(handle)`. This exact
+  `spawn(closure, pin, rate_ms)` shape uses the verified native GPIO blinker
+  fast path: the closure is called once during setup and its positive integer
+  return value seeds the native loop so the REPL can inspect and stop both
+  handles later.
+- `port/p2/docs/CLOSURE_COG_REPL_PROOF.md`: exact interactive proof sequence
+  for the p38/p39 two-LED closure-cog test.
 
 Files under `examples/rtos/workers/` are loaded by the main examples with
 `rtos.load_file()`. They intentionally define one worker-side function each so

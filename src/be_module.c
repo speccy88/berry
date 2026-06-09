@@ -124,7 +124,7 @@ static bmodule* native_module(bvm *vm, const bntvmodule_t *nm, bvalue *dst)
 
 static char* fixpath(bvm *vm, bstring *path, size_t *size)
 {
-    char *buffer;
+    char *buffer, *p;
     const char *split, *base;
 #if BE_DEBUG_SOURCE_FILE
     bvalue *func = vm->cf->func;
@@ -142,18 +142,28 @@ static char* fixpath(bvm *vm, bstring *path, size_t *size)
     buffer = be_malloc(vm, *size);
     strncpy(buffer, base, split - base);
     strcpy(buffer + (split - base), str(path));
+    for (p = buffer + (split - base); *p != '\0'; ++p) {
+        if (*p == '.') {
+            *p = '/';
+        }
+    }
     return buffer;
 }
 
 static char* conpath(bvm *vm, bstring *path1, bstring *path2, size_t *size)
 {
-    char *buffer;
+    char *buffer, *p;
     int len1 = str_len(path1);
     *size = (size_t)len1 + (size_t)str_len(path2) + 1 + SUFFIX_LEN;
     buffer = be_malloc(vm, *size);
     strcpy(buffer, str(path1));
     buffer[len1] = '/';
     strcpy(buffer + len1 + 1, str(path2));
+    for (p = buffer + len1 + 1; *p != '\0'; ++p) {
+        if (*p == '.') {
+            *p = '/';
+        }
+    }
     return buffer;
 }
 

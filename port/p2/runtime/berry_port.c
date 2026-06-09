@@ -8,11 +8,17 @@
 #if defined(__CATALINA__)
 #include <stdio.h>
 #include <fs.h>
+#if defined(__CATALINA_LARGE)
+#include <hmalloc.h>
+#endif
 #include <plugin.h>
 #include <propeller2.h>
 #include <sd.h>
 extern VOLINFO __vi;
 extern unsigned int __pstart;
+extern volatile int berry_p2_sd_read_diag_phase;
+extern volatile int berry_p2_sd_read_diag_response;
+extern volatile int berry_p2_sd_read_diag_token;
 #else
 #include <propeller2.h>
 #endif
@@ -35,6 +41,7 @@ extern unsigned int __pstart;
 #define P2_EDGE_FLASH_RESET_ENABLE 0x66u
 #define P2_EDGE_FLASH_RESET_MEMORY 0x99u
 #define P2_EDGE_FLASH_DEEP_POWER_DOWN 0xB9u
+#define P2_FS_MOUNT_IO_ERROR -2
 #ifndef P2_FS_TRACE
 #define P2_FS_TRACE 0
 #endif
@@ -42,21 +49,31 @@ static int p2_fs_mounted;
 static int p2_sd_bus_prepared;
 static int p2_sd_initialized;
 static char p2_cwd[P2_FS_PATH_MAX] = "/";
+#if defined(__CATALINA_LARGE)
+static uint8_t *p2_mount_scratch;
+#else
 static uint8_t p2_mount_scratch[SECTOR_SIZE];
+#endif
 
 static volatile long p2_sd_long_param;
 
 typedef struct {
     int used;
     FILEINFO info;
-    uint8_t scratch[SECTOR_SIZE];
+    uint8_t *scratch;
+#if !defined(__CATALINA_LARGE)
+    uint8_t scratch_storage[SECTOR_SIZE];
+#endif
 } p2_file_handle;
 
 typedef struct {
     int used;
     DIRINFO di;
     DIRENT entry;
-    uint8_t scratch[SECTOR_SIZE];
+    uint8_t *scratch;
+#if !defined(__CATALINA_LARGE)
+    uint8_t scratch_storage[SECTOR_SIZE];
+#endif
     char name[13];
 } p2_dir_handle;
 
@@ -73,6 +90,37 @@ static void p2_fs_trace(const char *stage)
 #else
     (void)stage;
 #endif
+}
+
+static uint8_t *p2_sector_scratch_alloc(uint8_t *storage)
+{
+#if defined(__CATALINA_LARGE)
+    (void)storage;
+    return (uint8_t *)hub_malloc(SECTOR_SIZE);
+#else
+    return storage;
+#endif
+}
+
+static void p2_sector_scratch_free(uint8_t *scratch)
+{
+#if defined(__CATALINA_LARGE)
+    if (scratch) {
+        hub_free(scratch);
+    }
+#else
+    (void)scratch;
+#endif
+}
+
+static uint8_t *p2_mount_scratch_get(void)
+{
+#if defined(__CATALINA_LARGE)
+    if (!p2_mount_scratch) {
+        p2_mount_scratch = (uint8_t *)hub_malloc(SECTOR_SIZE);
+    }
+#endif
+    return p2_mount_scratch;
 }
 
 static uint8_t p2_edge_flash_transfer(uint8_t value)
@@ -120,7 +168,7 @@ static void p2_prepare_sd_bus(void)
      */
     p2_edge_flash_command(P2_EDGE_FLASH_RESET_ENABLE);
     p2_edge_flash_command(P2_EDGE_FLASH_RESET_MEMORY);
-    _waitms(1);
+    _waitms(100);
     p2_edge_flash_command(P2_EDGE_FLASH_DEEP_POWER_DOWN);
     _waitus(10);
 
@@ -138,6 +186,20 @@ static void p2_prepare_sd_bus(void)
         }
     }
     p2_sd_bus_prepared = 1;
+}
+
+static void p2_release_sd_bus_from_current_cog(void)
+{
+    /*
+     * The P2 combines pin drive state from all cogs.  The Catalina SD service
+     * cog must be the only cog driving the shared SD/flash pins; otherwise a
+     * stale high drive from the application/loader cog can keep CS or CLK from
+     * actually changing on the board.
+     */
+    _pinf(P2_EDGE_SD_CS);
+    _pinf(P2_EDGE_SD_CLK);
+    _pinf(P2_EDGE_SD_DI);
+    _pinf(P2_EDGE_SD_DO);
 }
 
 static int p2_service_request_timed(int svc, void *param, uint32_t timeout_ms)
@@ -201,10 +263,6 @@ static int p2_long_service_timed(int svc, long par, uint32_t timeout_ms)
 
 static int p2_fs_init_sd(void)
 {
-#if !defined(__BERRY_P2_DIRECT_SD_IO)
-    int result;
-#endif
-
     if (p2_sd_initialized) {
         return 0;
     }
@@ -212,18 +270,8 @@ static int p2_fs_init_sd(void)
     p2_sd_initialized = 1;
     return 0;
 #else
-    /*
-     * Catalina's SD plugin dispatch treats SD init as a long request.  The
-     * handler ignores the parameter contents, but the request still needs the
-     * same parameter-block shape as SD read/write so the cog decodes it
-     * consistently.
-     */
-    p2_prepare_sd_bus();
-    result = p2_long_service_timed(SVC_SD_INIT, 0, P2_SD_TIMEOUT_MS);
-    if (result == 0) {
-        p2_sd_initialized = 1;
-    }
-    return result;
+    p2_sd_initialized = 1;
+    return 0;
 #endif
 }
 
@@ -240,6 +288,11 @@ static void p2_decode_sd_service(berry_p2_fs_info *info)
     info->sd_service_cog = (int)(entry >> 12);
     info->sd_service_lock = (int)((entry >> 7) & 0x1Fu);
     info->sd_service_code = (int)(entry & 0x7Fu);
+#if defined(__BERRY_P2_DIRECT_SD_IO)
+    info->sd_request = (int)berry_p2_sd_read_diag_phase;
+    info->sd_response = (int)berry_p2_sd_read_diag_response;
+    info->sd_service_code = (int)berry_p2_sd_read_diag_token;
+#else
     if (info->sd_service_code != 0) {
         volatile request_t *request = REQUEST_BLOCK(info->sd_service_cog);
         if (request) {
@@ -247,6 +300,7 @@ static void p2_decode_sd_service(berry_p2_fs_info *info)
             info->sd_response = (int)request->response;
         }
     }
+#endif
 }
 
 static p2_file_handle *p2_file_alloc(void)
@@ -262,6 +316,17 @@ static p2_file_handle *p2_file_alloc(void)
         if (!p2_file_slots[i].used) {
             memset(&p2_file_slots[i], 0, sizeof(p2_file_slots[i]));
             p2_file_slots[i].used = 1;
+            p2_file_slots[i].scratch = p2_sector_scratch_alloc(
+#if defined(__CATALINA_LARGE)
+                NULL
+#else
+                p2_file_slots[i].scratch_storage
+#endif
+            );
+            if (!p2_file_slots[i].scratch) {
+                memset(&p2_file_slots[i], 0, sizeof(p2_file_slots[i]));
+                return NULL;
+            }
             return &p2_file_slots[i];
         }
     }
@@ -271,6 +336,7 @@ static p2_file_handle *p2_file_alloc(void)
 static void p2_file_free(p2_file_handle *handle)
 {
     if (handle) {
+        p2_sector_scratch_free(handle->scratch);
         memset(handle, 0, sizeof(*handle));
     }
 }
@@ -283,6 +349,17 @@ static p2_dir_handle *p2_dir_alloc(void)
         if (!p2_dir_slots[i].used) {
             memset(&p2_dir_slots[i], 0, sizeof(p2_dir_slots[i]));
             p2_dir_slots[i].used = 1;
+            p2_dir_slots[i].scratch = p2_sector_scratch_alloc(
+#if defined(__CATALINA_LARGE)
+                NULL
+#else
+                p2_dir_slots[i].scratch_storage
+#endif
+            );
+            if (!p2_dir_slots[i].scratch) {
+                memset(&p2_dir_slots[i], 0, sizeof(p2_dir_slots[i]));
+                return NULL;
+            }
             return &p2_dir_slots[i];
         }
     }
@@ -292,6 +369,7 @@ static p2_dir_handle *p2_dir_alloc(void)
 static void p2_dir_free(p2_dir_handle *dir)
 {
     if (dir) {
+        p2_sector_scratch_free(dir->scratch);
         memset(dir, 0, sizeof(*dir));
     }
 }
@@ -366,10 +444,14 @@ static int p2_dir_decode_name(const DIRENT *entry, char *name, size_t size)
 
 static int p2_dir_load_next(p2_dir_handle *dir)
 {
+    int scanned = 0;
+
     while (DFS_GetNext(&__vi, &dir->di, &dir->entry) == DFS_OK) {
         uint8_t first = (uint8_t)dir->entry.name[0];
+        if (++scanned > 1024) {
+            return -1;
+        }
         if (first == 0) {
-            /* Catalina can surface cleared entries before later valid entries. */
             continue;
         }
         if (first == 0xE5 || (dir->entry.attr & 0xC0) != 0) {
@@ -515,10 +597,23 @@ static void p2_fs_info_init(berry_p2_fs_info *info)
     info->partition_size = -1;
     info->volinfo_result = BERRY_P2_FS_RESULT_NOT_RUN;
     info->filesystem_type = -1;
+    info->vol_startsector = -1;
+    info->vol_secperclus = -1;
+    info->vol_reservedsecs = -1;
+    info->vol_secperfat = -1;
+    info->vol_fat1 = -1;
+    info->vol_rootdir = -1;
+    info->vol_dataarea = -1;
+    info->vol_numsecs = -1;
+    info->vol_rootentries = -1;
+    info->vol_numclusters = -1;
+    info->vol_root_sector = -1;
     info->mount_result = BERRY_P2_FS_RESULT_NOT_RUN;
     info->resolve_result = BERRY_P2_FS_RESULT_NOT_RUN;
     info->root_open_result = BERRY_P2_FS_RESULT_NOT_RUN;
     info->root_first_result = BERRY_P2_FS_RESULT_NOT_RUN;
+    info->root_first_byte = -1;
+    info->root_first_attr = -1;
     info->path_read_result = BERRY_P2_FS_RESULT_NOT_RUN;
     info->path_dir_result = BERRY_P2_FS_RESULT_NOT_RUN;
     info->create_file_result = BERRY_P2_FS_RESULT_NOT_RUN;
@@ -528,59 +623,163 @@ static void p2_fs_info_init(berry_p2_fs_info *info)
     strncpy(info->cwd, p2_cwd, sizeof(info->cwd) - 1u);
 }
 
-static void p2_fs_probe_sector0(berry_p2_fs_info *info, uint8_t *scratch)
+#if BE_P2_ENABLE_SD_DIAGNOSTICS
+static void p2_fs_info_copy_raw_dir_name(char *dst, size_t size, const DIRENT *entry)
 {
-    uint8_t pactive = 0;
-    uint8_t ptype = 0;
-    uint32_t psize = 0;
-    uint32_t pstart = 0;
+    int i;
+    int j = 0;
 
-    memset(scratch, 0, SECTOR_SIZE);
-    info->raw_sector0_result = (int)sd_sectread((char *)scratch, 0);
-    if (info->raw_sector0_result == 0) {
-        info->sector0_byte0 = (int)scratch[0];
-        info->sector0_byte1 = (int)scratch[1];
-        info->sector0_byte2 = (int)scratch[2];
-        info->sector0_byte3 = (int)scratch[3];
-        info->sector0_sig0 = (int)scratch[510];
-        info->sector0_sig1 = (int)scratch[511];
-        info->sector0_signature = ((int)scratch[511] << 8) | (int)scratch[510];
+    if (!dst || size == 0) {
+        return;
     }
-
-    memset(scratch, 0, SECTOR_SIZE);
-    info->dfs_sector0_result = (int)DFS_ReadSector(0, scratch, 0, 1);
-    if (info->dfs_sector0_result == 0) {
-        info->sector0_signature = ((int)scratch[511] << 8) | (int)scratch[510];
-        pstart = DFS_GetPtnStart(0, scratch, 0, &pactive, &ptype, &psize);
-        if (pstart != DFS_ERRMISC) {
-            info->partition_start = (int)pstart;
-            info->partition_active = (int)pactive;
-            info->partition_type = (int)ptype;
-            info->partition_size = (int)psize;
-            info->volinfo_result = (int)DFS_GetVolInfo(0, scratch, pstart, &__vi);
-            if (info->volinfo_result == DFS_OK) {
-                info->filesystem_type = (int)__vi.filesystem;
-            }
+    dst[0] = '\0';
+    if (!entry) {
+        return;
+    }
+    for (i = 0; i < 11 && j + 1 < (int)size; ++i) {
+        uint8_t ch = (uint8_t)entry->name[i];
+        if (ch >= 32 && ch <= 126) {
+            dst[j++] = (char)ch;
+        } else {
+            dst[j++] = '.';
         }
     }
+    dst[j] = '\0';
 }
+
+static void p2_fs_info_append_root_sample(berry_p2_fs_info *info,
+    const DIRENT *entry,
+    int scanned)
+{
+    char name[16];
+    char item[32];
+    size_t used;
+
+    if (!info || !entry || scanned >= 10) {
+        return;
+    }
+    p2_fs_info_copy_raw_dir_name(name, sizeof(name), entry);
+    snprintf(item, sizeof(item), "%s%s:%02X:%02X",
+        info->root_sample[0] ? ";" : "",
+        name,
+        (unsigned int)((uint8_t)entry->attr),
+        (unsigned int)((uint8_t)entry->name[0]));
+    used = strlen(info->root_sample);
+    if (used + strlen(item) < sizeof(info->root_sample)) {
+        strcat(info->root_sample, item);
+    }
+}
+#endif
+
+#if BE_P2_ENABLE_SD_DIAGNOSTICS
+static void p2_fs_info_capture_volinfo(berry_p2_fs_info *info)
+{
+    if (!info || !p2_fs_mounted) {
+        return;
+    }
+    info->vol_startsector = (int)__vi.startsector;
+    info->vol_secperclus = (int)__vi.secperclus;
+    info->vol_reservedsecs = (int)__vi.reservedsecs;
+    info->vol_secperfat = (int)__vi.secperfat;
+    info->vol_fat1 = (int)__vi.fat1;
+    info->vol_rootdir = (int)__vi.rootdir;
+    info->vol_dataarea = (int)__vi.dataarea;
+    info->vol_numsecs = (int)__vi.numsecs;
+    info->vol_rootentries = (int)__vi.rootentries;
+    info->vol_numclusters = (int)__vi.numclusters;
+    if (__vi.filesystem == FAT32) {
+        info->vol_root_sector = (int)(__vi.dataarea + ((__vi.rootdir - 2u) * __vi.secperclus));
+    } else {
+        info->vol_root_sector = (int)__vi.rootdir;
+    }
+}
+#endif
 
 static int p2_fs_sector_signature(const uint8_t *scratch)
 {
     return ((int)scratch[511] << 8) | (int)scratch[510];
 }
 
+static uint32_t p2_fs_le32(const uint8_t *p)
+{
+    return (uint32_t)p[0]
+        | ((uint32_t)p[1] << 8)
+        | ((uint32_t)p[2] << 16)
+        | ((uint32_t)p[3] << 24);
+}
+
+static int p2_fs_partition_type_is_fat(uint8_t type)
+{
+    switch (type) {
+    case 0x01: /* FAT12 */
+    case 0x04: /* FAT16 < 32M */
+    case 0x06: /* FAT16 */
+    case 0x0B: /* FAT32 CHS */
+    case 0x0C: /* FAT32 LBA */
+    case 0x0E: /* FAT16 LBA */
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static int p2_fs_sector_looks_fat_boot(const uint8_t *sector)
+{
+    if (!sector) {
+        return 0;
+    }
+    if (p2_fs_sector_signature(sector) != 0xAA55) {
+        return 0;
+    }
+    if (sector[0] != 0xEB && sector[0] != 0xE9) {
+        return 0;
+    }
+    if (!memcmp(sector + 54, "FAT", 3)) {
+        return 1;
+    }
+    if (!memcmp(sector + 82, "FAT", 3)) {
+        return 1;
+    }
+    return 0;
+}
+
+static int p2_fs_dfs_read_retry(uint8_t unit, uint8_t *buffer, uint32_t sector, uint32_t count)
+{
+    int result = -1;
+    int tries;
+
+    for (tries = 0; tries < 2; ++tries) {
+        result = (int)DFS_ReadSector(unit, buffer, sector, count);
+        if (result == 0) {
+            return 0;
+        }
+        _waitms(2);
+    }
+    return result;
+}
+
 static int p2_fs_mount_start(uint32_t start, berry_p2_fs_info *info)
 {
+    uint8_t *scratch = p2_mount_scratch_get();
     int result;
 
-    memset(p2_mount_scratch, 0, sizeof(p2_mount_scratch));
-    result = (int)DFS_ReadSector(0, p2_mount_scratch, start, 1);
-    if (result != 0 || p2_fs_sector_signature(p2_mount_scratch) != 0xAA55) {
+    if (!scratch) {
         return -1;
     }
 
-    result = (int)DFS_GetVolInfo(0, p2_mount_scratch, start, &__vi);
+    memset(scratch, 0, SECTOR_SIZE);
+    result = p2_fs_dfs_read_retry(0, scratch, start, 1);
+    if (result != 0) {
+        return P2_FS_MOUNT_IO_ERROR;
+    }
+    if (p2_fs_sector_signature(scratch) != 0xAA55) {
+        return -1;
+    }
+    if (!p2_fs_sector_looks_fat_boot(scratch)) {
+        return -1;
+    }
+
+    result = (int)DFS_GetVolInfo(0, scratch, start, &__vi);
     if (info) {
         info->partition_start = (int)start;
         info->volinfo_result = result;
@@ -596,18 +795,107 @@ static int p2_fs_mount_start(uint32_t start, berry_p2_fs_info *info)
     p2_fs_mounted = 1;
     if (info) {
         info->mount_result = 0;
+#if BE_P2_ENABLE_SD_DIAGNOSTICS
+        p2_fs_info_capture_volinfo(info);
+#endif
     }
     return 0;
+}
+
+static int p2_fs_mount_mbr(berry_p2_fs_info *info)
+{
+    uint8_t *scratch = p2_mount_scratch_get();
+    int result;
+    int i;
+    int best = -1;
+    uint32_t best_start = 0;
+    uint32_t best_size = 0;
+    uint8_t best_type = 0;
+    uint8_t best_active = 0;
+
+    if (!scratch) {
+        return -1;
+    }
+
+    memset(scratch, 0, SECTOR_SIZE);
+    result = p2_fs_dfs_read_retry(0, scratch, 0u, 1);
+    if (info) {
+        info->dfs_sector0_result = result;
+    }
+    if (result != 0) {
+        return P2_FS_MOUNT_IO_ERROR;
+    }
+    if (p2_fs_sector_signature(scratch) != 0xAA55) {
+        return -1;
+    }
+
+    /*
+     * If sector 0 is a superfloppy FAT boot sector, use it directly.  If it is
+     * an MBR, prefer the active FAT partition, otherwise the first FAT
+     * partition.  This keeps freshly reformatted cards from accidentally
+     * mounting a stale old FAT boot sector at a common offset like 2048.
+     */
+    if (p2_fs_sector_looks_fat_boot(scratch)) {
+        if (info) {
+            info->partition_type = 0;
+            info->partition_active = 0;
+            info->partition_start = 0;
+            info->partition_size = -1;
+        }
+        return p2_fs_mount_start(0u, info);
+    }
+
+    for (i = 0; i < 4; ++i) {
+        const uint8_t *entry = scratch + 446 + (i * 16);
+        uint8_t active = entry[0];
+        uint8_t type = entry[4];
+        uint32_t start = p2_fs_le32(entry + 8);
+        uint32_t size = p2_fs_le32(entry + 12);
+
+        if (!p2_fs_partition_type_is_fat(type) || start == 0 || size == 0) {
+            continue;
+        }
+        if (best < 0 || active == 0x80) {
+            best = i;
+            best_start = start;
+            best_size = size;
+            best_type = type;
+            best_active = active;
+            if (active == 0x80) {
+                break;
+            }
+        }
+    }
+
+    if (best < 0) {
+        return -1;
+    }
+    if (info) {
+        info->partition_type = (int)best_type;
+        info->partition_active = (int)best_active;
+        info->partition_start = (int)best_start;
+        info->partition_size = (int)best_size;
+    }
+    return p2_fs_mount_start(best_start, info);
 }
 
 static int p2_fs_mount_fallback(berry_p2_fs_info *info)
 {
     static const uint32_t candidates[] = {
-        2048u,
-        8192u,
-        32768u,
+        0u,
+        1u,
+        32u,
         63u,
-        1u
+        128u,
+        256u,
+        512u,
+        1024u,
+        2048u,
+        4096u,
+        8192u,
+        16384u,
+        32768u,
+        65536u
     };
     size_t i;
 
@@ -626,22 +914,24 @@ static int p2_fs_mount_fallback(berry_p2_fs_info *info)
 
 static int p2_fs_mount_core(berry_p2_fs_info *info)
 {
-    uint8_t pactive = 0;
-    uint8_t ptype = 0;
-    uint32_t psize = 0;
-    uint32_t pstart;
-    int result;
-
     if (p2_fs_mounted) {
         if (info) {
             info->mount_result = 0;
             info->filesystem_type = (int)__vi.filesystem;
+#if BE_P2_ENABLE_SD_DIAGNOSTICS
+            p2_fs_info_capture_volinfo(info);
+#endif
         }
         return 0;
     }
 
     if (!p2_sd_bus_prepared) {
-        p2_prepare_sd_bus();
+#if defined(__BERRY_P2_DIRECT_SD_IO)
+        p2_sd_bus_prepared = 1;
+#else
+        p2_release_sd_bus_from_current_cog();
+        p2_sd_bus_prepared = 1;
+#endif
     }
     if (!p2_sd_initialized && p2_fs_init_sd() != 0) {
         if (info) {
@@ -650,99 +940,48 @@ static int p2_fs_mount_core(berry_p2_fs_info *info)
         return -1;
     }
 
-    if (info) {
-        p2_fs_trace("raw sector0 begin");
+    {
+        int mbr_result = p2_fs_mount_mbr(info);
+        if (mbr_result == 0) {
+            return 0;
+        }
+        if (mbr_result == P2_FS_MOUNT_IO_ERROR) {
+            if (info) {
+                info->mount_result = -1;
+            }
+            return -1;
+        }
     }
-    memset(p2_mount_scratch, 0, sizeof(p2_mount_scratch));
-    result = (int)sd_sectread((char *)p2_mount_scratch, 0);
+
     if (info) {
-        info->raw_sector0_result = result;
+        p2_fs_trace("fallback begin");
+    }
+    return p2_fs_mount_fallback(info);
+}
+
+static int p2_fs_mount_retry(berry_p2_fs_info *info)
+{
+    int result = -1;
+    int tries;
+
+    for (tries = 0; tries < 2; ++tries) {
+        result = p2_fs_mount_core(info);
         if (result == 0) {
-            info->sector0_byte0 = (int)p2_mount_scratch[0];
-            info->sector0_byte1 = (int)p2_mount_scratch[1];
-            info->sector0_byte2 = (int)p2_mount_scratch[2];
-            info->sector0_byte3 = (int)p2_mount_scratch[3];
-            info->sector0_sig0 = (int)p2_mount_scratch[510];
-            info->sector0_sig1 = (int)p2_mount_scratch[511];
-            info->sector0_signature = p2_fs_sector_signature(p2_mount_scratch);
+            return 0;
         }
-        p2_fs_trace("raw sector0 done");
-    }
-    if (result != 0) {
-        if (info) {
-            info->mount_result = -1;
-        }
-        return -1;
+        p2_fs_mounted = 0;
+        __pstart = (uint32_t)-1;
+        p2_sd_initialized = 0;
+#if defined(__BERRY_P2_DIRECT_SD_IO)
+        p2_sd_bus_prepared = 0;
+#endif
+        _waitms(50);
     }
 
     if (info) {
-        p2_fs_trace("dfs sector0 begin");
+        info->mount_result = result;
     }
-    memset(p2_mount_scratch, 0, sizeof(p2_mount_scratch));
-    result = (int)DFS_ReadSector(0, p2_mount_scratch, 0, 1);
-    if (info) {
-        info->dfs_sector0_result = result;
-        if (result == 0) {
-            info->sector0_signature = p2_fs_sector_signature(p2_mount_scratch);
-        }
-        p2_fs_trace("dfs sector0 done");
-    }
-    if (result != 0) {
-        if (info) {
-            info->mount_result = -1;
-        }
-        return -1;
-    }
-
-    if (p2_fs_sector_signature(p2_mount_scratch) != 0xAA55) {
-        if (info) {
-            p2_fs_trace("fallback begin");
-        }
-        return p2_fs_mount_fallback(info);
-    }
-
-    if (info) {
-        p2_fs_trace("partition begin");
-    }
-    pstart = DFS_GetPtnStart(0, p2_mount_scratch, 0, &pactive, &ptype, &psize);
-    if (info) {
-        p2_fs_trace("partition done");
-    }
-    if (pstart == DFS_ERRMISC) {
-        if (info) {
-            p2_fs_trace("fallback begin");
-        }
-        return p2_fs_mount_fallback(info);
-    }
-
-    __pstart = pstart;
-    if (info) {
-        info->partition_start = (int)pstart;
-        info->partition_active = (int)pactive;
-        info->partition_type = (int)ptype;
-        info->partition_size = (int)psize;
-        p2_fs_trace("volinfo begin");
-    }
-    result = (int)DFS_GetVolInfo(0, p2_mount_scratch, pstart, &__vi);
-    if (info) {
-        info->volinfo_result = result;
-        if (result == DFS_OK) {
-            info->filesystem_type = (int)__vi.filesystem;
-        }
-        p2_fs_trace("volinfo done");
-    }
-    if (result != DFS_OK) {
-        if (info) {
-            p2_fs_trace("fallback begin");
-        }
-        return p2_fs_mount_fallback(info);
-    }
-
-    p2_fs_mounted = 1;
-    if (info) {
-        info->mount_result = 0;
-    }
-    return 0;
+    return result;
 }
 
 static int p2_fs_ensure_mounted(void)
@@ -753,12 +992,8 @@ static int p2_fs_ensure_mounted(void)
          * allocates another sector buffer; doing the same work with a static
          * scratch buffer avoids a silent overflow on the P2 Hub image.
          */
-        if (p2_fs_mount_core(NULL) != 0) {
-            (void)p2_fs_init_sd();
-            _waitms(50);
-            if (p2_fs_mount_core(NULL) != 0) {
-                return -1;
-            }
+        if (p2_fs_mount_retry(NULL) != 0) {
+            return -1;
         }
     }
     return 0;
@@ -794,18 +1029,10 @@ void p2_fs_info(const char *path, int write_probe, berry_p2_fs_info *info)
     }
 
     if (!p2_fs_mounted) {
-        p2_fs_trace("mount 1 begin");
-        info->mount_result = p2_fs_mount_core(info);
-        p2_fs_trace("mount 1 done");
-        if (info->mount_result != 0) {
-            p2_fs_trace("sd init begin");
-            info->sd_init_result = p2_fs_init_sd();
-            p2_fs_trace("sd init done");
-            _waitms(50);
-            p2_fs_trace("mount 2 begin");
-            info->mount_result = p2_fs_mount_core(info);
-            p2_fs_trace("mount 2 done");
-        }
+        p2_fs_trace("mount retry begin");
+        info->mount_result = p2_fs_mount_retry(info);
+        p2_decode_sd_service(info);
+        p2_fs_trace("mount retry done");
         if (info->mount_result == 0) {
             info->mounted = 1;
         }
@@ -813,9 +1040,6 @@ void p2_fs_info(const char *path, int write_probe, berry_p2_fs_info *info)
         info->sd_init_result = 0;
         info->mount_result = 0;
         info->filesystem_type = (int)__vi.filesystem;
-        p2_fs_trace("sector0 probe begin");
-        p2_fs_probe_sector0(info, scratch);
-        p2_fs_trace("sector0 probe done");
     }
     info->mounted = p2_fs_mounted ? 1 : 0;
     if (info->mount_result != 0) {
@@ -835,6 +1059,26 @@ void p2_fs_info(const char *path, int write_probe, berry_p2_fs_info *info)
         info->root_first_result = (int)result;
         while (result == DFS_OK && scanned < 64) {
             uint8_t first = (uint8_t)entry.name[0];
+#if BE_P2_ENABLE_SD_DIAGNOSTICS
+            if (scanned == 0) {
+                info->root_first_byte = (int)first;
+                info->root_first_attr = (int)entry.attr;
+                p2_fs_info_copy_raw_dir_name(info->root_first_name, sizeof(info->root_first_name), &entry);
+            }
+            p2_fs_info_append_root_sample(info, &entry, scanned);
+            if (first == 0) {
+                ++info->root_zero_entry_count;
+            }
+            if (first == 0xE5) {
+                ++info->root_deleted_entry_count;
+            }
+            if ((entry.attr & ATTR_LONG_NAME) == ATTR_LONG_NAME) {
+                ++info->root_lfn_entry_count;
+            }
+            if (entry.attr & ATTR_HIDDEN) {
+                ++info->root_hidden_entry_count;
+            }
+#endif
             if (first != 0 && first != 0xE5
                 && (entry.attr & (ATTR_VOLUME_ID | ATTR_HIDDEN | 0xC0)) == 0) {
                 ++info->root_entry_count;
@@ -870,29 +1114,35 @@ void p2_fs_info(const char *path, int write_probe, berry_p2_fs_info *info)
         return;
     }
 
-    (void)DFS_UnlinkFile(&__vi, (uint8_t *)info->fs_path, scratch);
+    p2_fs_trace("create file begin");
     info->create_file_result = (int)DFS_OpenFile(&__vi,
         (uint8_t *)info->fs_path, DFS_WRITE, scratch, &fileinfo);
+    p2_fs_trace("create file done");
     if (info->create_file_result != DFS_OK) {
         return;
     }
 
     count = 0;
+    p2_fs_trace("write file begin");
     info->write_file_result = (int)DFS_WriteFile(&fileinfo, scratch,
         (uint8_t *)"ok", &count, 2);
+    p2_fs_trace("write file done");
     info->write_count = (int)count;
 
     count = 0;
     memset(readback, 0, sizeof(readback));
+    p2_fs_trace("readback open begin");
     info->read_file_result = (int)DFS_OpenFile(&__vi,
         (uint8_t *)info->fs_path, DFS_READ, scratch, &fileinfo);
+    p2_fs_trace("readback open done");
     if (info->read_file_result == DFS_OK) {
+        p2_fs_trace("readback read begin");
         info->read_file_result = (int)DFS_ReadFile(&fileinfo, scratch,
             (uint8_t *)readback, &count, 2);
+        p2_fs_trace("readback read done");
         info->read_count = (int)count;
         strncpy(info->read_value, readback, sizeof(info->read_value) - 1u);
     }
-    info->unlink_file_result = (int)DFS_UnlinkFile(&__vi, (uint8_t *)info->fs_path, scratch);
 }
 
 static int p2_path_push_segment(char *dst, size_t *length, const char *segment, size_t seglen)
@@ -1190,6 +1440,15 @@ static int serial_read_escape_key(void)
     }
 }
 
+static void p2_repl_idle_hook(int idle)
+{
+#if BE_P2_PROFILE != BE_P2_PROFILE_MINIMAL
+    p2_closure_cog_repl_idle(idle);
+#else
+    (void)idle;
+#endif
+}
+
 static char *serial_readline(char *buffer, size_t size, const char *prompt)
 {
     int pos = 0;
@@ -1197,6 +1456,7 @@ static char *serial_readline(char *buffer, size_t size, const char *prompt)
     int limit = (int)size;
     const int echo_input = 1;
     int history_age = -1;
+    int repl_vm_reclaimed = 0;
     char draft[256];
 
     if (!buffer || limit <= 0) {
@@ -1218,6 +1478,11 @@ static char *serial_readline(char *buffer, size_t size, const char *prompt)
                 continue;
             }
             p2_swallow_newline = 0;
+        }
+
+        if (prompt != NULL && !repl_vm_reclaimed) {
+            p2_repl_idle_hook(0);
+            repl_vm_reclaimed = 1;
         }
 
         if (ch == 27) {
@@ -1348,13 +1613,17 @@ BERRY_API char *be_readstring(char *buffer, size_t size)
 char *p2_readline(const char *prompt)
 {
     static char line[256];
+    char *result;
 
     if (p2_prompt_needs_cr) {
         p2_smartserial_tx('\r');
         p2_prompt_needs_cr = 0;
     }
     p2_serial_puts(map_prompt(prompt));
-    return serial_readline(line, sizeof(line), map_prompt(prompt));
+    p2_repl_idle_hook(1);
+    result = serial_readline(line, sizeof(line), map_prompt(prompt));
+    p2_repl_idle_hook(0);
+    return result;
 }
 
 void p2_freeline(char *line)
@@ -1365,6 +1634,11 @@ void p2_freeline(char *line)
 void p2_clear_exit_request(void)
 {
     p2_exit_requested = 0;
+}
+
+void p2_request_exit(void)
+{
+    p2_exit_requested = 1;
 }
 
 int p2_take_exit_request(void)
@@ -1385,9 +1659,11 @@ void *be_fopen(const char *filename, const char *modes)
     int append;
     int allow_write;
 
+    p2_fs_trace("fopen begin");
     if (p2_fs_ensure_mounted() != 0
         || p2_resolve_path(filename, path, sizeof(path)) != 0
         || p2_open_mode(modes, &mode, &truncate_existing, &append) != 0) {
+        p2_fs_trace("fopen preflight failed");
         return NULL;
     }
     fs_path = p2_catalina_fs_path(path);
@@ -1395,29 +1671,46 @@ void *be_fopen(const char *filename, const char *modes)
 
     handle = p2_file_alloc();
     if (!handle) {
+        p2_fs_trace("fopen alloc failed");
         return NULL;
     }
     if (truncate_existing) {
-        DFS_UnlinkFile(&__vi, (uint8_t *)fs_path, handle->scratch);
+        p2_fs_trace("fopen truncate lookup begin");
+        if (DFS_OpenFile(&__vi, (uint8_t *)fs_path, DFS_READ, handle->scratch, &handle->info) == DFS_OK) {
+            p2_fs_trace("fopen truncate unlink begin");
+            DFS_UnlinkFile(&__vi, (uint8_t *)fs_path, handle->scratch);
+            p2_fs_trace("fopen truncate unlink done");
+        }
+        p2_fs_trace("fopen truncate lookup done");
     }
+    p2_fs_trace("fopen dfs open begin");
     if (p2_open_fileinfo(fs_path, mode, handle->scratch, &handle->info) != 0) {
+        p2_fs_trace("fopen dfs open failed");
         if (allow_write && DFS_OpenFile(&__vi, (uint8_t *)fs_path, DFS_READ, handle->scratch, &handle->info) == DFS_OK) {
             /* accept the create as successful and reuse the handle */
+            p2_fs_trace("fopen fallback read accepted");
         } else {
             p2_file_free(handle);
+            p2_fs_trace("fopen failed");
             return NULL;
         }
     }
+    p2_fs_trace("fopen dfs open done");
     if (append) {
+        p2_fs_trace("fopen append seek begin");
         DFS_Seek(&handle->info, handle->info.filelen, handle->scratch);
+        p2_fs_trace("fopen append seek done");
     } else if (truncate_existing && allow_write && handle->info.filelen > 0) {
         /*
          * If Catalina reported a false failure after recreating the file,
          * re-opening read-only can leave the old size cached in the handle.
          * Force the logical position back to the start for Berry semantics.
          */
+        p2_fs_trace("fopen truncate seek begin");
         DFS_Seek(&handle->info, 0, handle->scratch);
+        p2_fs_trace("fopen truncate seek done");
     }
+    p2_fs_trace("fopen done");
     return handle;
 #else
     (void)filename;

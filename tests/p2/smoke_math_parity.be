@@ -1,0 +1,116 @@
+print("P2_SMOKE_BEGIN math_parity")
+
+import math
+import json
+
+def expect_error(f, expected)
+    var caught = false
+    try
+        f()
+    except .. as e, m
+        caught = true
+        assert(e == expected)
+    end
+    assert(caught)
+end
+
+assert(str(math.nan) == "nan")
+assert(str(math.inf) == "inf")
+assert(str(-math.inf) == "-inf")
+assert(math.isnan(math.nan))
+assert(math.isnan(math.nan + 1))
+assert(!math.isnan(0))
+assert(!math.isnan(math.inf))
+assert(math.nan != math.nan)
+
+assert(math.isinf(math.inf))
+assert(math.isinf(math.inf + 1))
+assert(math.isinf(-math.inf))
+assert(!math.isinf(0))
+assert(!math.isinf(math.nan))
+assert(math.inf == math.inf)
+assert(math.inf == math.inf + 1)
+
+var accel = math.accel_info()
+assert(type(accel) == "map")
+assert(type(accel["cordic"]) == "bool")
+assert(type(accel["backend"]) == "string")
+assert(type(accel["reason"]) == "string")
+assert(accel["sin"] == accel["cordic"])
+assert(accel["cos"] == accel["cordic"])
+assert(accel["atan2"] == accel["cordic"])
+assert(accel["sqrt"] == false)
+
+assert(json.dump({"v": math.nan}) == '{"v":null}')
+assert(json.dump({"v": math.inf}) == '{"v":null}')
+assert(json.dump({"v": -math.inf}) == '{"v":null}')
+assert(json.dump({"v": 3.5}) == '{"v":3.5}')
+
+assert(math.round() == 0)
+assert(math.round(3.2) == 3)
+assert(math.round(3.5) == 4)
+assert(math.round(0.5) == 1)
+assert(math.round(-3.2) == -3)
+assert(math.round(-3.5) == -4)
+assert(math.round(-0.5) == -1)
+
+assert(math.min() == nil)
+assert(math.min(0) == 0)
+assert(math.min(0, 2, 10, 56) == 0)
+assert(math.min(4, 2, -10, 3) == -10)
+assert(type(math.min(4, 2, -10, 3)) == "int")
+assert(type(math.min(4, 2, -10.0, 3)) == "real")
+assert(math.min(-3.4, 5) == -3.4)
+expect_error(def () return math.min(4, nil) end, "type_error")
+expect_error(def () return math.min(4, "", 4.5) end, "type_error")
+
+assert(math.max() == nil)
+assert(math.max(0) == 0)
+assert(math.max(0, 2, 10, 56) == 56)
+assert(math.max(4, 2, -10, 3) == 4)
+assert(type(math.max(4, 2, 10, 3)) == "int")
+assert(type(math.max(4, 2, 10.0, 3)) == "real")
+assert(math.max(-3.4, 5) == 5)
+expect_error(def () return math.max(4, nil) end, "type_error")
+expect_error(def () return math.max(4, "", 4.5) end, "type_error")
+
+assert(math.abs(-42) == 42)
+assert(math.abs(42) == 42)
+assert(math.abs(-3.5) == 3.5)
+assert(type(math.abs(-3.5)) == "real")
+
+assert(math.abs() == 0)
+assert(math.ceil() == 0)
+assert(math.floor() == 0)
+assert(math.sqrt() == 0)
+assert(math.exp() == 0)
+assert(math.log() == 0)
+assert(math.log10() == 0)
+assert(math.pow() == 0)
+assert(math.sin() == 0)
+assert(math.cos() == 0)
+assert(math.tan() == 0)
+assert(math.asin() == 0)
+assert(math.acos() == 0)
+assert(math.atan() == 0)
+assert(math.atan2() == 0)
+assert(math.sinh() == 0)
+assert(math.cosh() == 0)
+assert(math.tanh() == 0)
+assert(math.deg() == 0)
+assert(math.rad() == 0)
+
+math.srand(42)
+var r1 = math.rand()
+assert(type(r1) == "int")
+math.srand(42)
+var r2 = math.rand()
+assert(r1 == r2)
+assert(math.srand() == nil)
+
+assert(math.pi > 3.141)
+assert(math.pi < 3.142)
+assert(math.imax > 0)
+assert(math.imin < 0)
+
+print("P2_SMOKE_PASS math_parity")
