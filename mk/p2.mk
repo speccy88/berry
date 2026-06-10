@@ -204,6 +204,8 @@ P2_OVERRIDE_SRCS := \
 	$(P2_OVERRIDES_DIR)/be_modtab_p2.c \
 	$(P2_OVERRIDES_DIR)/be_libs_p2.c \
 	$(P2_OVERRIDES_DIR)/be_introspectlib_p2.c \
+	$(P2_OVERRIDES_DIR)/be_math_stringlib_p2.c \
+	$(P2_OVERRIDES_DIR)/be_tasklib_p2.c \
 	$(P2_OVERRIDES_DIR)/libc_compat.c
 ifneq ($(P2_PROFILE),minimal)
 ifeq ($(P2_PROFILE),sddiag)
@@ -260,6 +262,7 @@ P2_FRONT_OPTIONAL_SRCS := \
 	$(P2_PATCH_DIR)/be_exec_p2.c \
 	$(P2_PATCH_DIR)/be_save_stacktrace_p2.c
 P2_CORE_SRCS := \
+	src/be_bytecode.c \
 	src/be_func.c \
 	src/be_gc.c \
 	src/be_lexer.c \

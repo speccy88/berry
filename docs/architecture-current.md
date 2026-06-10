@@ -60,11 +60,11 @@ Current verified capabilities include:
 | Area | Current state |
 | --- | --- |
 | REPL | Basic arithmetic, strings, maps, lists, ranges, blank input handling, and interactive quit are live-verified on the Catalina P2 path. |
-| Standard modules | `string`, SD-backed `math`, `json`, `bytes`, `os`, and SD-backed file operations have current or prior live P2 coverage. Full standard-library coverage is still open. |
-| SD modules | P2 VMs add `/modules` as a default lazy import root. `/modules/math.be` is visible on SD and imports successfully on both RAM-loaded `edge32` and standalone XMM flash images. `modules/p2mem.be` reports heap/module/cache diagnostics over the current SD/PSRAM source-cache model. |
+| Standard modules | `string`, native `math`, `task`, `json`, `bytes`, `os`, and SD-backed file operations have current or prior live P2 coverage. Full standard-library coverage is still open. |
+| SD modules | P2 VMs add `/modules` as a default lazy import root for optional libraries. `math`, `string`, and `task` are native firmware modules; `modules/p2mem.be` reports heap/module/cache diagnostics over the current SD/PSRAM source-cache model. |
 | Native P2 helpers | Current helpers are exposed as flat `p2.*` functions, including clock/counter, wait, cog, pin, CORDIC, smart pin, status, heap, PSRAM, and filesystem diagnostics. Grouped aliases now exist for the low-level `p2.clock`, `p2.cog`, `p2.lock`, `p2.pin`, `p2.cordic`, `p2.math`, `p2.rng`, and raw `p2.smart` API. High-level wrappers are still open. |
 | Bus modules | Native `i2c` and `spi` modules are live on the current Catalina path. `i2c` has BMP180 smoke coverage. `spi` initialization and basic read/transfer surfaces are present, with full target validation still dependent on known attached hardware. |
-| RTOS/task experiments | `rtos` provides locks, queues, flags, timers, callbacks, debug helpers, channels, and process-style child-VM launch. `modules/taskspin.be` provides a Spin2-shaped 32-slot cooperative task API from SD. Safe closure transfer is still guarded. |
+| Cooperative tasking and cogs | Native `task` provides cooperative scheduler primitives in the current VM. `p2.cog` provides native cog-backed handles for supported functions such as blinkers. The older `rtos` and `taskspin` experiments are retired. |
 
 ## Current SD loader behavior
 
@@ -81,7 +81,7 @@ Current verified SD facts for the P2 Edge 32 MB board:
 | `p2.fs_info("/")["mount_result_name"]` | `ok` |
 | `p2.fs_info("/")["partition_start"]` | `2048` |
 | `p2.fs_info("/")["volinfo_result_name"]` | `ok` |
-| SD-backed math smoke | `import math; print(math.sqrt(81))` prints `9` |
+| Native math smoke | `import math; print(math.sqrt(81))` prints `9` without SD module files |
 
 Catalina `_mount()` is avoided on the Berry direct-SD path because it adds stack pressure in the near-full Hub image. Berry performs partition/volume setup with one static sector buffer and updates Catalina `__pstart` and `__vi`.
 
@@ -98,7 +98,7 @@ There are two PSRAM models in play:
 
 Important constraint: the COMPACT PSRAM API is block-transfer storage, not ordinary pointer-addressable memory. Do not place arbitrary live Berry GC objects in that block window without a proven handle/cache representation.
 
-The current verified standalone XMM flash image boots from SPI flash after a roughly 25-30 second copy delay, reports `Berry heap in PSRAM`, and exposes a `15728640` byte main heap.
+The current verified standalone XMM flash image boots through the sparse fast loader, shows PSRAM and VM startup spinners, reports `Berry heap in PSRAM`, and exposes a `15728640` byte main heap.
 
 ## Current Propeller 2 hardware bindings
 
@@ -113,7 +113,7 @@ Current exposed helpers include:
 | Pins | `p2.pin_output()`, `p2.pin_write()`, `p2.pin_read()`, plus grouped `p2.pin.*` aliases. |
 | Smart pins | `p2.smartpin_write_mode()`, `p2.smartpin_query()`, `p2.smartpin_start()`, plus grouped raw `p2.smart.*` aliases. |
 | CORDIC | `p2.rotxy()`, `p2.xypol()`, `p2.polxy()`, plus grouped `p2.cordic.*` aliases. |
-| Locks/IPC | Current public lock/channel/timer/event helpers are primarily under `rtos`. |
+| Locks/IPC | Current cooperative primitives are primarily under native `task`; low-level lock and cog helpers remain under `p2.*` / `p2.cog`. |
 | Diagnostics | `p2.status_info()`, `p2.debug_snapshot()`, `p2.heap_info()`, `p2.psram_info()`, `p2.fs_info()`, `p2mem.stats()`, `p2mem.modules()`, `p2mem.cache()`, `p2mem.gc()`, `p2mem.evict()` |
 
 Known board pin constraints are enforced more narrowly than early revisions:

@@ -24,7 +24,7 @@ For the experimental huge-heap PSRAM/XMM profile on the P2 Edge 32 MB board:
 make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
 ```
 
-Standalone XMM flash boot currently takes about `25-30` seconds before the Berry prompt. The current verified `p2.status()` output reports `15728640 B` main heap and `Berry heap in PSRAM`.
+Standalone XMM flash boot now shows an `Initializing PSRAM` spinner followed by a VM startup spinner. Current captures reach the prompt about 3 seconds after attach, and `p2.status()` reports a `15728640 B` main heap with `Berry heap in PSRAM`.
 
 ## First smoke checks
 
@@ -35,11 +35,11 @@ print(6 * 7)
 import p2
 print(p2.status_info())
 print(p2.fs_info("/"))
-import math
-print(math.sqrt(81))
+import libstore
+print(libstore.info())
 ```
 
-Expected current Edge32 SD result: `p2.fs_info("/")["mount_result_name"] == "ok"` and `math.sqrt(81) == 9` after `/modules/math.be` has been provisioned.
+Expected current Edge32 SD result: `p2.fs_info("/")["mount_result_name"] == "ok"`. `math.sqrt(81) == 9` is available from the native firmware `math` module; optional SD libraries such as `libstore` still load from `/modules`.
 
 ## Repeatable test entrypoints
 

@@ -93,10 +93,8 @@ Short term:
   the SD-first model, discovering available `.be` modules, and exposing PSRAM
   source-cache hooks including `cache_all()` that follow the safe block window
   on both edge32 and XMM-style profiles
-- `taskspin.be` is the first Spin2-shaped concurrency library kept entirely on
-  SD: it adds cooperative `TASKSPIN`/`TASKNEXT`/`TASKSTOP`/`TASKHALT`/
-  `TASKCONT`/`TASKCHK`/`TASKID`/`TASKHLT` behavior, stack-address metadata, and
-  per-task diagnostics without increasing the firmware image
+- the native `task` module is the current cooperative scheduler surface; the
+  older SD-loaded `taskspin.be` experiment is retired
 - keep the image under the 512 KiB Hub RAM guard for `p2-ram`
 
 Medium term:
@@ -121,63 +119,34 @@ Long term:
 
 ## Multicog VM Model
 
-The current worker system proves that a second Berry VM can run on another cog,
-but it is not the desired end-user API.
-
-Target API direction:
+The active API is intentionally split into two safe layers:
 
 ```berry
-import rtos
+import p2
+import task
 
-def blink(pin)
-  while true
-    p2.pin_toggle(pin)
-    rtos.sleep_ms(250)
-  end
+def blink(pin, ms)
+  p2.toggle(pin)
+  return task.sleep(ms)
 end
 
-source = "import p2\nimport rtos\n" +
-         "def blink(pin)\n" +
-         "  while true\n" +
-         "    p2.pin_toggle(pin)\n" +
-         "    rtos.sleep_ms(250)\n" +
-         "  end\n" +
-         "end\n"
+h = task.start(blink, 38, 250)
+task.run(100)
+task.stop(h)
 
-cog = rtos.run(source, blink, 56) # current safe source-backed function shape
-cog = rtos.newcog(blink, 56)      # loaded child-VM function-object shape
-cog = rtos.newcog("blink", 56)    # explicit loaded child-VM name shape
+ch = p2.cog.spawn(p2.cog.blinker, 38, 250)
+print(p2.cog.info(ch))
+p2.cog.stop(ch)
 ```
-
-Design constraints:
-
-- a closure cannot simply share main-VM pointers with another cog
-- launch must either serialize/recompile the function in the target VM or prove
-  that the captured state is immutable and transferable
-- cross-cog communication should use explicit channels, queues, events, locks,
-  and shared byte buffers rather than accidental shared VM objects
-- errors from child VMs must be inspectable from the parent VM
-- each cog needs an explicit heap/stack budget
 
 Current implementation:
 
-- `rtos.newcog("name", ...int_args)` is the preferred process-facing API and is
-  backed by the existing second Berry VM/cog.
-- `rtos.run(source, task, ...int_args)` loads source into the process VM and
-  launches a named task in one step. `task` may be a string name or a named
-  zero-upvalue function object.
-- `rtos.newcog(function, ...)` now supports named zero-upvalue Berry functions
-  by launching the same function name in the child VM after that source is
-  loaded there. This is the first safe function-object launch path; it does not
-  share closure/proto/upvalue pointers across VMs.
-- captured closures still raise a deliberate runtime error until function
-  transfer semantics are implemented.
-- `rtos.process_info()` reports the backend model and current limits so examples
-  and tests can detect when true closure launch, multiple process slots, or a
-  cog-local task switcher become available.
-- `/modules/taskspin.be` provides a same-VM cooperative task scheduler with
-  32 task slots and Spin2-style names. It is useful now for cooperative state
-  machines and also gives the future cog-local task switcher an API target.
+- `task` runs cooperative same-VM tasks one scheduler step at a time.
+- `p2.cog` returns native handles for supported cog-backed work such as blinkers.
+- arbitrary Berry closure execution in an isolated cog remains future work until
+  VM, heap, GC, capture, error, and ownership semantics are proven safe.
+- the older `rtos` worker API and SD `taskspin` facade are retired from the
+  active P2 surface.
 
 ## Feature Coverage Plan
 
@@ -185,14 +154,14 @@ Current implementation:
 2. Keep `edge32` flash/RAM builds working.
 3. Keep expanding the non-destructive `tests/p2/` smoke suite for:
    - arithmetic, strings, lists, maps, ranges
-   - `string`, `math`, `json`, `bytes`, `os`, `p2`, `rtos`, `i2c`, `spi`, `spin2`
+   - `string`, `math`, `task`, `json`, `bytes`, `os`, `p2`, `i2c`, `spi`, `spin2`
    - SD read/write/list/remove
    - PSRAM `p2.psram_info()` and `p2.psram_test()` on edge32
 4. Expand base-Berry library coverage module by module, measuring image size
    and heap pressure after each step.
 5. Add a lazy loader for SD/PSRAM-backed modules.
-6. Grow `rtos.newcog(function, ...)` into a real closure/function launch design once
-   function transfer semantics are understood.
+6. Grow `p2.cog.spawn(function, ...)` beyond native-backed handle shapes only
+   after function transfer and isolated-VM semantics are understood.
 7. Continue Spin2/PASM loading until Berry can orchestrate native P2 modules
    as first-class companions.
 

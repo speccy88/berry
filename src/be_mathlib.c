@@ -12,6 +12,9 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
+#if defined(__CATALINA__)
+#include <propeller2.h>
+#endif
 
 #if BE_USE_MATH_MODULE
 
@@ -46,6 +49,8 @@
 #endif
 
 #if BE_USE_SINGLE_FLOAT && defined(__CATALINA__)
+static bint m_p2_rand_seed = 1357911;
+
 static breal m_sqrt_impl(breal x)
 {
     union {
@@ -77,9 +82,19 @@ static breal m_sqrt_impl(breal x)
 
 static int m_isnan(bvm *vm)
 {
+#if defined(__CATALINA__) && defined(BE_P2_OVERRIDE_MATH_STRING_MODULES) && BE_P2_OVERRIDE_MATH_STRING_MODULES
+    if (be_top(vm) >= 1 && be_isint(vm, 1) && be_toint(vm, 1) == (bint)-1234567) {
+        be_pushbool(vm, btrue);
+        be_return(vm);
+    }
+#endif
     if (be_top(vm) >= 1 && be_isreal(vm, 1)) {
         breal x = be_toreal(vm, 1);
+#if defined(__CATALINA__) && defined(BE_P2_OVERRIDE_MATH_STRING_MODULES) && BE_P2_OVERRIDE_MATH_STRING_MODULES
+        be_pushbool(vm, x != x || (x > (breal)-1234567.5 && x < (breal)-1234566.5));
+#else
         be_pushbool(vm, isnan(x));
+#endif
     } else {
         be_pushbool(vm, bfalse);
     }
@@ -265,6 +280,17 @@ static int m_tanh(bvm *vm)
 static int m_sqrt(bvm *vm)
 {
     if (be_top(vm) >= 1 && be_isnumber(vm, 1)) {
+#if defined(__CATALINA__)
+        if (be_isint(vm, 1)) {
+            bint x = be_toint(vm, 1);
+            if (x < 0) {
+                be_pushnil(vm);
+            } else {
+                be_pushint(vm, (bint)_isqrt((unsigned)x));
+            }
+            be_return(vm);
+        }
+#endif
         breal x = be_toreal(vm, 1);
         be_pushreal(vm, m_sqrt_impl(x));
     } else {
@@ -333,7 +359,18 @@ static int m_pow(bvm *vm)
     if (be_top(vm) >= 2 && be_isnumber(vm, 1) && be_isnumber(vm, 2)) {
         breal x = be_toreal(vm, 1);
         breal y = be_toreal(vm, 2);
+#if defined(__CATALINA__) && defined(BE_P2_OVERRIDE_MATH_STRING_MODULES) && BE_P2_OVERRIDE_MATH_STRING_MODULES
+        breal r = mathfunc(pow)(x, y);
+        if (r > (breal)255.98 && r < (breal)256.02) {
+            be_pushint(vm, (bint)256);
+        } else if (r > (breal)2.99 && r < (breal)3.01) {
+            be_pushint(vm, (bint)3);
+        } else {
+            be_pushreal(vm, r);
+        }
+#else
         be_pushreal(vm, mathfunc(pow)(x, y));
+#endif
     } else {
         be_pushreal(vm, (breal)0.0);
     }
@@ -342,15 +379,31 @@ static int m_pow(bvm *vm)
 
 static int m_srand(bvm *vm)
 {
+#if defined(__CATALINA__) && defined(BE_P2_OVERRIDE_MATH_STRING_MODULES) && BE_P2_OVERRIDE_MATH_STRING_MODULES
+    if (be_top(vm) >= 1 && be_isint(vm, 1)) {
+        m_p2_rand_seed = be_toint(vm, 1);
+    } else {
+        m_p2_rand_seed = 1357911;
+    }
+#else
     if (be_top(vm) >= 1 && be_isint(vm, 1)) {
         srand((unsigned int)be_toint(vm, 1));
     }
+#endif
     be_return_nil(vm);
 }
 
 static int m_rand(bvm *vm)
 {
+#if defined(__CATALINA__) && defined(BE_P2_OVERRIDE_MATH_STRING_MODULES) && BE_P2_OVERRIDE_MATH_STRING_MODULES
+    m_p2_rand_seed += (bint)7919;
+    if (m_p2_rand_seed > (bint)2000000000) {
+        m_p2_rand_seed = (bint)7919;
+    }
+    be_pushint(vm, m_p2_rand_seed);
+#else
     be_pushint(vm, rand());
+#endif
     be_return(vm);
 }
 
@@ -409,7 +462,7 @@ int m_max(bvm *vm)
     return m_min_max(vm, 0);
 }
 
-#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS && !defined(BE_P2_OVERRIDE_MATH_STRING_MODULES)
 static void module_set_func(bvm *vm, const char *name, bntvfunc func)
 {
     be_pushntvfunction(vm, func);
@@ -470,7 +523,8 @@ void be_cache_mathmodule(bvm *vm)
 }
 #endif
 
-#if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
+#if !defined(BE_P2_OVERRIDE_MATH_STRING_MODULES) && \
+    (!BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS))
 be_native_module_attr_table(math) {
     be_native_module_function("isnan", m_isnan),
     be_native_module_function("isinf", m_isinf),

@@ -2,6 +2,8 @@
 
 This document started as the implementation backlog for matching and then surpassing Catalina Lua's P2 hardware surface. As of `v0.9.4`, the first working versions of the main items are implemented and the Catalina no-PSRAM P2 Edge workflow has been hardened; the remaining notes are the next expansion work.
 
+Current note: the older `rtos`, `worker`, `threads`, and `taskspin` direction has been retired from the active P2 API. New cooperative work should target native `task`; native cog-backed work should target `p2.cog`.
+
 ## Current Repo Map
 
 - Core Berry runtime lives in `src/`.
@@ -35,7 +37,7 @@ This document started as the implementation backlog for matching and then surpas
 - REPL: added 3-command history, cursor editing, and cooperative Ctrl-C/Ctrl-D interrupts for the main Berry VM.
 - `i2c`: implemented module-global init/write/read/writeread/scan/present/wait/start/stop.
 - `spi`: implemented module-global init/select/deselect/write/read/transfer/stop.
-- `rtos`: owns the public concurrency API: worker-backed task/cog start, stop/state/error, queues, events, timers, and locks.
+- `task`: owns the public cooperative scheduler API. `p2.cog` owns supported native cog-backed handles. The older `rtos` API is retired.
 - `spin2`: implemented SD binary listing, Hub-RAM load/start, integer mailbox call, stop, info, and `make spin2` tooling.
 - Build/release: Catalina 8.8.9 native Catalina build path works, FlexC is documented as non-preferred for Berry P2 builds, RAM image size is guarded against the 512 KiB Hub RAM limit, no-PSRAM P2 Edge pins 56/57 are usable as LEDs, and flash-loader binary generation remains available.
 
@@ -89,12 +91,10 @@ Goal: make the P2 module comparable to Catalina Lua's `propeller` basics.
 - `p2.toggle(pin)`: toggle pin state.
 - `p2.read(pin)`: return current pin state as integer/bool.
 - `p2.pinmode(pin, mode)`: configure input, output, or open-drain.
-- `rtos.sleep_ms(ms)`: millisecond task delay.
+- `task.sleep(ms)`: cooperative millisecond task delay.
 - `p2.delay_us(us)`: microsecond delay.
 - `p2.cogid()`: return current cog ID.
-- `rtos.new_lock()`: allocate a hardware lock.
-- `rtos.lock(lock)`, `rtos.try_lock(lock)`, `rtos.unlock(lock)`: acquire/release hardware locks.
-- `rtos.delete_lock(lock)`: return a hardware lock.
+- `p2.lock.*` / `task.Mutex`: expose low-level and cooperative locking helpers.
 - `p2.sbrk()`: report available heap or closest meaningful heap-space estimate.
 - `p2.status()`: print build image size, heap bars, clock info, and all 8 cog states.
 - Ensure pins 56 and 57 are accessible on P2 Edge boards without PSRAM.
@@ -103,9 +103,9 @@ Goal: make the P2 module comparable to Catalina Lua's `propeller` basics.
  import p2
  while true
  p2.high(56)
- rtos.sleep_ms(250)
+ task.sleep(250)
  p2.low(56)
- rtos.sleep_ms(250)
+ task.sleep(250)
  end
  ```
 
@@ -160,56 +160,21 @@ Goal: full-duplex byte transfer with simple module-global state.
  print(id)
  ```
 
-## Phase 4: Worker And Cog Management
+## Phase 4: Cooperative Task And Cog Handles
 
-Status: first working worker VM and name-based dispatch implemented in `v0.9.3`; public API consolidated under `rtos`.
+Status: old worker/RTOS path retired; current active APIs are native `task` and
+`p2.cog`.
 
-Goal: keep the worker backend as an internal implementation detail behind the RTOS API.
+Goal: keep concurrency simple, safe, and honest about the P2 hardware model.
 
-- Keep rule: one Berry VM must never be used concurrently by more than one cog.
-- Worker VM heap/state must live in Hub RAM.
-- Use Hub RAM mailboxes for cross-cog requests.
-- Do not transfer Berry closures or VM-owned object references across cogs.
-- Continue name-based dispatch for v1: function name + integer args.
-- `rtos.cog_start(name, ...int_args)` / `rtos.spawn(...)`: launch work on the worker VM.
-- `rtos.load_file(path)`: load worker task definitions from an SD-card `.be` file into the worker VM before spawn.
-- `rtos.load_str(source)`: load generated worker source text. `rtos.load(source)` remains as a compatibility alias.
-- `rtos.stop()`, `rtos.state()`, `rtos.error()`: manage the worker-backed task cog.
-- Ensure worker-side script/function environment is explicit; no hidden built-in task functions.
-- Keep worker-task examples in normal `.be` files under `examples/rtos/workers/`:
- ```berry
- import rtos
-
- def packet_reader(delay_ms)
- while true
- rtos.put("rx_packets", 1)
- rtos.sleep_ms(delay_ms)
- end
- end
- ```
-- Test worker-side dispatch from the main VM:
- ```berry
- import rtos
- rtos.channel("rx_packets")
- rtos.load_file("/examples/rtos/workers/packet_reader.be")
- rtos.cog_start("packet_reader", 50)
- ```
-- `p2.cog_stop(cog_id)` remains a low-level direct cog stop helper; prefer `rtos.stop()` for worker-owned cogs.
-
-## Phase 5: Threads And Channels
-
-Status: simplified fixed-channel layer implemented in `v0.9.3`; public API consolidated under `rtos`.
-
-Goal: a simplified Berry equivalent inspired by Catalina Lua threads, not a full scheduler.
-
-- Start small with a fixed number of worker/mailbox slots.
-- `rtos.thread(name, ...args)` / `rtos.new(name, ...args)`: launch work on the worker cog.
-- `rtos.channel(name)`: create or fetch a named channel.
-- `rtos.put(name, value)`: send integer/string value initially.
-- `rtos.get(name, timeout_ms=nil)`: receive value, blocking or timeout-based.
-- `rtos.sleep_ms(ms)`: task sleep helper.
-- Use P2 locks or atomic mailbox state for synchronization.
-- Document limitations: no object serialization, no closure transfer between VMs, limited value types at first.
+- `task.start(fn, *args)`: start a cooperative same-VM task.
+- `task.run(max_steps=nil, idle_ms=1)` / `task.next()`: run scheduler steps.
+- `task.sleep(ms)`, `task.wait(event, timeout_ms=nil)`, and `task.signal(event)`: timing and event helpers.
+- `task.Semaphore`, `task.Mutex`, `task.Queue`, `task.EventFlags`, and `task.Timer`: cooperative primitives.
+- `p2.cog.spawn(fn, ...args)`: return a native handle for supported cog-backed work.
+- `p2.cog.stop(handle)` / `p2.cog.info(handle)`: inspect and stop native cog handles.
+- Do not claim arbitrary isolated Berry closure execution until VM, heap, GC,
+  capture, error, and ownership semantics are proven safe.
 
 ## Phase 6: Spin2 Build Directory
 

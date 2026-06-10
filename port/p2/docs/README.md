@@ -13,27 +13,19 @@ This directory holds the P2-specific notes that sit closest to the runtime and b
 ## Current Goal
 
 Make Berry feel native on the Propeller 2: keep the REPL stable, expose useful
-hardware modules, and grow the multicog model in small safe layers.
+hardware modules, keep the XMM boot path fast, and provide simple task/cog APIs
+that match what the hardware can safely do today.
 
-- `print()`
-- variable assignment
-- simple arithmetic
-- `for` loops over ranges, lists, and maps
-- `import string`
-- `import math`
-- `import json`
-- `import bytes`
-- `import os`
-- `import p2`
-- `import rtos`
-- `import i2c`
-- `import spi`
-- `import spin2`
-- `import wifi` when `modules/wifi.be` is available on the SD card or module path
+Current active surface:
+
+- core Berry REPL, collections, ranges, closures, and file-backed scripts
+- native `string`, full native `math`, native `task`, `json`, `bytes`, `os`, `p2`, `i2c`, and `spi` modules
 - SD card backed file and directory access through `open()` and `os`
-- reliable serial interaction without prompt drift or blank-line heap loss
+- optional SD libraries under `/modules` for larger source-level helpers
 - tiny REPL line editing with three-command history and arrow-key navigation
-- RTOS-owned second-cog Berry worker jobs through Hub-RAM mailboxes
+- native cooperative scheduling through `task.*`
+- native cog-backed handles through `p2.cog.*` for supported functions such as blinkers
+- retired `rtos`, `worker`, `threads`, and `taskspin` experiments are no longer the active API
 
 Current Catalina status on P2 Edge / latest silicon:
 
@@ -42,9 +34,9 @@ Current Catalina status on P2 Edge / latest silicon:
 - `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` reaches a working REPL on the full-profile image
 - `print()`, assignment, and basic arithmetic are live-verified
 - `for i:0..3`, `for e:list`, `for v:map`, and `for k:map.keys()` are live-verified
-- `import string`, SD-loaded `import math`, `import json`, `import bytes`, and `import os` are live-verified
-- `import p2`, `import rtos`, `import i2c`, and `import spi` are now live-verified; `spin2` source remains archived and is not compiled by default
-- `import rtos` exposes process-style tasks, locks, queues, event flags, timers, deferred callbacks, and debug helpers
+- `import string`, native `import math`, native `import task`, `import json`, `import bytes`, and `import os` are live-verified
+- `import p2`, `import task`, `import i2c`, and `import spi` are now live-verified; `spin2` source remains archived and is not compiled by default
+- `import task` exposes cooperative scheduling, wait/signal, semaphore, mutex, queue, flags, and timer helpers
 - blank Enter presses no longer leak the REPL into an out-of-memory state
 - Up/Down recall the last three REPL commands and Left/Right/Backspace edit the current line
 - `bytes('1122')`, `bytes().fromstring('AB')`, `tohex()`, `asstring()`, `readbytes()`, and range slicing are live-verified
@@ -55,7 +47,7 @@ Current Catalina status on P2 Edge / latest silicon:
 - `p2.status()` prints build size, heap usage bars, clock info, and all 8 cog states
 - `p2.psram_info()` and `p2.psram_test()` are available on the P2 hardware module; on the `edge32` profile they report and smoke-test Catalina PSRAM block access
 - native bus helpers are exposed as `i2c.*` and `spi.*`
-- process-style task/cog startup and queues are exposed as `rtos.*`
+- cooperative scheduling is exposed as `task.*`; native cog-backed handles are exposed as `p2.cog.*`
 - Spin2/PASM binary loading scaffolding is archived behind the opt-in Spin2 build path and is not part of the default image
 - WiFiNINA/AirLift SPI framing scaffolding is available in `modules/wifi.be`; ESP32-C6 firmware detection still needs hardware READY/BUSY bring-up
 
@@ -70,8 +62,8 @@ Current hardware verification examples:
 - `import spi; spi.init(10, 11, 12, 13, 0, 1000)` is live-verified
 - `import os; print(os.listdir('/'))` lists the current SD root after filtering stale/non-printable DOSFS entries
 - `f=open('/BERRYTMP.TXT','w'); f.write('sd ok'); f.close(); print(open('/BERRYTMP.TXT','r').read()); os.remove('/BERRYTMP.TXT')` is live-verified
-- `import rtos; rtos.channel("a"); rtos.put("a",123); print(rtos.get("a", 10))` -> `123`
-- `rtos.load_file("/examples/rtos/workers/counter_task.be"); cog=rtos.newcog("counter_task",7)` starts an explicitly loaded child-VM function on the process cog
+- `import task; print(task.info())` reports the native cooperative scheduler
+- `import p2; h=p2.cog.spawn(p2.cog.blinker, 38, 250); print(p2.cog.info(h)); p2.cog.stop(h)` starts and stops a supported native cog-backed blinker
 - `run_file("/examples/core/qsort.be")` runs a `.be` file from the current VM, including from the REPL
 - `import spin2; print(spin2.path()); print(spin2.list())` -> `/spin2` and `[]` on the current SD-visible path
 
@@ -89,24 +81,28 @@ suite creates and removes only `/P2SMOKE.TXT`; it also verifies lazy library
 imports from `/modules`. The edge32 suite asserts Catalina PSRAM block access
 through `p2.psram_info()` and `p2.psram_test()`.
 
-Child-VM methods are loaded explicitly before `rtos.newcog()`, `rtos.spawn()`,
-or `rtos.cog_start()`:
+Current task/cog examples use the native `task` scheduler for cooperative
+work inside the main Berry VM and `p2.cog` handles for native cog-backed work:
 
 ```berry
-rtos.channel("rx_packets")
-rtos.load_file("/examples/rtos/workers/packet_reader.be")
-rtos.newcog("packet_reader", 50)
-print(rtos.get("rx_packets", 250))
+import p2
+import task
+
+def blink(pin, ms)
+    p2.toggle(pin)
+    return task.sleep(ms)
+end
+
+h38 = task.start(blink, 38, 250)
+h39 = task.start(blink, 39, 700)
+task.run(100)
+
+ch = p2.cog.spawn(p2.cog.blinker, 38, 250)
+print(p2.cog.info(ch))
+p2.cog.stop(ch)
 ```
 
-`rtos.load_file(path)` is the recommended form because the child task stays in a
-normal `.be` file. `rtos.load_str(source)` is still available for generated
-source strings, and `rtos.load(source)` remains as the compatibility alias for
-`rtos.load_str(source)`. Child code runs in its own Berry VM. Direct
-`rtos.newcog(function, ...)` works for named zero-upvalue Berry functions after
-the child VM has loaded a function with the same name; captured closures are
-still rejected until the runtime can safely serialize or recompile function
-state into the target VM.
+The older child-VM `rtos` launch path has been retired from the active API.
 
 Examples:
 
@@ -181,86 +177,10 @@ not available.
 stopped handles remain inspectable until explicitly stopped or reclaimed before
 a later spawn when slots are needed.
 
-## RTOS Module
+## Retired RTOS Module
 
-The `rtos` module is a Berry-friendly concurrency layer over the P2 port's
-verified primitives. It is inspired by small RTOS APIs, but it stays safe for
-the current Catalina COMPACT build: Berry callbacks are dispatched only from
-normal Berry code via `rtos.irq_poll()`, never directly from an interrupt
-service routine.
+The old experimental `rtos` and `taskspin` APIs have been removed from the current P2 path. Use the native `task` module for cooperative scheduling inside the Berry VM, and use `p2.cog` when you want native cog-backed handles such as LED blinkers.
 
-Current limitation: this implementation supports the main VM plus one child
-process VM/cog. The queue, event, timer, and lock objects are shared Hub-RAM
-state and are written so additional child VMs can use the same API once the P2
-heap layer grows multiple process arenas.
-
-Task helpers:
-
-- `rtos.load_file(path)`: load and run a Berry source file in the child VM. Put task functions in that file, then launch them by name.
-- `rtos.load_str(source)`: load Berry source text into the child VM. `rtos.load(source)` is a compatibility alias.
-- `rtos.newcog(name, ...int_args) -> int`: start the process cog if needed and run a loaded child-VM function by name with up to eight integer arguments.
-- `rtos.process(name, ...int_args)`, `rtos.thread(name, ...int_args)`, and `rtos.new(name, ...int_args)`: aliases for `rtos.newcog()`.
-- `rtos.spawn(name, ...int_args) -> int`: compatibility spelling for named child-VM launch.
-- `rtos.cog_start(name, ...int_args) -> int`: alias for `rtos.spawn()`.
-- `rtos.process_info()` / `rtos.task_info()`: inspect the current backend model,
-  child cog, and whether direct closure launch is available.
-- `rtos.stop()`, `rtos.state()`, `rtos.error()`: inspect or stop the process task cog.
-- `rtos.yield()` / `rtos.task_yield()`: cooperative yield.
-- `rtos.sleep_ms(ms)`: sleep the current cog, with Ctrl-C checks on the main VM.
-- `rtos.cog_id() -> int`: current cog number.
-
-Locks:
-
-- `rtos.new_lock() -> int`: allocate one of the P2 hardware semaphore bits.
-- `rtos.lock(id)`, `rtos.try_lock(id) -> bool`, `rtos.unlock(id)`, `rtos.delete_lock(id)`.
-
-Queues:
-
-- `rtos.channel(name) -> string`: create or fetch a fixed queue.
-- `rtos.put(name, value)`: enqueue an integer or short string.
-- `rtos.get(name, timeout_ms=nil) -> value or nil`: wait for a message; `timeout_ms=0` polls once.
-
-Events, timers, and callbacks:
-
-- `rtos.event_set(mask)`, `rtos.event_clear(mask)`, `rtos.event_wait(mask, timeout_ms=nil) -> bool`, `rtos.event_flags() -> int`.
-- `rtos.ticks_per_ms() -> int`, `rtos.delay_ms(ms)`, `rtos.timer_start(ms) -> int`, `rtos.timer_expired(id) -> bool`, `rtos.timer_wait(id)`.
-- `rtos.irq_enable(channel, handler_name)`, `rtos.irq_poll() -> int`, `rtos.irq_disable(channel)`. Channels `0..15` are deferred callback slots; setting event bit `1 << channel` marks that callback pending. Channel `rtos.IRQ_ATN` also polls P2 cog-attention.
-
-Debug helpers:
-
-- `rtos.debug_tasks() -> list`: maps with `cog`, `state`, and `stack_free` keys.
-- `rtos.debug_regs(cog) -> map`: counter and selected current-cog P2 registers. Other cogs are reported as not directly readable from C.
-- `p2.status_info()` / `p2.debug_snapshot()`: structured build, runtime,
-  clock, heap, PSRAM, and cog diagnostics for tests and REPL inspection.
-
-RTOS examples live in `../../../examples/rtos/`:
-
-- `queue_worker_producer.be`: child process cog produces packet IDs into a queue consumed by the main VM.
-- `event_worker_signal.be`: child process cog signals the main VM with an event bit after queueing data.
-- `lock_serial_request.be`: child process cog requests main-cog serial output through a queue guarded by a lock.
-- `timer_worker_heartbeat.be`: child process cog uses RTOS timers to send heartbeat messages.
-- `sleep_ms_worker_blink.be`: child process cog blinks a pin with `rtos.sleep_ms()`.
-- `cog_start_worker_loop.be`: `rtos.cog_start()` launches an explicitly loaded child-VM function.
-- `debug_tasks.be`: inspect cog/task state while a child process task is running.
-- `newcog_process_info.be`: use the new process spelling and inspect backend
-  limits.
-- `load_str_inline.be`: compatibility example for loading generated source strings into the child VM.
-
-Closure-cog examples:
-
-- `examples/cog_closure_blink.be`: pass one Berry blinker closure to two cog
-  handles with different rates for Edge32 LEDs on pins 38 and 39, then stop
-  them later with `p2.cog.stop(handle)`. This exact
-  `spawn(closure, pin, rate_ms)` shape uses the verified native GPIO blinker
-  fast path: the closure is called once during setup and its positive integer
-  return value seeds the native loop so the REPL can inspect and stop both
-  handles later.
-- `port/p2/docs/CLOSURE_COG_REPL_PROOF.md`: exact interactive proof sequence
-  for the p38/p39 two-LED closure-cog test.
-
-Files under `examples/rtos/workers/` are loaded by the main examples with
-`rtos.load_file()`. They intentionally define one worker-side function each so
-the code remains readable and the cross-cog boundary is explicit.
 
 ## SD Library Store
 
@@ -268,7 +188,7 @@ P2 configures `/modules` as a default import root during VM startup. This keeps
 optional Berry libraries on SD and loads them lazily when code imports them,
 without enabling the larger upstream `sys` module just to mutate `sys.path()`.
 
-`modules/math.be` and `modules/taskspin.be` are SD-loaded libraries.
+`math`, `string`, and `task` are native firmware modules. Optional SD libraries such as `libstore.be` remain under `modules/`.
 `modules/libstore.be` reports the current SD-first library-store model:
 
 ```berry
@@ -312,35 +232,15 @@ paths, hashes, mtimes, hit/miss counts, refcounts, and last-used timestamps are
 reported as `nil` or `0` until the runtime starts tracking them.
 
 
-`modules/task.be` is the lower-case cooperative task facade over `taskspin`.
-It provides the current roadmap-shaped API while keeping the implementation
-honest: task closures are cooperative step closures in the current VM, not
-independent stackful Berry VMs.
+The native `task` module is the current cooperative scheduler API. It provides
+fixed-slot cooperative tasks plus `Semaphore`, `Mutex`, `Queue`, `EventFlags`,
+and `Timer` helpers. Tasks run one scheduler step at a time and return helpers
+such as `task.sleep(ms)`, `task.wait(event)`, `task.again`, or `task.done`.
 
-- `task.spin(task_id, closure, *args) -> int`: schedule a closure in a fixed
-  slot or the first free slot when `task_id == -1`; a trailing options map
-  such as `{ "stack": 287 }` records stack metadata for diagnostics.
-- `task.next()`, `task.stop(id)`, `task.halt(id)`, `task.cont(id)`,
-  `task.chk(id)`, `task.id()`, `task.hlt()`, `task.info()`, `task.tasks()`,
-  and `task.task_info(id)` wrap the backed `taskspin` scheduler.
-- A task closure returning `nil`, `task.STOP`, or `false` stops its task;
-  `task.RUN` keeps it runnable and `task.HALT` halts it.
-- `task.info()["all_halted"]` defines the all-halted behavior: there are
-  tasks, but no runnable tasks, so `task.next()` returns `-1` until one is
-  continued or stopped.
-- `task.Semaphore`, `task.Mutex`, `task.Queue`, `task.EventFlags`, and
-  `task.Timer` are cooperative source-level primitives for the current VM.
+The retired `modules/task.be` / `modules/taskspin.be` facade is no longer the
+recommended path. Use `task` for cooperative work and `p2.cog` for supported
+native cog-backed handles.
 
-The still-open scheduler work is explicitly not hidden here: independent
-Berry call stacks/coroutines, true Spin2/PASM task switching, and non-callback
-stackful execution remain future work.
-\n`modules/taskspin.be` is also SD-loaded. It implements a Spin2-shaped
-cooperative task API (`TASKSPIN`, `TASKNEXT`, `TASKSTOP`, `TASKHALT`,
-`TASKCONT`, `TASKCHK`, `TASKID`, and `TASKHLT`) for closure-based state
-machines in the current VM. Task slots keep `stack_address` metadata and expose
-per-task diagnostics, so Berry examples can use the Spin2 vocabulary while the
-lower-level cog-local switcher design matures. This keeps the API experiment
-out of the Hub image.
 
 Reserved-pin note on the current Catalina `P2_EDGE` path:
 

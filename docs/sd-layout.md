@@ -18,11 +18,7 @@ roots and verifies `/modules` still wins.
 /examples/*.be
 ```
 
-If `/berry/main.be` exists, the P2 startup path attempts to run it once after
-the VM is created and before entering the REPL. Missing `/berry/main.be` is
-treated as normal and falls through to `berry>` with no error. A script error
-prints a warning and still falls through to the REPL; `os.exit()` keeps the
-existing clean exit behavior.
+By default, P2 startup goes straight to the REPL after the VM is initialized. The older automatic `/berry/main.be` probe is disabled in normal builds because a missing-file SD lookup added a silent pause before `berry>`. Builds that need an auto-run startup script can opt back in with `BE_P2_RUN_SD_MAIN=1`; in that mode, a script error prints a warning and still falls through to the REPL, while `os.exit()` keeps the existing clean exit behavior.
 
 The SD smoke path provisions `modules/` and `tests/p2/` from the repository to the SD card through the REPL uploader.
 
@@ -79,7 +75,7 @@ The intended import order is:
 3. Configured module paths such as `/modules` and future `/berry/lib`.
 4. Future bytecode cache paths when `.bec` support is implemented.
 
-Current verified behavior covers native modules and `/modules/*.be` lazy source imports. Source-level smoke coverage now exists for native-module-first precedence, current-directory SD imports, `/berry/main.be`, `/berry/lib/*.be`, `/berry/app/*.be`, and `/berry/config/*.json`; hardware execution of that expanded smoke remains part of the next full P2 SD smoke run. `.bec` path detection and deterministic size/hash metadata are staged through `libstore.compiled_path(name)` and `libstore.compiled_stats(name)`. `.bec` sidecar freshness manifests are now staged as `<module>.bec.json`, but `.bec` execution and compile-to-cache emission remain open. Until then, `.be` source is the explicit fallback.
+Current verified behavior covers native modules and `/modules/*.be` lazy source imports. Source-level smoke coverage exists for native-module-first precedence, current-directory SD imports, optional `/berry/main.be` auto-run builds, `/berry/lib/*.be`, `/berry/app/*.be`, and `/berry/config/*.json`; hardware execution of that expanded smoke remains part of the next full P2 SD smoke run. `.bec` path detection and deterministic size/hash metadata are staged through `libstore.compiled_path(name)` and `libstore.compiled_stats(name)`. `.bec` sidecar freshness manifests are now staged as `<module>.bec.json`, but `.bec` execution and compile-to-cache emission remain open. Until then, `.be` source is the explicit fallback.
 
 `libstore.path_add(path)`, `libstore.path_remove(path)`, and
 `libstore.path_list()` configure the SD source paths used by `libstore`

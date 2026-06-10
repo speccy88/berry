@@ -65,7 +65,7 @@ Verified standalone XMM flash:
 make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
 ```
 
-- Boots from SPI flash after the expected roughly 25-30 second copy delay.
+- Boots from SPI flash through the fast sparse XMM loader; current captures reach the REPL in about 3 seconds after attach and show both PSRAM and VM startup spinners.
 - Current image: `1225376` bytes.
 - Banner reports `[xmm profile]`, `Berry heap external`, `XMM 16777216 B`, and
  `block 16777216 B @ 16777216`.
@@ -97,7 +97,7 @@ Meaning:
 - The SD card answers raw SPI and has a valid FAT boot sector at sector `2048`.
 - Sector 0 is not a valid MBR/FAT boot sector, so Berry uses its common-start
  fallback and mounts at sector `2048`.
-- `/modules/math.be` is visible and imports from SD.
+- `math` is now native firmware; `/modules/math.be` is no longer required for `import math`.
 
 ## Problems Found
 

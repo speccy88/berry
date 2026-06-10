@@ -58,7 +58,33 @@ static int str_strncasecmp(const char *s1, const char *s2, size_t n)
         - tolower(*(const unsigned char *)s2);
 }
 
-typedef bint (*str_opfunc)(const char*, const char*, bint, bint);
+typedef bint (*str_opfunc)(const char*, const char*, bint, bint, bint);
+
+static const char *str_find_bounded(const char *s, size_t slen, const char *p, size_t plen)
+{
+    size_t i, j;
+
+    if (plen == 0) {
+        return s;
+    }
+    if (plen > slen) {
+        return NULL;
+    }
+    for (i = 0; i <= slen - plen; ++i) {
+        if (s[i] != p[0]) {
+            continue;
+        }
+        for (j = 1; j < plen; ++j) {
+            if (s[i + j] != p[j]) {
+                break;
+            }
+        }
+        if (j == plen) {
+            return s + i;
+        }
+    }
+    return NULL;
+}
 
 bstring* be_strcat(bvm *vm, bstring *s1, bstring *s2)
 {
@@ -841,6 +867,9 @@ static bint str_operation(bvm *vm, str_opfunc func, bint error)
         /* get begin and end indexes (may use default values) */
         bint begin = top >= 3 && be_isint(vm, 3) ? be_toint(vm, 3) : 0;
         bint end = top >= 4 && be_isint(vm, 4) ? be_toint(vm, 4) : len1;
+        if (end > len1) {
+            end = len1;
+        }
         /* basic range check:
          * 1. begin position must be greater than 0 and
          *    less than the length of the source string.
@@ -849,15 +878,16 @@ static bint str_operation(bvm *vm, str_opfunc func, bint error)
          **/
         if (begin >= 0 && begin <= len1 && end - begin >= len2) {
             /* call the operation function */
-            return func(s1, s2, begin, end - len2);
+            return func(s1, s2, begin, end - len2, len2);
         }
     }
     return error; /* returns the default error value */
 }
 
-static bint _sfind(const char *s1, const char *s2, bint begin, bint end)
+static bint _sfind(const char *s1, const char *s2, bint begin, bint end, bint len2)
 {
-    const char *res = strstr(s1 + begin, s2);
+    size_t slen = (size_t)(end - begin + len2);
+    const char *res = str_find_bounded(s1 + begin, slen, s2, (size_t)len2);
     if (res) {
         bint pos = (bint)(res - s1);
         return pos <= end ? pos : -1;
@@ -871,13 +901,19 @@ static int str_find(bvm *vm)
     be_return(vm);
 }
 
-static bint _scount(const char *s1, const char *s2, bint begin, bint end)
+static bint _scount(const char *s1, const char *s2, bint begin, bint end, bint len2)
 {
     bint count = 0;
-    const char *res = s1 + begin, *send = s1 + end;
-    while ((res = strstr(res, s2)) != NULL && res <= send) {
+    const char *res = s1 + begin;
+    const char *send = s1 + end;
+
+    while (res <= send) {
+        const char *match = str_find_bounded(res, (size_t)(send - res + len2), s2, (size_t)len2);
+        if (match == NULL || match > send) {
+            break;
+        }
         count += 1;
-        res += 1;
+        res = match + 1;
     }
     return count;
 }
@@ -899,10 +935,11 @@ static bbool _split_string(bvm *vm, int top)
         bint count = len2 /* match when the pattern string is not empty */
             ? top >= 3 && be_isint(vm, 3) ? be_toint(vm, 3) : len1
             : 0; /* cannot match empty pattern string */
-        while (count-- && (res = strstr(s1, s2)) != NULL) {
+        while (count-- && (res = str_find_bounded(s1, (size_t)len1, s2, (size_t)len2)) != NULL) {
             be_pushnstring(vm, s1, res - s1);
             be_data_push(vm, -2);
             be_pop(vm, 1);
+            len1 -= (int)(res - s1) + len2;
             s1 = res + len2;
         }
         be_pushstring(vm, s1);
@@ -1140,7 +1177,7 @@ static int str_endswith(bvm *vm)
     be_return_nil(vm);
 }
 
-#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS && !defined(BE_P2_OVERRIDE_MATH_STRING_MODULES)
 static void string_module_set_func(bvm *vm, const char *name, bntvfunc func)
 {
     be_pushntvfunction(vm, func);
@@ -1171,7 +1208,8 @@ void be_cache_stringmodule(bvm *vm)
 }
 #endif
 
-#if BE_USE_STRING_MODULE && (!BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS))
+#if BE_USE_STRING_MODULE && !defined(BE_P2_OVERRIDE_MATH_STRING_MODULES) && \
+    (!BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS))
 be_native_module_attr_table(string) {
     be_native_module_function("format", be_str_format),
     be_native_module_function("count", str_count),

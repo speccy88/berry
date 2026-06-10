@@ -1,159 +1,99 @@
 <p align="center">
-  <h1 align="center">Berry with Propeller 2 Port</h1>
-  <p align="center">Berry remains the main project here, with the Propeller 2 port isolated for maintainable upstream sync.</p>
+  <h1 align="center">Berry for the Propeller 2</h1>
+  <p align="center">A tiny embedded scripting VM, now learning to talk pins, cogs, SD cards, PSRAM, and P2 hardware from a friendly REPL.</p>
 </p>
 
-## Overview
+## What is this?
 
-This repository stays clone-first for users who want Berry plus the Propeller 2 port.
+This repository is Berry plus an active Propeller 2 port. Berry stays recognizably
+Berry: a small dynamically typed language with a one-pass compiler and a
+register-based VM. The P2 port adds the board-facing pieces that make it useful
+on real hardware: serial REPL, GPIO, counters, cogs, SD files, native modules,
+PSRAM/XMM profiles, and a growing set of hardware helpers.
 
-- Upstream Berry source layout stays largely intact under `src/`, `default/`, `modules/`, `examples/`, and `tests/`.
-- Propeller 2 runtime code, overrides, probes, and status notes now live under `port/p2/`.
-- P2 build logic lives under `mk/`.
-- Tool bootstrap and loader helpers live under `tools/p2/`.
-- Downloaded toolchains belong in `.third_party_cache/` or in user-provided paths, not in git.
+The goal is simple: power up a Propeller 2, get a `berry>` prompt, and make the
+chip do interesting things without rebuilding firmware for every experiment.
 
-The long-term maintenance rule is simple: keep the fork easy to use, while keeping Berry upstream merges manageable.
+## Current P2 State, In Plain English
 
+Berry on P2 is already useful for bring-up, experiments, and small embedded
+programs.
 
-## P2 Documentation Map
+You can:
 
-The active Propeller 2 docs are split by purpose:
+- use an interactive serial REPL with history and basic line editing
+- run core Berry language features: functions, closures, classes, maps, lists,
+  ranges, loops, strings, numbers, exceptions, and modules
+- import native firmware modules such as `p2`, `task`, `string`, full `math`,
+  `json`, `bytes`, `os`, `i2c`, and `spi`
+- toggle pins, read counters, wait on hardware time, inspect cogs, query heap,
+  and print a useful `p2.status()` report
+- read and write files on SD with `open()` and `os`
+- lazily import optional `.be` libraries from `/modules` on SD
+- use P2 CORDIC-backed math helpers where appropriate through native `math`
+- run cooperative same-VM tasks with the native `task` scheduler
+- launch supported native cog-backed work through `p2.cog` handles, including
+  stoppable LED blinkers
+- use P2 Edge 32 MB PSRAM either as block-transfer storage or, in the XMM
+  profile, as Catalina external heap storage
+- boot the XMM flash image with visible startup progress: an `Initializing PSRAM`
+  spinner, a Berry VM startup spinner, and a current hardware capture around
+  3 seconds from attach to `berry>`
 
-- [`docs/getting-started.md`](./docs/getting-started.md): first build, flash, and smoke path.
-- [`docs/building.md`](./docs/building.md): Catalina profiles, board/profile flags, and P2 trace/debug/unsafe-ASM flag policy.
-- [`docs/board-support.md`](./docs/board-support.md): supported board profiles and reserved pins.
-- [`docs/sd-layout.md`](./docs/sd-layout.md): current `/modules` layout and target `/berry/...` layout.
-- [`docs/psram-loader.md`](./docs/psram-loader.md): Hub/PSRAM/XMM cache model.
-- [`docs/berry-compatibility.md`](./docs/berry-compatibility.md): Berry compatibility coverage and bare-metal host-like limitations.
-- [`docs/p2-api.md`](./docs/p2-api.md): current `p2` API snapshot.
-- [`docs/smartpins.md`](./docs/smartpins.md): raw smart-pin API and remaining mode-family roadmap.
-- [`docs/cogs.md`](./docs/cogs.md): current cog/child-VM model and closure-transfer policy.
-- [`docs/tasks.md`](./docs/tasks.md): cooperative `task` module.
-- [`docs/pasm.md`](./docs/pasm.md): safe `p2.asm` facade and future PASM ABI rules.
-- [`docs/debugging.md`](./docs/debugging.md): query-based diagnostics and debug flag policy.
-- [`docs/performance.md`](./docs/performance.md): benchmark plan and reporting format.
-- [`docs/hardware-tests.md`](./docs/hardware-tests.md): pins, wiring, resistors, board variants, skips, and runnable hardware-test entrypoints.
-- [`docs/limitations.md`](./docs/limitations.md): explicit unsupported/open areas.
+The current concurrency split is intentional:
 
-## Quick Start
+- use `task` for cooperative work inside the current Berry VM
+- use `p2.cog` for supported native cog-backed handles
+- arbitrary Berry bytecode closures in isolated cogs are still future work
+- older `rtos`, `worker`, `threads`, and `taskspin` experiments are retired from
+  the active API
 
-Standard Berry host build:
+## Five-Minute Hardware Taste
 
-```sh
-make
-./berry
+At the REPL:
+
+```berry
+import p2
+
+print("hello from cog", p2.cogid())
+print("clock", p2.clock_freq())
+p2.status()
 ```
 
-P2 build with Catalina:
-
-```sh
-make p2 TOOLCHAIN=catalina
-make p2-minimal
-make p2-full
-make p2-run TOOLCHAIN=catalina PORT=COM5
-```
-
-Catalina is the preferred and verified P2 toolchain for compiling Berry. The
-old FlexC targets are still present for historical/debugging work, but do not
-use FlexC for normal Berry P2 builds unless you are deliberately investigating
-that toolchain.
-
-P2 Edge flash install with Catalina:
-
-```sh
-make configure TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
-make p2-flash
-tio -b 230400 /dev/cu.usbserial-P97cvdxp
-```
-
-For the verified P2 Edge Rev D path, use boot switches `FLASH=ON, △=OFF, ▽=OFF`. Catalina flash uses a generated `flshload.t` programmer image; do not flash `build/p2/catalina/full/berry_p2.binary` directly with `loadp2 -SPI`.
-
-The default Catalina P2 Edge profile targets the no-PSRAM board, where pins `56` and `57` are LEDs. Do not add `-lpsram` for that board; Catalina's PSRAM profile uses pin `57` as chip-select. Keep `CATALINA_MODEL=COMPACT` for `make p2-ram`; `NATIVE` builds are too large for the Hub RAM load path.
-
-P2 build profiles are selected with `P2_PROFILE` or with convenience targets:
-
-- `make p2-minimal` builds the smallest practical REPL profile: core language, standard classes, and `string`, with filesystem, JSON, math, OS, P2 hardware modules, and `prop2_*` globals disabled. The saved image uses the freed Hub RAM for the main Berry heap.
-- `make p2-full` builds the current no-PSRAM P2 Edge profile with the existing modules enabled.
-- `make p2-edge32` builds the P2 Edge 32 MB RAM profile with Catalina `-lpsram`. This enables PSRAM block-transfer support and reserves pins `40..57`; Berry's object heap remains in Hub RAM because COMPACT PSRAM is not ordinary C pointer-addressable storage.
-- `make p2-xmm` builds the experimental Catalina `LARGE`/XMM profile for the P2 Edge 32 MB RAM board. It uses the lower `16 MiB` PSRAM window for Catalina XMM/external heap storage and leaves the upper `16 MiB` as an explicit block/cache window.
-
-P2 app images are checked against the 512 KiB Hub RAM limit. Oversized builds fail before `berry_p2.binary` is published.
-
-Windows PowerShell example:
-
-```powershell
-make p2 TOOLCHAIN=catalina CATALINA_DIR=C:\tools\catalina
-make p2-run TOOLCHAIN=catalina PORT=COM6 LOADP2=C:\tools\flexprop\bin\loadp2.exe
-```
-
-## Release Binaries
-
-Catalina releases for the Propeller 2 now ship two binaries:
-
-- `berry_p2.binary`
-  The normal Berry application image. Use this for RAM loading with `make p2-run` or `make p2-ram`.
-- `berry_p2_flash_loader.binary`
-  A Catalina flash-programmer wrapper image generated from `berry_p2.binary`. Use this for `make p2-flash` and `make p2-flash-run`.
-
-RAM vs flash on Catalina:
-
-- RAM load:
-
-```sh
-make p2 TOOLCHAIN=catalina
-make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp
-```
-
-- Flash install:
-
-```sh
-make p2 TOOLCHAIN=catalina
-make p2-flash TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp
-tio -b 230400 /dev/cu.usbserial-P97cvdxp
-```
-
-Important Catalina flash note:
-
-- `berry_p2.binary` is the Berry app image
-- `berry_p2_flash_loader.binary` is the temporary flash-programmer wrapper
-- do not flash `berry_p2.binary` directly with `loadp2 -SPI` on the Catalina path
-
-## P2 Feature Tour
-
-This fork is meant to be usable, not just buildable. Each release should describe both the newly added features and the already working features so the release notes double as a mini tutorial.
-
-The current release notes live here:
-
-- [`docs/releases/v0.9.5.md`](./docs/releases/v0.9.5.md)
-
-### New Features
-
-#### `p2` Hardware Module
-
-The `p2` module is the friendly hardware namespace for day-to-day P2 work: GPIO, low-level counter/timing helpers, cog ID/state inspection, heap reporting, and a small tone helper.
-The P2 REPL includes a tiny line editor: Up/Down cycles through the last three
-commands, Left/Right moves within the line, and Backspace/Delete edit recalled
-commands before Enter.
+Blink a no-PSRAM P2 Edge LED on pin `56`:
 
 ```berry
 import p2
 
 p2.pinmode(56, p2.OUTPUT)
-p2.high(56)
-p2.waitms(250)
-p2.low(56)
-print(p2.cogid())
-print(p2.sbrk())
-p2.status()
+for i: 0..5
+    p2.toggle(56)
+    p2.waitms(150)
+end
 ```
 
-#### `p2.cog` Function-Entity Task Handles
+Blink the two P2 Edge 32 MB LEDs on pins `38` and `39` using cooperative tasks:
 
-The `p2.cog` namespace adds a small handle-based task API for launching
-supported native work from a Berry function entity. On the P2 Edge 32 MB/XMM
-profile, the onboard LEDs are pins `38` and `39`, so a blinker can be declared
-as a normal Berry function and spawned twice with different rates:
+```berry
+import p2
+import task
+
+def blink(pin, ms)
+    p2.toggle(pin)
+    return task.sleep(ms)
+end
+
+h38 = task.start(blink, 38, 250)
+h39 = task.start(blink, 39, 700)
+
+task.run(100)
+
+task.stop(h38)
+task.stop(h39)
+```
+
+Launch supported native blinker work on other cogs and keep handles you can stop
+later:
 
 ```berry
 import p2
@@ -172,76 +112,543 @@ p2.cog.stop(h38)
 p2.cog.stop(h39)
 ```
 
-Use `p2.cog.spawn(function, ...args)` to pass the function entity, not
-`function(...)`, which would call it immediately on the current cog. The setup
-function currently returns a native task descriptor such as
-`p2.cog.blinker(pin, ms)`, and `spawn()` returns an integer handle that can be
-inspected or stopped later.
+`p2.cog.spawn(blinker, 38, 250)` passes the function entity. Do not write
+`blinker(38, 250)` unless you mean to call the function immediately on the REPL
+cog.
 
-Useful helpers include:
+## Quick Start
 
-- `p2.cog.blinker(pin, ms)`: create a native blinker task descriptor.
-- `p2.cog.spawn(function, ...args)`: call the setup function and launch the resulting supported task on another cog.
-- `p2.cog.spawn(task_descriptor)`: launch an explicit descriptor directly.
-- `p2.cog.stop(handle)`: stop a spawned task handle.
-- `p2.cog.info(handle)` / `p2.cog.info()`: inspect one handle or all active handles.
-- `p2.cog.capabilities()`: report supported task-handle features for the current build.
+Standard host Berry build:
 
-The current blinker path runs the actual toggle loop in a native/PASM backend
-after the Berry setup function returns its descriptor. Arbitrary Berry bytecode
-closure execution inside another isolated cog VM remains future work.
+```sh
+make
+./berry
+```
 
-#### `task` Cooperative Scheduler
+P2 build with Catalina:
 
-The `task` module is the friendly cooperative scheduler API for work that should
-share the current Berry VM inside one cog. A task function runs one step, then
-returns what the scheduler should do next:
+```sh
+make p2 TOOLCHAIN=catalina
+make p2-minimal
+make p2-full
+make p2-run TOOLCHAIN=catalina PORT=COM5
+```
+
+Catalina is the preferred and verified P2 toolchain. FlexC targets remain in the
+tree for historical/debugging work, but normal P2 validation should use Catalina.
+
+P2 Edge flash install with Catalina:
+
+```sh
+make configure TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
+make p2-flash
+tio -b 230400 /dev/cu.usbserial-P97cvdxp
+```
+
+For the verified P2 Edge Rev D path, use boot switches
+`FLASH=ON, triangle=OFF, inverted-triangle=OFF`. Catalina flash uses a generated
+`flshload.t` programmer image; do not flash `build/p2/catalina/full/berry_p2.binary`
+directly with `loadp2 -SPI`.
+
+The default Catalina P2 Edge profile targets the no-PSRAM board, where pins `56`
+and `57` are LEDs. Do not add `-lpsram` for that board; Catalina's PSRAM profile
+uses pin `57` as chip-select. Keep `CATALINA_MODEL=COMPACT` for `make p2-ram`;
+`NATIVE` builds are too large for the Hub RAM load path.
+
+## Build Profiles
+
+P2 build profiles are selected with `P2_PROFILE` or with convenience targets:
+
+- `make p2-minimal` builds the smallest practical REPL profile: core language,
+  standard classes, and `string`, with filesystem, JSON, math, OS, P2 hardware
+  modules, and `prop2_*` globals disabled.
+- `make p2-full` builds the current no-PSRAM P2 Edge profile with the active
+  modules enabled.
+- `make p2-edge32` builds the P2 Edge 32 MB RAM profile with Catalina `-lpsram`.
+  This enables PSRAM block-transfer support and reserves pins `40..57`; Berry's
+  object heap remains in Hub RAM because COMPACT PSRAM is not ordinary C
+  pointer-addressable storage.
+- `make p2-xmm` builds the Catalina `LARGE`/XMM profile for the P2 Edge 32 MB
+  RAM board. It uses the lower `16 MiB` PSRAM window for Catalina XMM/external
+  heap storage and leaves the upper `16 MiB` as an explicit block/cache window.
+- `make p2-xmm-flash` creates a sparse standalone flash image with visible PSRAM
+  initialization. The current hardware-verified boot reaches `berry>` in about
+  3 seconds after attach.
+
+XMM flash startup skips the optional `/berry/main.be` auto-run probe by default
+so REPL boot does not block on SD lookup. Builds that need startup scripts can
+opt back in with `BE_P2_RUN_SD_MAIN=1`.
+
+P2 app images are checked against the 512 KiB Hub RAM limit. Oversized builds
+fail before `berry_p2.binary` is published.
+
+Windows PowerShell example:
+
+```powershell
+make p2 TOOLCHAIN=catalina CATALINA_DIR=C:\tools\catalina
+make p2-run TOOLCHAIN=catalina PORT=COM6 LOADP2=C:\tools\flexprop\bin\loadp2.exe
+```
+
+## Release Binaries
+
+Catalina releases for the Propeller 2 ship two normal binaries:
+
+- `berry_p2.binary`: the normal Berry application image for RAM loading with
+  `make p2-run` or `make p2-ram`
+- `berry_p2_flash_loader.binary`: a Catalina flash-programmer wrapper generated
+  from `berry_p2.binary` for `make p2-flash` and `make p2-flash-run`
+
+Important Catalina flash note:
+
+- `berry_p2.binary` is the Berry app image
+- `berry_p2_flash_loader.binary` is the temporary flash-programmer wrapper
+- do not flash `berry_p2.binary` directly with `loadp2 -SPI` on the Catalina path
+
+RAM load:
+
+```sh
+make p2 TOOLCHAIN=catalina
+make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp
+```
+
+Flash install:
+
+```sh
+make p2 TOOLCHAIN=catalina
+make p2-flash TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp
+tio -b 230400 /dev/cu.usbserial-P97cvdxp
+```
+
+## Berry in 20 Minutes, Propeller Style
+
+This section is inspired by the official Berry "in 20 minutes" tutorial, but the
+examples live on a Propeller bench instead of greeting random people. Try these
+at the REPL or paste them as small `.be` files.
+
+### Hello, Board
+
+```berry
+print("Hello, Propeller 2")
+print("Berry is running on cog", 0)
+```
+
+Berry compiles each command to bytecode and runs it in the VM. You do not need
+semicolons; whitespace is enough to separate statements.
+
+### Calculator at the Workbench
+
+```berry
+print(180_000_000 / 1_000_000)  # MHz when the board is at 180 MHz
+print(3 / 2)                    # integer division
+print(3.0 / 2)                  # floating point division
+
+import math
+print(math.sqrt(81))
+print(math.sin(math.pi / 2))
+```
+
+On P2, `math` is native firmware and uses CORDIC-backed helpers where it makes
+sense.
+
+### Functions and Function Entities
+
+```berry
+def pulse(pin, ms)
+    import p2
+    p2.high(pin)
+    p2.waitms(ms)
+    p2.low(pin)
+end
+
+pulse(56, 100)
+print(pulse)       # the function entity itself
+```
+
+Calling a function uses parentheses. Passing a function to another API, such as
+`task.start()` or `p2.cog.spawn()`, uses the function entity without calling it
+first.
+
+```berry
+import task
+h = task.start(pulse, 56, 50)
+task.run(1)
+task.stop(h)
+```
+
+### Nil Means No Signal
+
+`nil` is Berry's "nothing here" value. It is useful for optional reads and
+missing map entries.
+
+```berry
+last_packet = nil
+if last_packet == nil
+    print("radio quiet")
+end
+
+def maybe_pin_name(pin)
+    if pin == 56 return "LED1" end
+    if pin == 57 return "LED2" end
+    return nil
+end
+
+print(maybe_pin_name(56))
+print(maybe_pin_name(12))
+```
+
+### Strings and Formatting
+
+```berry
+import string
+import p2
+
+pin = 56
+state = p2.pin_read(pin)
+print(string.format("pin %d reads %d", pin, state))
+print(string.toupper("propeller"))
+```
+
+Strings are ordinary Berry values, so you can store them in maps, lists, files,
+or task arguments.
+
+### Lists: Pin Banks and Scan Results
+
+```berry
+leds = [38, 39]
+leds.push(56)
+
+for pin: leds
+    print("configured pin", pin)
+end
+```
+
+Lists are handy for batches of pins, device addresses, filenames, and test
+steps.
+
+### Maps: Board Configuration
+
+```berry
+board = {
+    "name": "P2 Edge 32MB",
+    "leds": [38, 39],
+    "sd": [58, 59, 60, 61],
+    "serial": [62, 63]
+}
+
+print(board["name"])
+print(board.find("wifi", "not fitted"))
+```
+
+Maps store key/value pairs. Use `find(key, default)` when a missing key should
+not be an error.
+
+### If, Loops, and Ranges
+
+```berry
+import p2
+
+pin = 56
+p2.pinmode(pin, p2.OUTPUT)
+
+for i: 0..9
+    if i % 2 == 0
+        p2.high(pin)
+    else
+        p2.low(pin)
+    end
+    p2.waitms(50)
+end
+```
+
+Ranges such as `0..9` are compact and convenient for quick hardware sweeps.
+
+### Classes: A Tiny LED Object
+
+```berry
+class Led
+    var pin
+
+    def init(pin)
+        import p2
+        self.pin = pin
+        p2.pinmode(pin, p2.OUTPUT)
+    end
+
+    def on()
+        import p2
+        p2.high(self.pin)
+    end
+
+    def off()
+        import p2
+        p2.low(self.pin)
+    end
+
+    def blink(ms)
+        import p2
+        self.on()
+        p2.waitms(ms)
+        self.off()
+    end
+end
+
+led = Led(56)
+led.blink(100)
+```
+
+`init()` is the constructor. Instance fields are declared with `var` and are
+accessed through `self` inside methods.
+
+### Subclasses: Active-Low LEDs
+
+Some boards wire LEDs active-low. A subclass can flip the behavior without
+rewriting the whole object.
+
+```berry
+class ActiveLowLed : Led
+    def on()
+        import p2
+        p2.low(self.pin)
+    end
+
+    def off()
+        import p2
+        p2.high(self.pin)
+    end
+end
+
+led = ActiveLowLed(56)
+led.blink(100)
+```
+
+### Closures: Remembering a Pin
+
+Closures let a function remember values from the scope where it was created.
+
+```berry
+def make_toggler(pin)
+    import p2
+    p2.pinmode(pin, p2.OUTPUT)
+
+    def toggle_once()
+        p2.toggle(pin)
+    end
+
+    return toggle_once
+end
+
+toggle_led = make_toggler(56)
+toggle_led()
+toggle_led()
+```
+
+This is great inside one VM. For other cogs, use the current `p2.cog` supported
+native-handle shapes rather than assuming arbitrary captured Berry state can be
+shared across cogs.
+
+### Variable Arguments
+
+```berry
+def log(prefix, *items)
+    for item: items
+        print(prefix, item)
+    end
+end
+
+log("sensor", "bmp180", 0x77, "ok")
+```
+
+Varargs are useful for REPL helpers and diagnostics where the number of values
+changes as you debug.
+
+### Modules: Native and SD-Loaded
+
+```berry
+import p2
+import math
+import string
+import os
+
+print(math.sqrt(144))
+print(string.split("sck,mosi,miso,cs", ","))
+print(os.listdir("/"))
+```
+
+Core P2-facing modules are native in firmware. Optional source libraries can
+live on SD under `/modules` and be imported lazily.
+
+### Files on SD
+
+```berry
+import os
+
+f = open("/LOG.TXT", "w")
+f.write("boot ok\n")
+f.close()
+
+print(open("/LOG.TXT", "r").read())
+print(os.listdir("/"))
+```
+
+The P2 runtime includes SD-backed `open()` and common `os` helpers for practical
+on-board scripts.
+
+### Cooperative Tasks
+
+Tasks run one step at a time and return a scheduler instruction.
 
 ```berry
 import p2
 import task
 
-def blink(pin, ms)
+def heartbeat(pin, ms)
     p2.toggle(pin)
     return task.sleep(ms)
 end
 
-h38 = task.start(blink, 38, 250)
-h39 = task.start(blink, 39, 700)
-
-task.run()
+h = task.start(heartbeat, 56, 250)
+task.run(20)
+task.stop(h)
 ```
 
-Useful helpers include `task.start(fn, ...args)`, `task.next()`, `task.run()`,
-`task.stop(handle)`, `task.pause(handle)`, `task.resume(handle)`,
-`task.status(handle)`, `task.list()`, `task.info()`, `task.sleep(ms)`,
-`task.wait(event, timeout_ms)`, `task.signal(event)`, and `task.clear(event)`.
-On P2, sleeps use the hardware counter and the `"attention"` event maps to cog
-attention. V1 is cooperative, not preemptive, and does not provide independent
-Berry stacks.
+Useful helpers include `task.start()`, `task.next()`, `task.run()`,
+`task.sleep()`, `task.wait()`, `task.signal()`, `task.stop()`, `task.pause()`,
+`task.resume()`, `task.status()`, `task.list()`, and `task.info()`.
 
-#### Retired `rtos` / `taskspin` APIs
-
-The older `rtos` native module and Spin2-shaped `taskspin.be` source module have been retired from the active P2 surface. New cooperative work should use `task`; native cog handle experiments should use `p2.cog`.
-
-
-The global `run_file(path)` helper compiles and runs a `.be` file from the current VM, which makes it useful from the REPL or from another script:
+### Events and Timers
 
 ```berry
-run_file("/examples/core/qsort.be")
+import task
+
+def waiter()
+    if task.woke_by_timeout()
+        print("button timeout")
+        return task.done
+    end
+
+    if task.woke_by_event("button")
+        print("button event")
+        return task.done
+    end
+
+    return task.wait("button", 3000)
+end
+
+h = task.start(waiter)
+task.run(5)
+task.signal("button")
+task.run(5)
 ```
 
-#### Native `i2c` Module
+On P2, task sleep uses the hardware counter. The special event name
+`"attention"` maps to P2 cog attention.
 
-The P2 port has a native Berry `i2c` module for simple device bring-up, register access, readiness checks, and bus scanning. It uses module-global bus state, so the first version stays easy to use from the REPL and small scripts.
+### I2C: Ask a Sensor Who It Is
 
 ```berry
 import i2c
 
 i2c.init(25, 24, 400)
-print(i2c.scan())                  # [119] on a BMP180
-print(i2c.present(0x77))           # true
-print(i2c.writeread(0x77, "\xD0", 1))  # "U" == 0x55 chip id
+print(i2c.scan())
+print(i2c.writeread(0x77, "\xD0", 1))
+```
+
+The BMP180 smoke setup returns address `0x77` and chip ID `0x55`, shown as `U`.
+
+### SPI: Nudge a Device
+
+```berry
+import spi
+
+spi.init(10, 11, 12, 13, 0, 1000)
+spi.select()
+id = spi.transfer("\x9F\x00\x00\x00")
+spi.deselect()
+print(id)
+```
+
+The SPI module keeps explicit chip-select control so flash, EEPROM, ADC, and
+sensor bring-up scripts stay readable.
+
+### Bytes: Packets and Registers
+
+```berry
+packet = bytes().fromstring("P2")
+print(packet.tohex())
+
+rx = bytes("010203")
+print(rx)
+```
+
+`bytes` is useful for bus traffic, packet dumps, binary files, and small protocol
+helpers.
+
+### Errors Are Part of Bring-Up
+
+```berry
+def require_pin(pin)
+    if pin < 0 || pin > 63
+        raise "bad pin"
+    end
+    return pin
+end
+
+print(require_pin(38))
+```
+
+During hardware work, clear failures beat silent weirdness. The P2 modules try
+to return diagnostics or raise errors instead of hanging where practical.
+
+## P2 Feature Reference
+
+### `p2` Hardware Module
+
+`p2` is the friendly hardware namespace for day-to-day P2 work: GPIO,
+low-level counter/timing helpers, cog ID/state inspection, heap reporting,
+smartpin helpers, CORDIC helpers, lock helpers, attention, filesystem
+diagnostics, and status reporting.
+
+```berry
+import p2
+
+print(p2.clock_freq())
+print(p2.ticks())
+print(p2.cogid())
+print(p2.sbrk())
+p2.status()
+```
+
+### `task` Cooperative Scheduler
+
+`task` is native-backed and cooperative. It does not provide preemptive
+multitasking or independent Berry call stacks. It is designed for easy, explicit
+state-machine style work inside one VM.
+
+```berry
+import task
+print(task.info())
+```
+
+### `p2.cog` Native Handles
+
+`p2.cog` exposes supported native cog-backed work with integer handles that can
+be inspected and stopped.
+
+```berry
+import p2
+print(p2.cog.capabilities())
+```
+
+The current blinker path runs the actual toggle loop in native/PASM code after a
+Berry setup function returns its descriptor.
+
+### Native `i2c` Module
+
+```berry
+import i2c
+
+i2c.init(25, 24, 400)
+print(i2c.scan())
 ```
 
 Supported API:
@@ -255,18 +662,13 @@ Supported API:
 - `i2c.start()` / `i2c.stop()`
 - `i2c.scan()`
 
-#### Native `spi` Module
-
-The P2 port now also has a native Berry `spi` module for mode-aware transfers with explicit chip select control. This is aimed at common flash, EEPROM, ADC, and sensor bring-up.
+### Native `spi` Module
 
 ```berry
 import spi
 
 spi.init(10, 11, 12, 13, 0, 1000)
-spi.select()
-id = spi.transfer("\x9F\x00\x00\x00")
-spi.deselect()
-print(id)
+print(spi.read(1))
 ```
 
 Supported API:
@@ -279,14 +681,13 @@ Supported API:
 - `spi.transfer(data)`
 - `spi.stop()`
 
-#### WiFiNINA / AirLift Skeleton
+### WiFiNINA / AirLift Skeleton
 
 `modules/wifi.be` is the first Berry-side WiFiNINA/AirLift transport layer for
-ESP32 coprocessors flashed with Adafruit's firmware. It handles the configured
-P2 pins, reset pulse, SPI framing, firmware-version request, and connection
-status request. It is intentionally documented as bring-up work: the current
-ESP32-C6 board still needs hardware READY/BUSY detection before higher-level
-network APIs are added.
+ESP32 coprocessors flashed with Adafruit firmware. It handles configured P2
+pins, reset pulse, SPI framing, firmware-version request, and connection-status
+request. It is still bring-up work; READY/BUSY hardware detection needs more
+validation before higher-level network APIs are promised.
 
 ```berry
 import wifi
@@ -300,9 +701,14 @@ print(wifi.firmware_version())
 print(wifi.status())
 ```
 
-#### `spin2` Loader Prototype
+### `spin2` Loader Prototype
 
-The `spin2` module is the first path for running Spin2/PASM binaries from Berry. Binaries live on the SD card under `/spin2` by default. Berry-callable binaries use the documented integer mailbox convention. Raw standalone PASM images can be started with `PTRA == nil`; high-level FlexSpin images are detected and rejected with `value_error` because their `.BIN` payloads contain absolute Hub addresses and are not relocatable from Berry's heap loader.
+`spin2` is the first path for running Spin2/PASM binaries from Berry. Binaries
+live on the SD card under `/spin2` by default. Berry-callable binaries use the
+documented integer mailbox convention. Raw standalone PASM images can be started
+with `PTRA == nil`; high-level FlexSpin images are detected and rejected because
+their `.BIN` payloads contain absolute Hub addresses and are not relocatable
+from Berry's heap loader.
 
 ```berry
 import spin2
@@ -320,97 +726,33 @@ Build bundled Spin2 examples with:
 make spin2
 ```
 
-Copy the demo to the SD card with an 8.3 filename, for example `/spin2/MBOXDEMO.BIN`. The current Catalina DOSFS path may show long filenames as aliases such as `BERRY_~2.BIN`.
+Copy the demo to SD with an 8.3 filename, for example `/spin2/MBOXDEMO.BIN`.
 
-### Existing Features
+## SD, PSRAM, and XMM Notes
 
-#### Interactive REPL Basics
+The P2 runtime adds `/modules` to the default lazy import path. Optional source
+libraries such as `binary_heap.be`, `wifi.be`, `p2mem.be`, and `libstore.be` can
+be imported from SD without baking every helper into the firmware image.
 
-The P2 port already supports a practical interactive Berry REPL for quick testing, small scripts, and board bring-up work.
+The `task`, `math`, and `string` modules are native in firmware, so they do not
+need SD files.
 
-```berry
-print(1 + 2)
-a = 6
-print(a * 7)
-for i:0..3
-    print(i)
-end
-```
+On P2 Edge 32 MB:
 
-#### Standard Modules: `string`, `math`, `json`
+- COMPACT + `-lpsram` exposes PSRAM as block-transfer storage through helpers
+  such as `p2.psram_info()` and `p2.psram_test()`
+- XMM/LARGE uses the lower `16 MiB` PSRAM window for Catalina external heap
+  storage and leaves the upper `16 MiB` for explicit block/cache use
 
-Several standard Berry modules are already live on the P2 port, which makes it much easier to do real work without dropping to C for every little task.
-
-```berry
-import string
-import math
-import json
-
-print(string.toupper("berry"))
-print(math.sqrt(81))
-print(json.dump({"a": 1, "b": [2, 3]}))
-```
-
-#### Raw Byte Handling with `bytes`
-
-The `bytes` support is already useful for packet work, register dumps, and binary file access.
-
-```berry
-b = bytes().fromstring("AB")
-print(b.tohex())     # 4142
-print(bytes("1122"))
-```
-
-#### SD Card Files and `os`
-
-The port already supports SD-backed file I/O and common `os` helpers, so you can read files, create directories, and inspect paths directly from Berry.
-
-```berry
-import os
-
-print(os.listdir("/"))
-f = open("/TMPD/TEST.TXT", "w")
-f.write("hello from berry")
-f.close()
-print(open("/TMPD/TEST.TXT", "r").read())
-```
-
-#### Propeller 2 Hardware Helpers
-
-Propeller 2 hardware helpers are exposed through the `p2` module for clocks, counters, pins, smartpins, CORDIC, locks, attention, and cog inspection. Cooperative task sleep lives in `task.sleep()`, and native cog handle experiments live under `p2.cog`. The older `prop2_*` globals remain available for compatibility, but new examples should use `p2`, `p2.cog`, and `task`.
-
-```berry
-import p2
-
-print(p2.clock_freq())
-print(p2.ticks())
-p2.smartpin_clear(56)
-p2.pin_output(56)
-p2.pin_write(56, 0) # active-low LED on the tested no-PSRAM board
-print(p2.pin_read(56))
-```
-
-P2 module examples live under `examples/p2/`; other modules use their own directories such as `examples/i2c/`, `examples/spi/`, and `examples/spin2/`. General Berry examples such as quicksort, REPL, and string handling live under `examples/core/`.
-
-The fuller P2 module API reference lives in [`docs/P2_MODULES.md`](./docs/P2_MODULES.md).
-The longer-term P2 Berry system plan lives in [`docs/P2_SYSTEM_ROADMAP.md`](./docs/P2_SYSTEM_ROADMAP.md).
-
-On the tested no-PSRAM P2 Edge setup, keep Berry GPIO and bus examples off the SD pins `58..61` and serial pins `62..63`. Pins `56` and `57` are left available because they are exposed as LEDs on that board.
-
-On a P2 Edge with the 32 MB RAM module, build and flash with:
-
-```sh
-make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp
-tio -b 230400 /dev/cu.usbserial-P97cvdxp
-```
-
-Then verify PSRAM support from the REPL with:
+Verify PSRAM support from the REPL:
 
 ```berry
 import p2
 print(p2.psram_info())
 print(p2.psram_test())
 ```
+
+## Repeatable Smoke Tests
 
 Repeatable SD smoke tests live under `tests/p2/`. Copy that directory and
 `modules/` to the SD card root, start Berry, then run:
@@ -423,35 +765,64 @@ make p2-smoke-edge32 PORT=/dev/cu.usbserial-P97cvdxp
 The edge32 target includes the general smoke suite plus PSRAM block-access
 assertions.
 
-The P2 runtime also adds `/modules` to the default lazy import path, so SD
-libraries such as `binary_heap.be`, `wifi.be`, `libstore.be`, and
-`task.be` can be imported without enabling the larger upstream `sys`
-module. On edge32, PSRAM is exposed as block-transfer storage for future library
-cache work; the active Berry heap remains in Hub RAM.
+## Documentation Map
 
-#### Reliable Catalina RAM and Flash Flow
+The active Propeller 2 docs are split by purpose:
 
-The Catalina path is already set up so RAM loading and flash programming are separate, documented flows instead of ad-hoc `loadp2` commands.
+- [`docs/getting-started.md`](./docs/getting-started.md): first build, flash,
+  and smoke path
+- [`docs/building.md`](./docs/building.md): Catalina profiles, board/profile
+  flags, and P2 trace/debug/unsafe-ASM flag policy
+- [`docs/board-support.md`](./docs/board-support.md): supported board profiles
+  and reserved pins
+- [`docs/sd-layout.md`](./docs/sd-layout.md): current `/modules` layout and
+  target `/berry/...` layout
+- [`docs/psram-loader.md`](./docs/psram-loader.md): Hub/PSRAM/XMM cache model
+- [`docs/berry-compatibility.md`](./docs/berry-compatibility.md): Berry
+  compatibility coverage and bare-metal host-like limitations
+- [`docs/p2-api.md`](./docs/p2-api.md): current `p2` API snapshot
+- [`docs/smartpins.md`](./docs/smartpins.md): raw smart-pin API and remaining
+  mode-family roadmap
+- [`docs/cogs.md`](./docs/cogs.md): current cog model and closure-transfer
+  policy
+- [`docs/tasks.md`](./docs/tasks.md): cooperative `task` module
+- [`docs/pasm.md`](./docs/pasm.md): safe `p2.asm` facade and future PASM ABI
+  rules
+- [`docs/debugging.md`](./docs/debugging.md): query-based diagnostics and debug
+  flag policy
+- [`docs/performance.md`](./docs/performance.md): benchmark plan and reporting
+  format
+- [`docs/hardware-tests.md`](./docs/hardware-tests.md): pins, wiring, resistors,
+  board variants, skips, and runnable hardware-test entrypoints
+- [`docs/limitations.md`](./docs/limitations.md): explicit unsupported/open
+  areas
+- [`docs/P2_MODULES.md`](./docs/P2_MODULES.md): fuller P2 module API reference
+- [`docs/P2_SYSTEM_ROADMAP.md`](./docs/P2_SYSTEM_ROADMAP.md): longer-term P2
+  system plan
 
-```sh
-make configure TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp \
-  P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
+## Repository Layout
 
-make p2-ram
-make p2-flash
-make p2-attach
-```
+The main P2 areas are:
 
-## P2 Toolchain Model
+- [`mk/`](./mk)
+- [`port/p2/`](./port/p2)
+- [`tools/p2/`](./tools/p2)
+- [`docs/`](./docs)
+- [`modules/`](./modules)
+- [`tests/p2/`](./tests/p2)
+
+Upstream Berry source layout stays largely intact under `src/`, `default/`,
+`modules/`, `examples/`, and `tests/`. P2 runtime code, overrides, probes, and
+status notes live under `port/p2/`. P2 build logic lives under `mk/`. Tool
+bootstrap and loader helpers live under `tools/p2/`. Downloaded toolchains
+belong in `.third_party_cache/` or user-provided paths, not in git.
+
+The long-term maintenance rule is simple: keep the fork easy to use while
+keeping Berry upstream merges manageable.
+
+## Toolchain Model
 
 Catalina is the preferred and verified compiler flow for Berry on P2:
-
-- `TOOLCHAIN=catalina`
-
-The old `TOOLCHAIN=flexc` path remains in the tree for historical/debugging
-work, but do not use it for normal Berry P2 builds.
-
-Path overrides:
 
 ```sh
 make p2 TOOLCHAIN=catalina CATALINA_DIR=/opt/catalina
@@ -464,6 +835,9 @@ Local managed caches are supported and ignored by git:
 - `.third_party_cache/catalina/`
 - `.third_party_cache/flexprop/` for loader tools such as `loadp2`
 
+The old `TOOLCHAIN=flexc` path remains in the tree for historical/debugging
+work, but do not use it for normal Berry P2 builds.
+
 ## P2 Silicon Selection
 
 The P2 build keeps explicit silicon selection:
@@ -473,32 +847,32 @@ The P2 build keeps explicit silicon selection:
 - `P2_SILICON=c` uses `-2`
 - `P2_SILICON=a` uses `-2a`
 
-Examples:
+Example:
 
 ```sh
 make configure TOOLCHAIN=catalina P2_SILICON=latest
 make p2
 ```
 
-## Repository Layout
+## Board Pin Reminders
 
-The main P2 areas are:
+On the tested no-PSRAM P2 Edge setup, keep Berry GPIO and bus examples off the
+SD pins `58..61` and serial pins `62..63`. Pins `56` and `57` are available as
+LEDs on that board.
 
-- [`mk/`](./mk)
-- [`port/p2/`](./port/p2)
-- [`tools/p2/`](./tools/p2)
-- [`docs/P2_BUILD.md`](./docs/P2_BUILD.md)
-- [`docs/P2_MODULES.md`](./docs/P2_MODULES.md)
-- [`docs/P2_LAYOUT.md`](./docs/P2_LAYOUT.md)
-- [`docs/UPSTREAM_SYNC.md`](./docs/UPSTREAM_SYNC.md)
+On P2 Edge 32 MB, onboard LEDs are pins `38` and `39`; pins `40..57` are
+reserved for the memory interface, including pin `57` as PSRAM chip-select.
 
-## Berry
+## Berry References
 
-Berry is an ultra-lightweight dynamically typed embedded scripting language designed for constrained systems. The interpreter core is ANSI C99 and uses a one-pass compiler plus a register-based VM.
+Berry is an ultra-lightweight dynamically typed embedded scripting language
+designed for constrained systems. The interpreter core is ANSI C99 and uses a
+one-pass compiler plus a register-based VM.
 
 Reference material:
 
 - [Berry documentation](https://berry.readthedocs.io/)
+- [Berry in 20 minutes](https://berry.readthedocs.io/en/latest/source/en/Berry-in-20-minutes.html)
 - [Short manual PDF](https://github.com/berry-lang/berry_doc/blob/master/pdf/berry_short_manual.pdf)
 - [`tools/grammar/berry.ebnf`](./tools/grammar/berry.ebnf)
 
@@ -518,4 +892,6 @@ make
 
 - The repo no longer vendors full P2 toolchain distributions.
 - `build/` is output-only.
-- Optional P2 workaround files that shadow upstream Berry sources now live under `port/p2/patches/optional/` and are documented as maintenance exceptions, not normal source layout.
+- Optional P2 workaround files that shadow upstream Berry sources live under
+  `port/p2/patches/optional/` and are documented as maintenance exceptions, not
+  normal source layout.

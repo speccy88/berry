@@ -62,7 +62,8 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 - `make p2-xmm-run PORT=/dev/cu.usbserial-P97cvdxp ...` boots the XMM profile through Catalina's serial XMM loader and reaches the Berry prompt.
 - `make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp ...` creates a complete bootable XMM SPI-flash image and writes it with FlexProp `loadp2 -HIMEM=flash @80000000=...`.
  - flash layout: stage-1 boot block at `0x00000`, size-prefixed stage-2 flash-to-PSRAM loader at `0x10000`, size-prefixed Berry XMM image at `0x40000`
- - after reset, standalone XMM flash boot takes about `25-30` seconds before the Berry banner while the stage-2 loader copies the XMM image into PSRAM
+ - standalone XMM flash boot now uses the fast sparse flash-to-PSRAM loader with an `Initializing PSRAM` spinner, then a post-banner `Starting Berry VM` spinner while native modules are initialized
+ - current hardware capture reaches `berry>` in about `3.000` seconds after attach on `/dev/cu.usbserial-P97cvdxp`
  - verified banner reports `[xmm profile]`, `Berry heap external`, `XMM 16777216 B`, and `block 16777216 B @ 16777216`; `p2.status()` reports `main heap` total `15728640 B`
 - `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88` flashed and booted from flash on the P2 Edge 32 MB RAM board. The boot banner reported `P2_EDGE, PSRAM`, `[edge32 profile]`, `131072 B` heap, and `33554432 B` PSRAM block API.
 - `make p2-run TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88 PORT=/dev/cu.usbserial-P97cvdxp` RAM-loads and reaches the Berry prompt
@@ -81,12 +82,8 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
  and bytecode still remain in Hub RAM; on XMM, Catalina owns the lower PSRAM
  window for the external-memory heap and `libstore` uses the upper block
  window.
-- `modules/math.be` now provides the P2 `math` smoke-test surface from SD,
- avoiding the Catalina/P2 native math path and saving Hub image space.
-- `modules/taskspin.be` provides a 32-slot Spin2-shaped cooperative task API
- from SD, including `TASKHLT()` halt-mask diagnostics and task
- `stack_address` metadata, keeping this experiment out of the Hub firmware
- image.
+- `math`, `string`, and `task` are native firmware modules on the active P2 surface. `math` no longer requires `/modules/math.be` and uses CORDIC-backed helpers where appropriate.
+- The older `rtos` native module and Spin2-shaped `taskspin.be` source module have been retired from the active API. New cooperative code should use `task`; native cog-handle experiments should use `p2.cog`.
 - P2 cached module loading is live-verified after the Catalina const native function hang fix:
  - `import p2`; `print(p2.cogid())` -> `0`
  - `p2.status_info()` / `p2.debug_snapshot()` are added to the target smoke
@@ -130,7 +127,8 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
  `libstore.cached_source(...)` round-trip `1565` bytes
  - `import i2c`; `i2c.init(25,24,400)` returns to the prompt
  - `import spi`; `spi.init(10,11,12,13,0,1000)` returns to the prompt
- - `import rtos`; locks, queues, flags, timers, callbacks, debug helpers, and process-style `rtos.newcog("name", ...int_args)` launch work through the current child VM backend; source-backed `rtos.run(source, task, ...int_args)` is added to the target smoke suite and awaits live board verification
+ - `import task`; cooperative scheduler helpers are native and are the supported scheduler API
+ - `p2.cog.spawn(blinker, 38, 250)` / `p2.cog.spawn(blinker, 39, 700)` launch native LED blinkers on separate cogs and `p2.cog.stop(handle)` stops them
  - `import spin2`; `print(spin2.path())` -> `/spin2`
  - `import wifi` compiles and imports when `modules/wifi.be` is present on SD/module path; hardware detection on the ESP32-C6 AirLift board is still pending READY/BUSY troubleshooting
 - P2 pins on the no-PSRAM P2 Edge path:
@@ -142,13 +140,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
  - `print(i2c.scan())` -> `[119]`
  - `print(i2c.present(0x77))` -> `true`
  - `print(i2c.writeread(0x77,"\xD0",1))` -> `U` (`0x55`, BMP180 chip id)
-- RTOS path:
- - `import rtos`; `print(rtos.cog_id())` -> `0`
- - `rtos.channel("a"); rtos.put("a",123); print(rtos.get("a",10))` -> `123`
- - `rtos.event_set(1); print(rtos.event_wait(1,10)); rtos.event_clear(1)` -> `true`
- - `t=rtos.timer_start(10); rtos.timer_wait(t); print(rtos.timer_expired(t))` -> `true`
- - deferred callback dispatch with `rtos.irq_enable(0,"on_rtos")`, `rtos.event_set(1)`, `print(rtos.irq_poll())` -> `1`
- - `rtos.load(source); cog=rtos.newcog("worker_fn",7)` starts loaded child-VM code on the process cog; the target smoke suite also covers `rtos.run(source, worker_fn,7)` for the same child-VM launch path; captured closures are intentionally guarded until safe closure transfer exists
+- Retired RTOS path: `rtos` is no longer part of the active P2 API; use `task` for cooperative scheduling and `p2.cog` for native cog handles.
 - `spin2.path()` returns `/spin2`; `spin2.list()` returned `[]` when no compatible binaries were present on the SD-visible path
 - `os.listdir("/")` returns the current SD root after filtering stale/non-printable DOSFS entries; the latest card listed `SPIN2`, `HELLO.TXT`, `NEWTEST.BIN`, `INDEX.TXT`, `SPN2`, `SPN3`, `SPN4`, `SPT0`, `SPT1`, `SPT2`, `SPT3`, `EXAMPLES`, `WIFI.BE`, and `DETECT.BE`
 - SD write/read/remove was live-verified with `/BERRYTMP.TXT`; the file and directory handles now use fixed P2 pools instead of Catalina libc `malloc`
@@ -208,10 +200,10 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 - `i2c.read()`, `i2c.writeread()`, `spi.read()`, and `spi.transfer()` use bounded stack buffers instead of Catalina libc heap allocation
 - the current exposed P2 helpers are available through `p2.*`, including:
  - clock and counter helpers such as `p2.clock_freq()`, `p2.ticks()`, `p2.ticks64()`
- - wait helpers such as `p2.wait_ticks()`; millisecond task sleep is `rtos.sleep_ms()`
+ - wait helpers such as `p2.wait_ticks()`; cooperative millisecond sleeps are provided by `task.sleep(ms)`
  - cog helpers such as `p2.cog_states()`, `p2.cog_check()`, `p2.cog_stop()`
  - raw cog program startup via `p2.cog_start_hex()`
- - hardware lock helpers live under `rtos`, such as `rtos.new_lock()` and `rtos.try_lock()`
+ - native cog-handle experiments live under `p2.cog`; cooperative synchronization lives under `task`
  - CORDIC helpers such as `p2.rotxy()`, `p2.xypol()`, `p2.polxy()`
  - pin helpers such as `p2.pin_output()`, `p2.pin_write()`, `p2.pin_read()`
  - smart-pin helpers such as `p2.smartpin_write_mode()`, `p2.smartpin_query()`, `p2.smartpin_start()`
@@ -249,7 +241,7 @@ Current machine focus to preserve:
 
 Known limitation:
 
-- not every standard library module has been re-verified interactively yet on the cached-runtime-module path; `string`, SD-loaded `math`, `json`, `bytes`, `os`, and the P2 hardware modules have current or prior hardware coverage, but longer mixed-module sessions still need stress testing
+- not every standard library module has been re-verified interactively yet on the cached-runtime-module path; native `string`, native `math`, `json`, `bytes`, `os`, and the P2 hardware modules have current or prior hardware coverage, but longer mixed-module sessions still need stress testing
 - `P2_PROFILE=edge32` enables Catalina `-lpsram` and PSRAM block access. Berry exposes bounded `p2.psram_read()` / `p2.psram_write()` wrappers and `libstore` can use them as a chunked source-cache backend, but Berry's object heap remains in Hub RAM. Catalina's COMPACT PSRAM API is transfer-based, not ordinary C pointer-addressable memory; moving the GC/object heap to external RAM would require an XMM/large-memory object representation or a handle/cache layer.
 - `P2_PROFILE=xmm` is the preferred experiment for the user's desired
  "one big memory" model. It keeps Berry using the same allocator API while
@@ -260,7 +252,7 @@ Known limitation:
  `32 MiB + 512 KiB` Berry heap would need a future VM object/handle/cache
  representation rather than ordinary C pointers alone.
 - `make p2-smoke-edge32` still depends on `/tests/p2` being present on the SD
- card. Manual REPL checks now verify SD mount fallback and `import math`; the
+ card. Manual REPL checks now verify SD mount fallback and native `import math`; the
  full scripted smoke suite still needs a fresh run against the provisioned
  card.
 - The current SD card appears to have an invalid MBR/sector 0 but a valid FAT

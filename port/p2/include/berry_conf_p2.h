@@ -127,16 +127,24 @@
 /* Catalina LARGE/XMM exposes the lower PSRAM window as pointer-addressable C
  * memory. Reserve 1 MiB for Catalina/runtime allocations and use the rest as
  * the Berry VM heap arena. The upper 16 MiB remains the explicit block/cache
- * window through BE_P2_PSRAM_BLOCK_BASE. */
+ * window through BE_P2_PSRAM_BLOCK_BASE.
+ *
+ * XMM also has enough room to stop treating the VM stack as a tiny Hub-only
+ * budget. Larger SD-loaded modules can need a much deeper compile/execute
+ * stack than the small COMPACT profiles, especially when imported from the
+ * interactive REPL after other modules are already live.
+ */
 #define BE_P2_XMM_RUNTIME_RESERVE_BYTES (1 * 1024 * 1024)
 #define BE_P2_HEAP_SIZE                 (15 * 1024 * 1024)
+#define BE_P2_STACK_SLOTS               4096
 #elif BE_P2_PROFILE == BE_P2_PROFILE_SDDIAG
 #define BE_P2_HEAP_SIZE                 (96 * 1024)
+#define BE_P2_STACK_SLOTS               1024
 #else
 #define BE_P2_HEAP_SIZE                 (128 * 1024)
+#define BE_P2_STACK_SLOTS               1024
 #endif
 #define BE_P2_WORKER_HEAP_SIZE          (16 * 1024)
-#define BE_P2_STACK_SLOTS               1024
 #define BE_P2_BYTES_MAX                 (4 * 1024)
 
 #elif BE_P2_PROFILE == BE_P2_PROFILE_FULL
@@ -265,10 +273,10 @@
 #define BE_P2_ENABLE_BYTECODE_SAVER     0
 #endif
 #ifndef BE_P2_ENABLE_BYTECODE_LOADER
-#define BE_P2_ENABLE_BYTECODE_LOADER    0
+#define BE_P2_ENABLE_BYTECODE_LOADER    (BE_P2_PROFILE == BE_P2_PROFILE_XMM)
 #endif
 #ifndef BE_P2_ENABLE_BYTECODE_EXECUTION
-#define BE_P2_ENABLE_BYTECODE_EXECUTION 0
+#define BE_P2_ENABLE_BYTECODE_EXECUTION (BE_P2_PROFILE == BE_P2_PROFILE_XMM)
 #endif
 #define BE_USE_BYTECODE_SAVER           BE_P2_ENABLE_BYTECODE_SAVER
 #define BE_USE_BYTECODE_LOADER          BE_P2_ENABLE_BYTECODE_LOADER
@@ -282,7 +290,8 @@
 
 #define BE_USE_STRING_MODULE            1
 #define BE_USE_JSON_MODULE              BE_USE_JSON
-#define BE_USE_MATH_MODULE              BE_USE_MATH
+#define BE_USE_MATH_MODULE              1
+#define BE_P2_OVERRIDE_MATH_STRING_MODULES 1
 #define BE_USE_TIME_MODULE              BE_P2_ENABLE_TIME_MODULE
 #define BE_USE_OS_MODULE                BE_USE_OS
 #define BE_USE_GLOBAL_MODULE            BE_P2_ENABLE_EXTENDED_MODULES

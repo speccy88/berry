@@ -1510,6 +1510,7 @@ typedef struct p2_closure_cog_slot {
     volatile bint last_result_int;
     volatile int last_result_bool;
     volatile int stop_wait_ms;
+    char closure_name[64];
     char last_error[64];
 } p2_closure_cog_slot;
 
@@ -1571,6 +1572,28 @@ static int p2_closure_cog_slot_from_handle(bint handle)
         return -1;
     }
     return (int)slot;
+}
+
+static void p2_closure_cog_capture_function_name(bvm *vm, int index, p2_closure_cog_slot *slot)
+{
+    bvalue *value;
+    bclosure *closure;
+    const char *name;
+
+    if (!vm || !slot || !be_isclosure(vm, index)) {
+        return;
+    }
+    value = be_indexof(vm, index);
+    closure = (bclosure *)var_toobj(value);
+    if (!closure || !closure->proto || !closure->proto->name) {
+        return;
+    }
+    name = str(closure->proto->name);
+    if (!name || !name[0] || !strcmp(name, "_anonymous_")) {
+        return;
+    }
+    strncpy(slot->closure_name, name, sizeof(slot->closure_name) - 1);
+    slot->closure_name[sizeof(slot->closure_name) - 1] = '\0';
 }
 
 #if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
@@ -2697,6 +2720,9 @@ static int m_p2_closure_cog_spawn(bvm *vm)
     slot->argc = argc;
     slot->call_result = BE_OK;
     slot->stack_size = P2_CLOSURE_COG_STACK_DEFAULT;
+    if (!descriptor_native) {
+        p2_closure_cog_capture_function_name(vm, 1, slot);
+    }
     if (descriptor_native) {
         slot->descriptor_task = 1;
         slot->task_kind = descriptor_kind;
@@ -2831,6 +2857,8 @@ static int m_p2_closure_cog_spawn(bvm *vm)
         }
         slot->isolated_source = 1;
         slot->source_job = source_job;
+        strncpy(slot->closure_name, source_task->name, sizeof(slot->closure_name) - 1);
+        slot->closure_name[sizeof(slot->closure_name) - 1] = '\0';
         cog = p2_catalina_cogstart_C(p2_child_vm_cog_once_entry, source_job, stack, (int)slot->stack_size);
         if (cog >= 0 && cog < 8) {
             source_job->cog_id = cog;
@@ -3009,18 +3037,78 @@ static int m_p2_closure_cog_spawn_source(bvm *vm)
 }
 #endif
 
+static void p2_closure_cog_label(p2_closure_cog_slot *slot, char *buf, size_t len)
+{
+    if (!buf || len == 0) {
+        return;
+    }
+    buf[0] = '\0';
+    if (!slot) {
+        return;
+    }
+
+    if (slot->native_blink && slot->closure_name[0]) {
+        snprintf(buf, len, "p2.cog %s p%d %dms, handle %ld",
+                 slot->closure_name, (int)slot->native_pin, (int)slot->period_ms, (long)slot->handle);
+    } else if (slot->native_blink) {
+        snprintf(buf, len, "p2.cog native blinker p%d %dms, handle %ld",
+                 (int)slot->native_pin, (int)slot->period_ms, (long)slot->handle);
+    } else if (slot->closure_name[0]) {
+        snprintf(buf, len, "p2.cog %s, handle %ld", slot->closure_name, (long)slot->handle);
+    } else if (slot->isolated_source && slot->source_job && slot->source_job->name[0]) {
+        snprintf(buf, len, "p2.cog source task %s, handle %ld",
+                 slot->source_job->name, (long)slot->handle);
+    } else if (slot->descriptor_task) {
+        snprintf(buf, len, "p2.cog task %s, handle %ld",
+                 p2_closure_cog_task_kind_name(slot->task_kind), (long)slot->handle);
+    } else if (slot->setup_function) {
+        snprintf(buf, len, "p2.cog Berry setup function, handle %ld", (long)slot->handle);
+    } else {
+        snprintf(buf, len, "p2.cog spawned handle %ld", (long)slot->handle);
+    }
+}
+
+static p2_closure_cog_slot *p2_closure_cog_find_by_cog(int cog, int *slot_index)
+{
+    if (slot_index) {
+        *slot_index = -1;
+    }
+
+    for (int i = 0; i < P2_CLOSURE_COG_MAX; ++i) {
+        p2_closure_cog_slot *slot = &p2_closure_cog_slots[i];
+        if (!slot->used) {
+            continue;
+        }
+        p2_closure_cog_sync_native_blink(slot);
+        p2_closure_cog_sync_isolated_source(slot);
+        if ((int)slot->cog_id == cog) {
+            if (slot_index) {
+                *slot_index = i;
+            }
+            return slot;
+        }
+    }
+
+    return NULL;
+}
+
 static void p2_closure_cog_push_info_map(bvm *vm, int slot_index, p2_closure_cog_slot *slot)
 {
     int raw_running = 0;
+    char label[128];
 
     p2_closure_cog_sync_native_blink(slot);
     p2_closure_cog_sync_isolated_source(slot);
     if (slot->cog_id >= 0 && slot->cog_id < 8) {
         raw_running = _cogchk(slot->cog_id) ? 1 : 0;
     }
+    p2_closure_cog_label(slot, label, sizeof(label));
     be_newobject(vm, "map");
     p2_map_set_string(vm, "kind", "closure");
     p2_map_set_string(vm, "model", slot->native_blink ? "native_blink" : (slot->isolated_source ? "isolated_source_vm" : "shared_vm_repl_idle"));
+    p2_map_set_string(vm, "label", label);
+    p2_map_set_string(vm, "function", slot->closure_name[0] ? slot->closure_name : ((slot->isolated_source && slot->source_job && slot->source_job->name[0]) ? slot->source_job->name : ""));
+    p2_map_set_string(vm, "closure_name", slot->closure_name);
     p2_map_set_int(vm, "slot", (bint)slot_index);
     p2_map_set_int(vm, "handle", slot->handle);
     p2_map_set_int(vm, "cog", (bint)slot->cog_id);
@@ -6282,6 +6370,69 @@ static void p2_status_print_size_line(const char *label, unsigned long bytes)
     p2_status_writef("  %-12s %7lu B\n", label, bytes);
 }
 
+static unsigned long p2_status_cog_registry_entry(int cog)
+{
+    volatile unsigned long *registry = (volatile unsigned long *)_registry();
+    if (!registry || cog < 0 || cog >= 8) {
+        return 0u;
+    }
+    return registry[cog];
+}
+
+static int p2_status_cog_registry_type(unsigned long entry)
+{
+    return (int)((entry >> 24) & 0xffu);
+}
+
+static void p2_status_cog_describe(int cog, int raw, int current,
+    char *role, size_t role_len,
+    char *label, size_t label_len,
+    unsigned long *registry_entry,
+    int *registry_type,
+    int *slot_index,
+    p2_closure_cog_slot **slot_out)
+{
+    unsigned long entry = p2_status_cog_registry_entry(cog);
+    int type = p2_status_cog_registry_type(entry);
+    p2_closure_cog_slot *slot = p2_closure_cog_find_by_cog(cog, slot_index);
+
+    if (registry_entry) {
+        *registry_entry = entry;
+    }
+    if (registry_type) {
+        *registry_type = type;
+    }
+    if (slot_out) {
+        *slot_out = slot;
+    }
+    if (role && role_len > 0) {
+        role[0] = '\0';
+    }
+    if (label && label_len > 0) {
+        label[0] = '\0';
+    }
+
+    if (slot) {
+        snprintf(role, role_len, "user");
+        p2_closure_cog_label(slot, label, label_len);
+    } else if (cog == current) {
+        snprintf(role, role_len, "main");
+        snprintf(label, label_len, "main Berry VM / REPL");
+    } else if (!raw) {
+        snprintf(role, role_len, "free");
+        snprintf(label, label_len, "available");
+    } else if (type == 29) {
+        snprintf(role, role_len, "xmm_cache");
+        snprintf(label, label_len, "XMM cache service");
+    } else if (entry != 0u && type != 0xff) {
+        snprintf(role, role_len, "runtime");
+        snprintf(label, label_len, "Catalina runtime service type %d", type);
+    } else {
+        snprintf(role, role_len, "unknown");
+        snprintf(label, label_len, "running, no Berry/Catalina registry label");
+    }
+}
+
 static int m_p2_status(bvm *vm)
 {
     unsigned long image = (unsigned long)P2_BUILD_BINARY_BYTES;
@@ -6348,11 +6499,36 @@ static int m_p2_status(bvm *vm)
     p2_status_write_line("Cogs");
     for (cog = 0; cog < 8; ++cog) {
         int raw = _cogchk(cog);
-        p2_status_writef("  cog %d  %-4s  raw %d%s\n",
+        char role[24];
+        char label[128];
+        unsigned long registry_entry = 0u;
+        int registry_type = 0xff;
+        int slot_index = -1;
+        p2_closure_cog_slot *slot = NULL;
+
+        p2_status_cog_describe(cog, raw, (int)cogid,
+            role, sizeof(role),
+            label, sizeof(label),
+            &registry_entry,
+            &registry_type,
+            &slot_index,
+            &slot);
+
+        p2_status_writef("  cog %d  %-4s  raw %d  %-9s  %s",
             cog,
             raw ? "run" : "free",
             raw,
-            cog == (int)cogid ? "  current" : "");
+            role,
+            label);
+        if (slot) {
+            p2_status_writef("  slot %d", slot_index);
+        } else if (registry_entry != 0u) {
+            p2_status_writef("  reg 0x%08lx type %d", registry_entry, registry_type);
+        }
+        if (cog == (int)cogid) {
+            p2_status_write("  current");
+        }
+        p2_status_write_line("");
     }
     p2_status_write_line("");
 
@@ -6451,12 +6627,38 @@ static void p2_status_info_cogs(bvm *vm)
     be_newobject(vm, "list");
     for (cog = 0; cog < 8; ++cog) {
         int raw = _cogchk(cog);
+        char role[24];
+        char label[128];
+        unsigned long registry_entry = 0u;
+        int registry_type = 0xff;
+        int slot_index = -1;
+        p2_closure_cog_slot *slot = NULL;
+
+        p2_status_cog_describe(cog, raw, current,
+            role, sizeof(role),
+            label, sizeof(label),
+            &registry_entry,
+            &registry_type,
+            &slot_index,
+            &slot);
 
         be_newobject(vm, "map");
         p2_map_set_int(vm, "id", (bint)cog);
         p2_map_set_bool(vm, "running", raw != 0);
         p2_map_set_int(vm, "raw", (bint)raw);
         p2_map_set_bool(vm, "current", cog == current);
+        p2_map_set_string(vm, "role", role);
+        p2_map_set_string(vm, "label", label);
+        p2_map_set_int(vm, "registry_entry", (bint)registry_entry);
+        p2_map_set_int(vm, "registry_type", (bint)registry_type);
+        p2_map_set_int(vm, "slot", (bint)slot_index);
+        p2_map_set_int(vm, "handle", slot ? slot->handle : (bint)-1);
+        p2_map_set_string(vm, "model", slot ? (slot->native_blink ? "native_blink" : (slot->isolated_source ? "isolated_source_vm" : "shared_vm_repl_idle")) : "");
+        p2_map_set_string(vm, "function", slot ? (slot->closure_name[0] ? slot->closure_name : ((slot->isolated_source && slot->source_job && slot->source_job->name[0]) ? slot->source_job->name : "")) : "");
+        p2_map_set_string(vm, "closure_name", slot ? slot->closure_name : "");
+        p2_map_set_string(vm, "task_kind", slot ? p2_closure_cog_task_kind_name(slot->task_kind) : "");
+        p2_map_set_int(vm, "native_pin", slot ? (bint)slot->native_pin : (bint)-1);
+        p2_map_set_int(vm, "period_ms", slot ? (bint)slot->period_ms : (bint)-1);
         p2_map_set_int(vm, "stack_bytes", (bint)-1);
         be_pop(vm, 1);
         be_data_push(vm, -2);

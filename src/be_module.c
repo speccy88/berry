@@ -40,6 +40,11 @@ extern BERRY_LOCAL const bntvmodule_t* const be_module_table[];
 
 static bmodule* native_module(bvm *vm, const bntvmodule_t *nm, bvalue *dst);
 
+#if defined(BE_P2_OVERRIDE_MATH_STRING_MODULES) && BE_P2_OVERRIDE_MATH_STRING_MODULES
+extern void be_cache_mathmodule(bvm *vm);
+extern void be_cache_stringmodule(bvm *vm);
+#endif
+
 static const bntvmodule_t* find_native(bstring *path)
 {
     const bntvmodule_t *module;
@@ -259,6 +264,21 @@ static bvalue* load_cached(bvm *vm, bstring *path)
     return v;
 }
 
+#if defined(BE_P2_OVERRIDE_MATH_STRING_MODULES) && BE_P2_OVERRIDE_MATH_STRING_MODULES
+static bbool load_p2_cached_builtin(bvm *vm, bstring *path)
+{
+    if (!strcmp(str(path), "math")) {
+        be_cache_mathmodule(vm);
+        return load_cached(vm, path) != NULL;
+    }
+    if (!strcmp(str(path), "string")) {
+        be_cache_stringmodule(vm);
+        return load_cached(vm, path) != NULL;
+    }
+    return bfalse;
+}
+#endif
+
 void be_cache_module(bvm *vm, bstring *name)
 {
     bvalue *v;
@@ -298,9 +318,20 @@ int be_module_load(bvm *vm, bstring *path)
 {
     int res = BE_OK;
     if (!load_cached(vm, path)) {
+#if defined(BE_P2_OVERRIDE_MATH_STRING_MODULES) && BE_P2_OVERRIDE_MATH_STRING_MODULES
+        if (load_p2_cached_builtin(vm, path)) {
+            return BE_OK;
+        }
+#endif
         res = load_native(vm, path);
-        if (res == BE_IO_ERROR)
+        if (res == BE_IO_ERROR) {
+#if defined(BE_P2_OVERRIDE_MATH_STRING_MODULES) && BE_P2_OVERRIDE_MATH_STRING_MODULES
+            if (load_p2_cached_builtin(vm, path)) {
+                return BE_OK;
+            }
+#endif
             res = load_package(vm, path);
+        }
         if (res == BE_OK) {
             /* on first load of the module, try running the '()' function */
             module_init(vm);

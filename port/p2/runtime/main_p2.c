@@ -1,5 +1,6 @@
 #include <propeller2.h>
 #include <stdio.h>
+#include <stdint.h>
 
 #include "berry.h"
 #include "be_repl.h"
@@ -7,12 +8,42 @@
 #include "p2_build_info.h"
 
 #ifndef BE_P2_RUN_SD_MAIN
-#define BE_P2_RUN_SD_MAIN 1
+#define BE_P2_RUN_SD_MAIN 0
 #endif
 
 #define BE_P2_SD_MAIN_PATH "/berry/main.be"
 
 int stackspace[4096];
+
+static volatile uint32_t p2_startup_status_run;
+static unsigned int p2_startup_status_frame;
+
+void p2_startup_status_tick(int stage)
+{
+    static const char frames[] = "|/-\\";
+    char line[] = "\rStarting Berry VM |";
+
+    (void)stage;
+    if (p2_startup_status_run) {
+        line[sizeof(line) - 2] = frames[p2_startup_status_frame++ & 3u];
+        p2_serial_puts(line);
+    }
+}
+
+static int p2_startup_status_start(void)
+{
+    p2_startup_status_run = 1;
+    p2_startup_status_frame = 0;
+    p2_startup_status_tick(0);
+    return 0;
+}
+
+static void p2_startup_status_stop(int cog)
+{
+    (void)cog;
+    p2_startup_status_run = 0;
+    p2_serial_puts("\rStarting Berry VM done\n");
+}
 
 #if BE_DEBUG
 #define P2_FULL_VERSION "Berry " BERRY_VERSION " (debug)"
@@ -94,8 +125,11 @@ static void p2_print_banner(void)
 static int p2_try_run_sd_main(bvm *vm)
 {
 #if BE_P2_RUN_SD_MAIN && BE_USE_SCRIPT_COMPILER && BE_USE_FILE_SYSTEM
-    int res = be_loadfile(vm, BE_P2_SD_MAIN_PATH);
+    int res;
 
+    p2_startup_status_tick(100);
+    res = be_loadfile(vm, BE_P2_SD_MAIN_PATH);
+    p2_startup_status_tick(101);
     if (res == BE_IO_ERROR) {
         be_pop(vm, be_top(vm));
         return BE_OK;
@@ -107,9 +141,11 @@ static int p2_try_run_sd_main(bvm *vm)
     if (res != BE_OK && res != BE_EXIT) {
         p2_serial_puts("warning: /berry/main.be failed; continuing to REPL\n");
     }
+    p2_startup_status_tick(102);
     return res;
 #else
     (void)vm;
+    p2_startup_status_tick(102);
     return BE_OK;
 #endif
 }
@@ -117,18 +153,24 @@ static int p2_try_run_sd_main(bvm *vm)
 static void berry_p2_main(void)
 {
     bvm *vm;
+    int startup_status_cog;
+    int main_res;
 
     p2_serial_init();
     p2_print_banner();
     p2_serial_puts("[Ctrl-D or Ctrl-C at an empty prompt quits]\n");
+    startup_status_cog = p2_startup_status_start();
     vm = be_vm_new();
     if (!vm) {
+        p2_startup_status_stop(startup_status_cog);
         p2_serial_puts("error: failed to create VM\n");
         for (;;) {
         }
     }
 
-    if (p2_try_run_sd_main(vm) == BE_EXIT || p2_take_exit_request()) {
+    main_res = p2_try_run_sd_main(vm);
+    p2_startup_status_stop(startup_status_cog);
+    if (main_res == BE_EXIT || p2_take_exit_request()) {
         p2_serial_puts("bye\n");
         return;
     }

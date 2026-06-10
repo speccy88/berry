@@ -16,9 +16,9 @@ with 32 MB PSRAM and Catalina/lcc.
  - `make p2-xmm-run PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88`
 - XMM unified-memory path now works from standalone SPI flash:
  - `make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88`
- - Reset or power-cycle afterward. Boot takes about `25-30` seconds before the
- Berry banner while the stage-2 loader copies the XMM image from flash to
- PSRAM.
+ - Reset or power-cycle afterward. The sparse stage-2 loader shows an
+ `Initializing PSRAM` spinner, then Berry shows a VM startup spinner before the
+ REPL. Current captures reach `berry>` about 3 seconds after attach.
 
 ## XMM Flash Implementation
 
@@ -87,7 +87,7 @@ ok 2048 ok
 The current SD card has an invalid sector 0 signature, but a valid FAT boot
 sector at sector `2048`. Berry now falls back to common FAT starts when MBR
 sector 0 is invalid. RAM-loaded `edge32` and standalone flash-booted `edge32`
-both mount the card and load `/modules/math.be`.
+both mount the card and load optional SD libraries. `math`, `string`, and `task` are native firmware modules now.
 
 ## SD Root Cause Fixed In This Workstream
 

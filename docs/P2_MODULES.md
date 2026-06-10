@@ -3,7 +3,8 @@
 This document covers the P2-specific Berry surface in the `full` profile. The
 standard upstream modules (`string`, `math`, `json`, `bytes`, `os`, and the
 core classes) keep their normal Berry behavior unless a P2 note below says
-otherwise. The P2 VM adds `/modules` as a default lazy import root so optional
+otherwise. On current P2 builds, `string`, `math`, and `task` are native
+firmware modules, so they do not require SD files. The P2 VM adds `/modules` as a default lazy import root so optional
 `.be` libraries can live on SD instead of consuming Hub image space. On edge32,
 PSRAM is available as a block-transfer backing store/cache; current code keeps
 the active Berry object heap in Hub RAM.
@@ -71,8 +72,8 @@ print(os.remove("/BERRYTMP.TXT"))
 ## `p2`
 
 `p2` is the direct Propeller 2 hardware helper module. It is intentionally
-low-level; cooperative sleeps, process cogs, locks, and queues live under
-`rtos`.
+low-level; cooperative scheduling lives under `task`, and native cog handle
+experiments live under `p2.cog`.
 
 Constants:
 
@@ -215,129 +216,96 @@ print(spi.transfer("\x9F\x00\x00\x00"))
 spi.deselect()
 ```
 
-## `rtos`
+## `task`
 
-`rtos` owns the public concurrency and synchronization API. The current full
-profile supports the main VM plus one process VM/cog. Task source can be loaded
-explicitly with `rtos.load_file()` / `rtos.load_str()` and then launched with
-`rtos.newcog()`, or loaded and launched in one step with
-`rtos.run(source, task, ...int_args)`. `rtos.newcog("name", ...int_args)` is the
-most explicit spelling when the child VM is already loaded.
-`rtos.newcog(function, ...int_args)` and `rtos.run(source, function, ...int_args)`
-also work for named zero-upvalue Berry functions: the parent VM extracts the
-function name and asks the child VM to run its own loaded copy. Captured
-closures are still guarded until Berry functions can be serialized or
-recompiled safely inside the target VM.
+`task` is the supported cooperative scheduler API for Berry work that should
+share the current VM inside one cog. V1 is cooperative: each task function runs
+one step and returns a scheduler instruction. It is not preemptive and does not
+provide an independent Berry call stack per task.
 
-Process/cog task control:
+Core helpers:
 
-- `rtos.load_file(path)`: load Berry source into the process VM from the SD card.
-- `rtos.load_str(source)`: load Berry source text into the process VM.
-- `rtos.load(source)`: compatibility alias for `rtos.load_str()`.
-- `rtos.run(source, task, ...int_args) -> int`: load Berry source text into the
-  process VM and launch `task`. `task` may be a function name string or a named
-  zero-upvalue function object.
-- `rtos.run_source(source, task, ...int_args) -> int`: alias for `rtos.run()`.
-- `rtos.newcog(name, ...int_args) -> int`: run a loaded child-VM function by
-  name on the process cog.
-- `rtos.newcog(function, ...int_args) -> int`: run a named zero-upvalue Berry
-  function object by launching the same function name in the child VM. The
-  child VM must already have loaded a function with that name.
-- `rtos.process(name, ...int_args)`, `rtos.thread(name, ...int_args)`, and
-  `rtos.new(name, ...int_args)`: aliases for `rtos.newcog()`.
-- `rtos.spawn(name, ...int_args) -> int`: compatibility spelling for named
-  child-VM launch.
-- `rtos.cog_start(name, ...int_args) -> int`: alias for `rtos.spawn()`.
-- `rtos.stop()`: stop the process cog.
-- `rtos.state() -> string`: current process VM state.
-- `rtos.error() -> string or nil`: last child-VM error.
-- `rtos.process_info() -> map`: current backend limits, process cog ID, and
-  whether direct closure launch is available.
-- `rtos.yield()` / `rtos.task_yield()`: cooperative yield.
-- `rtos.sleep_ms(ms)`: sleep with Ctrl-C checks on the main VM.
-- `rtos.cog_id() -> int`: current cog ID.
+- `task.start(fn, ...args) -> handle`: start a cooperative task.
+- `task.next() -> int`: run one scheduler step.
+- `task.run(max_steps=nil, idle_ms=1) -> int`: run the scheduler loop.
+- `task.stop(handle=-1) -> bool`: stop a task; `-1` means the current task.
+- `task.pause(handle=-1) -> bool` / `task.resume(handle) -> bool`: pause or resume tasks.
+- `task.status(handle) -> string`: return `free`, `ready`, `waiting`, `paused`, `done`, or `error`.
+- `task.current() -> int`: current task handle, or `-1` outside a task.
+- `task.list() -> list` and `task.info() -> map`: inspect scheduler state.
+- `task.sleep(ms)`, `task.wait(event, timeout_ms=nil)`, `task.signal(event)`, and `task.clear(event)`: timing and event helpers.
+- `task.millis()`, `task.woke_by_timeout()`, and `task.woke_by_event(event=nil)`: timing/status helpers for task code.
 
-Locks:
+Return helpers:
 
-- `rtos.new_lock() -> int`: allocate a P2 hardware lock.
-- `rtos.lock(id)`: acquire a lock.
-- `rtos.try_lock(id) -> bool`: attempt to acquire without blocking.
-- `rtos.unlock(id)`: release a lock.
-- `rtos.delete_lock(id)`: return a lock to the pool.
+- `task.again`: run again on a later scheduler turn.
+- `task.done` or `nil`/`false`: finish the task.
+- `task.pause`: pause the current task.
+- `task.sleep(ms)`: wake after a hardware-counter delay.
+- `task.wait(event, timeout_ms=nil)`: wake on an event or timeout.
 
-Queues and events:
-
-- `rtos.channel(name) -> string`: create or fetch a named fixed queue.
-- `rtos.put(name, value)`: enqueue an integer or short string.
-- `rtos.get(name, timeout_ms=nil) -> value or nil`: receive, optionally with a
-  timeout. `timeout_ms=0` polls once.
-- `rtos.event_set(mask)`, `rtos.event_clear(mask)`: set or clear event bits.
-- `rtos.event_wait(mask, timeout_ms=nil) -> bool`: wait for any matching event.
-- `rtos.event_flags() -> int`: current event mask.
-
-Timers and deferred callbacks:
-
-- `rtos.ticks_per_ms() -> int`: counter ticks per millisecond.
-- `rtos.delay_ms(ms)`: millisecond delay helper.
-- `rtos.timer_start(ms) -> int`: allocate/start a one-shot timer.
-- `rtos.timer_expired(id) -> bool`: true when a timer has expired.
-- `rtos.timer_wait(id)`: wait until a timer expires.
-- `rtos.irq_enable(channel, handler_name)`: register a deferred Berry callback.
-- `rtos.irq_poll() -> int`: dispatch pending deferred callbacks.
-- `rtos.irq_disable(channel)`: remove a deferred callback.
-
-Debug constants and helpers:
-
-- `rtos.IRQ_ATN`: deferred callback channel tied to P2 cog-attention polling.
-- `rtos.IRQ_DEFERRED`: true on this implementation because callbacks are
-  dispatched from Berry code, not from an interrupt service routine.
-- `rtos.QUEUE_MAX`, `rtos.TIMER_MAX`: current fixed pool sizes.
-- `rtos.debug_tasks() -> list`: maps with cog, state, and stack information.
-- `rtos.debug_regs(cog) -> map`: selected register/counter diagnostics. Only
-  the current cog's PTRA/PTRB/INA/INB/OUTA/OUTB/DIRA/DIRB are directly readable.
+Object helpers include `task.Semaphore(count=1)`, `task.Mutex()`,
+`task.Queue(depth=8)`, `task.EventFlags(initial=0)`, and
+`task.Timer(period_ms, repeat=true)`.
 
 Example:
 
 ```berry
-import rtos
+import p2
+import task
 
-rtos.channel("rx_packets")
-rtos.load_file("/examples/rtos/workers/packet_reader.be")
-rtos.newcog("packet_reader", 50)
-print(rtos.get("rx_packets", 250))
-rtos.stop()
+def blink(pin, ms)
+    p2.toggle(pin)
+    return task.sleep(ms)
+end
+
+h38 = task.start(blink, 38, 250)
+h39 = task.start(blink, 39, 700)
+
+task.run()
 ```
 
-Function-object launch for the safe subset:
+## `p2.cog`
+
+`p2.cog` is the native cog-handle namespace. It is separate from `task`: `task`
+is cooperative scheduling inside the current Berry VM, while `p2.cog` launches
+supported native work on another cog and returns a handle that can be inspected
+or stopped.
+
+Current helpers:
+
+- `p2.cog.blinker(pin, ms)`: create a native blinker task descriptor.
+- `p2.cog.spawn(function, ...args)`: pass a Berry function entity as the setup function; `spawn()` calls it on the current cog and launches the returned supported descriptor.
+- `p2.cog.spawn(task_descriptor)`: launch an explicit descriptor directly.
+- `p2.cog.stop(handle)`: stop a spawned native task.
+- `p2.cog.info(handle)` / `p2.cog.info()`: inspect one handle or all active handles.
+- `p2.cog.capabilities()`: report supported native task-handle features.
+
+Example for the P2 Edge 32 MB board LEDs on pins `38` and `39`:
 
 ```berry
-import rtos
+import p2
 
-def packet_reader(period_ms) end       # parent-side launch handle
+def blinker(pin, ms)
+    return p2.cog.blinker(pin, ms)
+end
 
-rtos.channel("rx_packets")
-rtos.load_file("/examples/rtos/workers/packet_reader.be")
-rtos.newcog(packet_reader, 50)         # launches child VM's packet_reader()
-print(rtos.get("rx_packets", 250))
-rtos.stop()
+h38 = p2.cog.spawn(blinker, 38, 250)
+h39 = p2.cog.spawn(blinker, 39, 700)
+
+p2.cog.stop(h38)
+p2.cog.stop(h39)
 ```
 
-Inline source launch:
+Arbitrary Berry bytecode closure execution inside another isolated cog VM
+remains future work. The current blinker path runs the actual toggle loop in a
+native/PASM backend after the Berry setup function returns its descriptor.
 
-```berry
-import rtos
+## Retired `rtos` and `taskspin` APIs
 
-def packet_reader(period_ms) end       # parent-side launch handle
-
-rtos.channel("rx_packets")
-rtos.run("import rtos\n"
-         "def packet_reader(period_ms)\n"
-         "  rtos.put(\"rx_packets\", period_ms)\n"
-         "end\n",
-         packet_reader, 50)
-print(rtos.get("rx_packets", 250))
-rtos.stop()
-```
+The older `rtos` native module and Spin2-shaped `taskspin.be` source module are
+retired from the active P2 API. New cooperative code should use `task`; native
+cog handle experiments should use `p2.cog`.
 
 ## `spin2`
 
@@ -567,67 +535,16 @@ print(libstore.info("binary_heap"))
 
 ## `math`
 
-On P2, `math` is an SD-loaded Berry source module under `/modules/math.be`
-instead of a native Hub-resident module. This keeps the image smaller and avoids
-the Catalina/P2 native math-call path. The current SD module covers the P2 smoke
-surface: `pi`, `imax`, `imin`, `abs`, `sqrt`, `min`, `max`, `floor`, `ceil`,
-`round`, `pow` for positive integer exponents, `deg`, `rad`, `isnan`, `isinf`,
-`srand`, and `rand`.
+`math` is a native P2 firmware module. It no longer requires
+an SD-card `math.be` file. The P2 implementation exposes the full Berry
+math surface and uses P2 CORDIC-backed helpers where appropriate.
 
-## `taskspin`
-
-`taskspin` is a Berry source module under `/modules/taskspin.be`. It provides a
-Spin2-shaped cooperative task vocabulary without adding to the P2 firmware
-image. This is callback-step scheduling inside the current Berry VM, not
-stackful frame switching: each task is a closure that retains its own state and
-is called once by `TASKNEXT()`.
-
-Constants:
-
-- `taskspin.FREE`, `taskspin.RUNNING`, `taskspin.HALTED`: task status values.
-- `taskspin.STOP`, `taskspin.RUN`, `taskspin.HALT`: return values a task step
-  can use after being called by `TASKNEXT()`.
-- `taskspin.MAX_TASKS`: fixed at `32`, matching the Spin2 task vocabulary.
-
-Functions:
-
-- `taskspin.TASKSPIN(task, step, state, stack_address=nil) -> int`: create a
-  task. Use `task=-1` for the first free slot, or `0..31` for a fixed slot.
-  `step(id, state)` is called by `TASKNEXT()`. `stack_address` is kept as
-  Spin2-compatible metadata for diagnostics and future native task switching.
-- `taskspin.TASKNEXT() -> int`: run the next unhalted task step and return its
-  task ID, or `-1` if no task can run.
-- `taskspin.TASKSTOP(task) -> bool`: stop/free a task. Use `-1` for current.
-- `taskspin.TASKHALT(task) -> bool`: halt a task. Use `-1` for current. If a
-  currently running task halts itself, `TASKNEXT()` is run once to give another
-  unhalted task a chance to execute.
-- `taskspin.TASKCONT(task) -> bool`: continue a halted task.
-- `taskspin.TASKCHK(task) -> int`: return `FREE`, `RUNNING`, or `HALTED`.
-- `taskspin.TASKID() -> int`: current task ID, or `-1` before any task step.
-- `taskspin.TASKHLT() -> int`: Spin2-style reverse-order halt bit mask. Task
-  `0` maps to bit `31`, task `31` maps to bit `0`.
-- `taskspin.halt_bit(task) -> int`: return one task's `TASKHLT()` bit.
-- `taskspin.task_info(task) -> map`: return one slot's status, current flag,
-  and stored `stack_address`.
-- `taskspin.tasks() -> list`: return active task slot metadata.
-- `taskspin.reset()`: clear all slots.
-- `taskspin.info() -> map`: scheduler status, `halt_mask`, current slot, model
-  information, and Spin2 task-pointer register range metadata.
-
-Example:
+Common checks:
 
 ```berry
-import taskspin
-
-var state = {"n": 0}
-
-def blink_step(id, state)
-    state["n"] += 1
-    # do one small piece of work here
-    return state["n"] >= 10 ? taskspin.STOP : taskspin.RUN
-end
-
-taskspin.TASKSPIN(-1, blink_step, state, 0x11F)
-while taskspin.TASKNEXT() >= 0
-end
+import math
+print(math.pi)
+print(math.sqrt(81))
+print(math.sin(math.pi / 2))
+print(math.max(5, 2, 9))
 ```

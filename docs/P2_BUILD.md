@@ -69,8 +69,8 @@ The P2 profile layer lives in `port/p2/include/berry_conf_p2.h`. It controls
 the Berry module feature macros, P2-native module caching, heap sizes, stack
 slot limit, and maximum `bytes()` size.
 
-- `minimal`: core language and standard classes plus the `string` module. It disables filesystem, JSON, math, OS, P2 hardware modules, worker/thread/rtos/spin2 helpers, and low-level `prop2_*` globals. Current verified image: `426624` bytes with a `192 KiB` main heap.
-- `full`: the current no-PSRAM P2 Edge build. Current verified image: `494624` bytes with the existing `128 KiB` main heap, `32 KiB` worker heap, SD-backed `open()`/`os`, P2 hardware modules, `rtos`, `spin2`, and Berry `math`/WiFiNINA helpers available as source. Experimental `worker` and `threads` module APIs are folded under the public `rtos` API, and new cooperative task experiments such as `taskspin.be` live on SD.
+- `minimal`: core language and standard classes plus the `string` module. It disables filesystem, JSON, math, OS, P2 hardware modules, retired worker/RTOS/Spin2 helpers, and low-level `prop2_*` globals. Current verified image: `426624` bytes with a `192 KiB` main heap.
+- `full`: the current no-PSRAM P2 Edge build. Current verified image: `494624` bytes with the existing `128 KiB` main heap, SD-backed `open()`/`os`, P2 hardware modules, native `task`, native `math`, and WiFiNINA helpers available as optional source. The older `rtos`, `worker`, `threads`, and `taskspin` APIs are retired from the active surface.
 - `edge32`: P2 Edge 32 MB RAM profile for the P2-EC32MB-style board. It enables Catalina `-lpsram`, reserves pins `40..57` for the memory interface, keeps Berry's object heap in Hub RAM, and exposes bounded PSRAM block transfers plus an SD-library source cache for runtime smoke testing. Current verified image: `506080` bytes with a `128 KiB` main heap and `16 KiB` worker heap, leaving Hub RAM room for the PSRAM plugin.
 - `xmm`: experimental P2 Edge 32 MB RAM profile using Catalina `LARGE` plus `-lpsram` and `-C PSRAM`. This is the first clean unified-memory experiment: Berry still calls the same `p2_heap_malloc()` allocator, but the Catalina XMM memory model places the backing C data arena in external RAM so the VM does not need separate Hub-vs-PSRAM object rules. Catalina can use the lower `16 MiB` of P2 Edge PSRAM as XMM memory today; Berry keeps the upper `16 MiB` exposed as the explicit PSRAM block/cache window. Current hardware-verified image: `726432` bytes with a `15728640` byte Berry heap and `Berry heap in PSRAM` at runtime.
 
@@ -124,9 +124,10 @@ The flash image layout is:
 - `0x10000`: size-prefixed stage-2 flash-to-PSRAM loader
 - `0x40000`: size-prefixed Berry Catalina XMM image
 
-After reset or power-cycle, standalone XMM flash boot takes about `25-30`
-seconds before the Berry banner because the stage-2 loader copies the XMM image
-from SPI flash into PSRAM before starting Catalina's XMM hub loader.
+After reset or power-cycle, standalone XMM flash boot shows an
+`Initializing PSRAM` spinner and then a Berry VM startup spinner. The sparse
+stage-2 loader copies only populated image records into PSRAM; current captures
+reach `berry>` about 3 seconds after attach.
 
 Equivalent explicit form:
 
@@ -242,15 +243,16 @@ formatted FAT card usually reports boot signature `0xaa55` (`43605`) at sector
 such as `2048`, Berry falls back to that volume start; in that case
 `mount_result_name` is `ok` and `partition_start` reports the selected sector.
 If no candidate has a valid signature, SD calls return diagnostics instead of
-hanging, and SD-loaded modules such as `/modules/math.be` will not import until
-the card is formatted and provisioned.
+hanging. Native firmware modules such as `math`, `string`, and `task` still
+import without SD; optional SD libraries require the card to be formatted and
+provisioned.
 
 ## P2 SD Smoke Suite
 
 The non-destructive on-target smoke tests live under `tests/p2/`. Copy that
 directory and `modules/` to the SD card root so the target sees paths such as
-`/tests/p2/smoke_all.be`, `/tests/p2/workers/smoke_counter.be`, and
-`/modules/math.be`, `/modules/libstore.be`, and `/modules/taskspin.be`.
+`/tests/p2/smoke_all.be` and optional SD libraries such as
+`/modules/libstore.be`.
 
 To provision those Berry libraries and tests through a running Berry REPL:
 
@@ -272,7 +274,7 @@ make p2-smoke PORT=/dev/cu.usbserial-P97cvdxp
 The smoke suite covers:
 
 - core arithmetic, strings, maps, lists, ranges, and closures
-- `string`, SD-loaded `math`, `json`, `bytes`, and `p2` module basics,
+- `string`, native `math`, native `task`, `json`, `bytes`, and `p2` module basics,
  including structured `p2.status_info()` diagnostics
 - lazy SD library import from `/modules`, including `binary_heap` and
  `libstore`; on edge32, `libstore` also smoke-tests chunked PSRAM source-cache
@@ -280,12 +282,9 @@ The smoke suite covers:
  back from the PSRAM cache
 - `p2.heap_info()`/`p2.sbrk()` allocator accounting: allocate transient objects,
  verify free-space drops, then GC and assert free-space is reclaimed
-- SD-loaded cooperative `taskspin` tasks using a Spin2-shaped `TASK*` API,
- including halt-mask and stack-address diagnostics
+- Native cooperative `task` scheduler examples and `p2.cog` native-handle diagnostics
 - SD create/read/readbytes/remove using only `/P2SMOKE.TXT`
-- `rtos` channels, events, timers, `process_info()`, guarded closure launch,
- source-backed `rtos.run(source, task, ...)`, and SD-loaded
- `rtos.newcog("name", ...)`
+- Current cooperative primitives under `task` and native cog-handle examples under `p2.cog`
 
 For the original short REPL check set:
 

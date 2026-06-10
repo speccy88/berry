@@ -520,13 +520,23 @@ static void connect_str(bvm *vm, bstring *a, bvalue *b)
 volatile int berry_vm_new_diag_stage;
 volatile int *berry_vm_new_diag_stage_ptr;
 volatile int berry_vm_new_skip_loadlibs;
+#if defined(BE_P2_PROFILE)
+extern void p2_startup_status_tick(int stage);
+#endif
 
 #define BERRY_VM_NEW_DIAG_STAGE(stage) do { \
     berry_vm_new_diag_stage = (stage); \
     if (berry_vm_new_diag_stage_ptr != NULL) { \
         *berry_vm_new_diag_stage_ptr = (stage); \
     } \
+    BE_P2_VM_NEW_STATUS_TICK(stage); \
 } while (0)
+
+#if defined(BE_P2_PROFILE)
+#define BE_P2_VM_NEW_STATUS_TICK(stage) p2_startup_status_tick(stage)
+#else
+#define BE_P2_VM_NEW_STATUS_TICK(stage) ((void)0)
+#endif
 
 BERRY_API bvm* be_vm_new(void)
 {
