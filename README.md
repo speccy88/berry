@@ -1,15 +1,13 @@
 <p align="center">
   <h1 align="center">Berry for the Propeller 2</h1>
-  <p align="center">A tiny embedded scripting VM, now learning to talk pins, cogs, SD cards, PSRAM, and P2 hardware from a friendly REPL.</p>
+  <p align="center">A Propeller 2-first Berry environment for pins, cogs, SD cards, PSRAM, hardware modules, and live scripting from a friendly REPL.</p>
 </p>
 
 ## What is this?
 
-This repository is Berry plus an active Propeller 2 port. Berry stays recognizably
-Berry: a small dynamically typed language with a one-pass compiler and a
-register-based VM. The P2 port adds the board-facing pieces that make it useful
-on real hardware: serial REPL, GPIO, counters, cogs, SD files, native modules,
-PSRAM/XMM profiles, and a growing set of hardware helpers.
+This repo is focused on making Berry feel native on the Propeller 2. The center
+of gravity is the P2 board: serial REPL, GPIO, counters, cogs, SD files, native
+modules, PSRAM/XMM profiles, and a growing set of hardware helpers.
 
 The goal is simple: power up a Propeller 2, get a `berry>` prompt, and make the
 chip do interesting things without rebuilding firmware for every experiment.
@@ -45,8 +43,6 @@ The current concurrency split is intentional:
 - use `task` for cooperative work inside the current Berry VM
 - use `p2.cog` for supported native cog-backed handles
 - arbitrary Berry bytecode closures in isolated cogs are still future work
-- older `rtos`, `worker`, `threads`, and `taskspin` experiments are retired from
-  the active API
 
 ## Five-Minute Hardware Taste
 
@@ -118,14 +114,7 @@ cog.
 
 ## Quick Start
 
-Standard host Berry build:
-
-```sh
-make
-./berry
-```
-
-P2 build with Catalina:
+Build Berry for Propeller 2 with Catalina:
 
 ```sh
 make p2 TOOLCHAIN=catalina
@@ -252,6 +241,21 @@ sense.
 
 ### Functions and Function Entities
 
+Functions are small reusable pieces of behavior. They can return values, accept
+arguments, and be passed around as values.
+
+```berry
+def clamp(value, low, high)
+    if value < low return low end
+    if value > high return high end
+    return value
+end
+
+print(clamp(120, 0, 63))
+```
+
+A hardware-flavored function can wrap a repeated pin action:
+
 ```berry
 def pulse(pin, ms)
     import p2
@@ -313,36 +317,67 @@ or task arguments.
 
 ### Lists: Pin Banks and Scan Results
 
+Lists keep ordered values. They are perfect for batches of pins, device
+addresses, filenames, and test steps.
+
 ```berry
 leds = [38, 39]
 leds.push(56)
+
+print("first LED", leds[0])
+print("number of LEDs", leds.size())
 
 for pin: leds
     print("configured pin", pin)
 end
 ```
 
-Lists are handy for batches of pins, device addresses, filenames, and test
-steps.
+Lists can hold mixed Berry values too:
 
-### Maps: Board Configuration
+```berry
+bringup = ["mount sd", "scan i2c", "blink led", 42, true]
+for step: bringup
+    print("step", step)
+end
+```
+
+### Maps: Board Configuration and Key/Value Data
+
+Maps store key/value pairs. They are useful for board profiles, sensor readings,
+lookup tables, and runtime configuration.
 
 ```berry
 board = {
     "name": "P2 Edge 32MB",
     "leds": [38, 39],
     "sd": [58, 59, 60, 61],
-    "serial": [62, 63]
+    "serial": [62, 63],
+    "has_psram": true
 }
 
 print(board["name"])
+print(board["leds"][0])
 print(board.find("wifi", "not fitted"))
 ```
 
-Maps store key/value pairs. Use `find(key, default)` when a missing key should
-not be an error.
+You can update values, add keys, check whether a key exists, and loop through
+keys.
 
-### If, Loops, and Ranges
+```berry
+reading = {"sensor": "bmp180", "addr": 0x77, "ok": true}
+reading["temp_c"] = 23.5
+reading["samples"] = reading.find("samples", 0) + 1
+
+if reading.contains("temp_c")
+    print("temperature", reading["temp_c"])
+end
+
+for key: reading.keys()
+    print(key, reading[key])
+end
+```
+
+### If, For Loops, While Loops, and Ranges
 
 ```berry
 import p2
@@ -361,8 +396,20 @@ end
 ```
 
 Ranges such as `0..9` are compact and convenient for quick hardware sweeps.
+Use `while` when the loop depends on changing state.
 
-### Classes: A Tiny LED Object
+```berry
+count = 0
+while count < 4
+    print("tick", count)
+    count += 1
+end
+```
+
+### Classes: Tiny Hardware Objects
+
+Classes let you bundle state and behavior. This LED object remembers which pin
+it owns.
 
 ```berry
 class Led
@@ -398,6 +445,34 @@ led.blink(100)
 
 `init()` is the constructor. Instance fields are declared with `var` and are
 accessed through `self` inside methods.
+
+Classes do not have to touch hardware directly. They can also organize data:
+
+```berry
+class SensorReading
+    var name
+    var values
+
+    def init(name)
+        self.name = name
+        self.values = []
+    end
+
+    def add(value)
+        self.values.push(value)
+    end
+
+    def latest()
+        if self.values.size() == 0 return nil end
+        return self.values[self.values.size() - 1]
+    end
+end
+
+r = SensorReading("temperature")
+r.add(22.8)
+r.add(23.1)
+print(r.name, r.latest())
+```
 
 ### Subclasses: Active-Low LEDs
 
@@ -811,14 +886,10 @@ The main P2 areas are:
 - [`modules/`](./modules)
 - [`tests/p2/`](./tests/p2)
 
-Upstream Berry source layout stays largely intact under `src/`, `default/`,
-`modules/`, `examples/`, and `tests/`. P2 runtime code, overrides, probes, and
-status notes live under `port/p2/`. P2 build logic lives under `mk/`. Tool
-bootstrap and loader helpers live under `tools/p2/`. Downloaded toolchains
-belong in `.third_party_cache/` or user-provided paths, not in git.
-
-The long-term maintenance rule is simple: keep the fork easy to use while
-keeping Berry upstream merges manageable.
+The core VM lives under `src/`, while the Propeller 2 runtime, overrides,
+probes, and status notes live under `port/p2/`. P2 build logic lives under
+`mk/`. Tool bootstrap and loader helpers live under `tools/p2/`. Downloaded
+toolchains belong in `.third_party_cache/` or user-provided paths, not in git.
 
 ## Toolchain Model
 
@@ -875,18 +946,6 @@ Reference material:
 - [Berry in 20 minutes](https://berry.readthedocs.io/en/latest/source/en/Berry-in-20-minutes.html)
 - [Short manual PDF](https://github.com/berry-lang/berry_doc/blob/master/pdf/berry_short_manual.pdf)
 - [`tools/grammar/berry.ebnf`](./tools/grammar/berry.ebnf)
-
-## Host Build
-
-Host build requirements are unchanged:
-
-1. Install a C compiler.
-2. Install `readline` on Unix-like hosts if desired.
-3. Run:
-
-```sh
-make
-```
 
 ## Notes
 
