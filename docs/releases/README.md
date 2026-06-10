@@ -14,6 +14,7 @@ The goal is that someone can open a release page and immediately understand what
 
 Current release notes:
 
+- [`v0.9.6.md`](./v0.9.6.md)
 - [`v0.9.5.md`](./v0.9.5.md)
 - [`v0.9.4.md`](./v0.9.4.md)
 - [`v0.9.3.md`](./v0.9.3.md)

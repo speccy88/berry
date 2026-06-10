@@ -4801,6 +4801,7 @@ static int m_p2_vm_cog_ping(bvm *vm)
             p2_cog_stack_free(stack_mem);
             stack_freed = 1;
         }
+#if defined(__CATALINA_LARGE)
         if (result >= 0 && result < 8 && p2_xmm_private_caches[result].child_cog_data != NULL) {
             volatile uint32_t *data = (volatile uint32_t *)p2_xmm_private_caches[result].child_cog_data;
 
@@ -4814,6 +4815,7 @@ static int m_p2_vm_cog_ping(bvm *vm)
             p2_xmm_cog_data_word7_after = data[7];
         }
         p2_xmm_private_cache_release(result);
+#endif
     } else {
         p2_cog_stack_free(stack_mem);
         stack_freed = 1;
@@ -4834,6 +4836,7 @@ static int m_p2_vm_cog_ping(bvm *vm)
     p2_map_set_int(vm, "pasm_cog", (bint)pasm_cog);
     p2_map_set_int(vm, "pasm_marker", (bint)pasm_marker);
     p2_map_set_int(vm, "pasm_cog_seen", (bint)pasm_cog_seen);
+#if defined(__CATALINA_LARGE)
     p2_map_set_int(vm, "after_cache_pasm_cog", (bint)p2_xmm_after_cache_pasm_cog);
     p2_map_set_int(vm, "after_cache_pasm_marker", (bint)p2_xmm_after_cache_pasm_marker);
     p2_map_set_int(vm, "after_cache_pasm_seen", (bint)p2_xmm_after_cache_pasm_seen);
@@ -4853,6 +4856,7 @@ static int m_p2_vm_cog_ping(bvm *vm)
     p2_map_set_int(vm, "xmm_cog_data_word5_after", (bint)p2_xmm_cog_data_word5_after);
     p2_map_set_int(vm, "xmm_cog_data_word6_after", (bint)p2_xmm_cog_data_word6_after);
     p2_map_set_int(vm, "xmm_cog_data_word7_after", (bint)p2_xmm_cog_data_word7_after);
+#endif
     p2_map_set_int(vm, "stack_bytes", (bint)stack_size);
     p2_map_set_int(vm, "current", (bint)p2_heap_vm_partition_current());
     p2_hub_mem_free(job);
@@ -6975,13 +6979,15 @@ static void p2_module_add_cog(bvm *vm)
     p2_module_set_func(vm, "stop", m_p2_cog_stop);
     p2_module_set_func(vm, "blinker", m_p2_closure_cog_blinker);
     p2_module_set_func(vm, "task", m_p2_closure_cog_task);
+#if defined(__CATALINA_LARGE)
     p2_module_set_func(vm, "task_kinds", m_p2_closure_cog_task_kinds);
     p2_module_set_func(vm, "task_release", m_p2_closure_cog_task_release);
-    p2_module_set_func(vm, "is_task", m_p2_closure_cog_is_task);
     p2_module_set_func(vm, "task_info", m_p2_closure_cog_task_info);
+    p2_module_set_func(vm, "spawn_source", m_p2_closure_cog_spawn_source);
+#endif
+    p2_module_set_func(vm, "is_task", m_p2_closure_cog_is_task);
     p2_module_set_func(vm, "spawn", m_p2_closure_cog_spawn);
     p2_module_set_func(vm, "spawn_task", m_p2_closure_cog_spawn);
-    p2_module_set_func(vm, "spawn_source", m_p2_closure_cog_spawn_source);
     p2_module_set_func(vm, "info", m_p2_closure_cog_info);
     p2_module_set_func(vm, "capabilities", m_p2_closure_cog_capabilities);
     p2_module_set_func(vm, "vm_cog_ping", m_p2_vm_cog_ping);
@@ -7076,13 +7082,15 @@ static void p2_module_add_runtime_cog(bvm *vm)
     p2_module_set_func(vm, "stop", m_p2_cog_stop);
     p2_module_set_func(vm, "blinker", m_p2_closure_cog_blinker);
     p2_module_set_func(vm, "task", m_p2_closure_cog_task);
+#if defined(__CATALINA_LARGE)
     p2_module_set_func(vm, "task_kinds", m_p2_closure_cog_task_kinds);
     p2_module_set_func(vm, "task_release", m_p2_closure_cog_task_release);
-    p2_module_set_func(vm, "is_task", m_p2_closure_cog_is_task);
     p2_module_set_func(vm, "task_info", m_p2_closure_cog_task_info);
+    p2_module_set_func(vm, "spawn_source", m_p2_closure_cog_spawn_source);
+#endif
+    p2_module_set_func(vm, "is_task", m_p2_closure_cog_is_task);
     p2_module_set_func(vm, "spawn", m_p2_closure_cog_spawn);
     p2_module_set_func(vm, "spawn_task", m_p2_closure_cog_spawn);
-    p2_module_set_func(vm, "spawn_source", m_p2_closure_cog_spawn_source);
     p2_module_set_func(vm, "info", m_p2_closure_cog_info);
     p2_module_set_func(vm, "capabilities", m_p2_closure_cog_capabilities);
     p2_module_set_func(vm, "attention", m_attention_signal);
@@ -7186,11 +7194,13 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "cog_spawn_task")) be_pushntvfunction(vm, m_p2_closure_cog_spawn);
     else if (!strcmp(name, "cog_blinker")) be_pushntvfunction(vm, m_p2_closure_cog_blinker);
     else if (!strcmp(name, "cog_task")) be_pushntvfunction(vm, m_p2_closure_cog_task);
+#if defined(__CATALINA_LARGE)
     else if (!strcmp(name, "cog_task_kinds")) be_pushntvfunction(vm, m_p2_closure_cog_task_kinds);
     else if (!strcmp(name, "cog_task_release")) be_pushntvfunction(vm, m_p2_closure_cog_task_release);
-    else if (!strcmp(name, "cog_is_task")) be_pushntvfunction(vm, m_p2_closure_cog_is_task);
     else if (!strcmp(name, "cog_task_info")) be_pushntvfunction(vm, m_p2_closure_cog_task_info);
     else if (!strcmp(name, "cog_spawn_source")) be_pushntvfunction(vm, m_p2_closure_cog_spawn_source);
+#endif
+    else if (!strcmp(name, "cog_is_task")) be_pushntvfunction(vm, m_p2_closure_cog_is_task);
     else if (!strcmp(name, "cog_info")) be_pushntvfunction(vm, m_p2_closure_cog_info);
     else if (!strcmp(name, "cog_closure_stop")) be_pushntvfunction(vm, m_p2_closure_cog_stop);
     else if (!strcmp(name, "cog_stop")) be_pushntvfunction(vm, m_p2_cog_stop);
