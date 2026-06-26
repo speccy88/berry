@@ -3656,6 +3656,7 @@ static int m_p2_closure_cog_join(bvm *vm)
         p2_map_set_nil(vm, "result");
         break;
     }
+    be_pop(vm, 1);
     be_return(vm);
 }
 
