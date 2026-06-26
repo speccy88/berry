@@ -43,6 +43,30 @@ static bmodule* native_module(bvm *vm, const bntvmodule_t *nm, bvalue *dst);
 #if defined(BE_P2_OVERRIDE_MATH_STRING_MODULES) && BE_P2_OVERRIDE_MATH_STRING_MODULES
 extern void be_cache_mathmodule(bvm *vm);
 extern void be_cache_stringmodule(bvm *vm);
+#if BE_USE_GLOBAL_MODULE
+extern void be_cache_globalmodule(bvm *vm);
+#endif
+#if BE_USE_SYS_MODULE
+extern void be_cache_sysmodule(bvm *vm);
+#endif
+#if BE_USE_GC_MODULE
+extern void be_cache_gcmodule(bvm *vm);
+#endif
+#if BE_USE_DEBUG_MODULE
+extern void be_cache_debugmodule(bvm *vm);
+#endif
+#if BE_USE_INTROSPECT_MODULE
+extern void be_cache_introspectmodule(bvm *vm);
+#endif
+#if BE_USE_TIME_MODULE
+extern void be_cache_timemodule(bvm *vm);
+#endif
+#if BE_USE_SOLIDIFY_MODULE
+extern void be_cache_solidifymodule(bvm *vm);
+#endif
+#if BE_USE_STRICT_MODULE
+extern void be_cache_strictmodule(bvm *vm);
+#endif
 #endif
 
 static const bntvmodule_t* find_native(bstring *path)
@@ -140,7 +164,11 @@ static char* fixpath(bvm *vm, bstring *path, size_t *size)
         base = "/";
     }
 #else
+#if defined(__CATALINA__)
+    base = "";
+#else
     base = "/";
+#endif
 #endif
     split = be_splitpath(base);
     *size = split - base + (size_t)str_len(path) + SUFFIX_LEN;
@@ -275,6 +303,54 @@ static bbool load_p2_cached_builtin(bvm *vm, bstring *path)
         be_cache_stringmodule(vm);
         return load_cached(vm, path) != NULL;
     }
+#if BE_USE_GLOBAL_MODULE
+    if (!strcmp(str(path), "global")) {
+        be_cache_globalmodule(vm);
+        return load_cached(vm, path) != NULL;
+    }
+#endif
+#if BE_USE_SYS_MODULE
+    if (!strcmp(str(path), "sys")) {
+        be_cache_sysmodule(vm);
+        return load_cached(vm, path) != NULL;
+    }
+#endif
+#if BE_USE_GC_MODULE
+    if (!strcmp(str(path), "gc")) {
+        be_cache_gcmodule(vm);
+        return load_cached(vm, path) != NULL;
+    }
+#endif
+#if BE_USE_DEBUG_MODULE
+    if (!strcmp(str(path), "debug")) {
+        be_cache_debugmodule(vm);
+        return load_cached(vm, path) != NULL;
+    }
+#endif
+#if BE_USE_INTROSPECT_MODULE
+    if (!strcmp(str(path), "introspect")) {
+        be_cache_introspectmodule(vm);
+        return load_cached(vm, path) != NULL;
+    }
+#endif
+#if BE_USE_TIME_MODULE
+    if (!strcmp(str(path), "time")) {
+        be_cache_timemodule(vm);
+        return load_cached(vm, path) != NULL;
+    }
+#endif
+#if BE_USE_SOLIDIFY_MODULE
+    if (!strcmp(str(path), "solidify")) {
+        be_cache_solidifymodule(vm);
+        return load_cached(vm, path) != NULL;
+    }
+#endif
+#if BE_USE_STRICT_MODULE
+    if (!strcmp(str(path), "strict")) {
+        be_cache_strictmodule(vm);
+        return load_cached(vm, path) != NULL;
+    }
+#endif
     return bfalse;
 }
 #endif
@@ -282,6 +358,12 @@ static bbool load_p2_cached_builtin(bvm *vm, bstring *path)
 void be_cache_module(bvm *vm, bstring *name)
 {
     bvalue *v;
+    if (var_ismodule(vm->top - 1)) {
+        bmodule *module = var_toobj(vm->top - 1);
+        if (be_module_name(module) == NULL) {
+            be_module_setname(module, name);
+        }
+    }
     if (vm->module.loaded == NULL) {
         vm->module.loaded = be_map_new(vm);
     }
@@ -298,6 +380,9 @@ static void module_init(bvm *vm) {
         const char *hook = "init";
         bmodule *module = var_toobj(vm->top - 1);
         if (module->info.native) {
+            if (!strcmp(be_module_name(module), "global")) {
+                return;
+            }
             hook = "()";
         }
         if (be_getmember(vm, -1, hook)) {
@@ -406,6 +491,21 @@ bbool be_module_setmember(bvm *vm, bmodule *module, bstring *attr, bvalue *src)
 {
     be_assert(src);
     bmap *attrs = module->table;
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+    const char *module_name = be_module_name(module);
+    if (module_name && strcmp(module_name, "global") == 0) {
+        int type = be_module_attr(vm, module, str_literal(vm, "setmember"), vm->top);
+        if (basetype(type) == BE_FUNCTION) {
+            bvalue *top = vm->top;
+            var_setstr(&top[1], attr);
+            top[2] = *src;
+            vm->top += 3;
+            be_dofunc(vm, top, 2);
+            vm->top -= 3;
+            return btrue;
+        }
+    }
+#endif
     if (!gc_isconst(attrs)) {
         bvalue *v = be_map_findstr(vm, attrs, attr);
         if (v == NULL) {

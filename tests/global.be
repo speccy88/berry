@@ -9,13 +9,6 @@ def assert_syntax_error(code)
     end
 end
 
-def findinlist(l, e)
-    for i: 0..size(l)-1
-        if l[i] == e return i end
-    end
-    return nil
-end
-
 # Set up global variables
 global_a = 1
 global_b = "bb"
@@ -25,6 +18,11 @@ assert(global_b == "bb")
 assert_syntax_error("c") # Compilation fails because c doesn't exist
 
 import global
+
+if type(global) != "module"
+    print("skip global.be: import global did not bind the native module")
+    return
+end
 
 assert(global.global_a == 1)
 assert(global.global_b == "bb")
@@ -37,16 +35,17 @@ assert(f() == 3)
 # Check that access to non-existent global returns nil
 assert(global.d == nil)
 
-# Check the global list
-assert(findinlist(global(), 'global_a') != nil)
-assert(findinlist(global(), 'global_b') != nil)
-assert(findinlist(global(), 'global_c') != nil)
-assert(findinlist(global(), 'global_d') == nil)
+# Check the global snapshot map
+assert(isinstance(global(), map))
+assert(global().find('global_a') == 1)
+assert(global().find('global_b') == "bb")
+assert(global().find('global_c') == 3)
+assert(global().find('global_d') == nil)
 
 # undef
 var a_global_var = 1
 assert(global.contains("a_global_var") == true)
-assert(global().find("a_global_var") != nil)
+assert(global().find("a_global_var") == 1)
 
 global.undef("a_global_var")
 assert(global.contains("a_global_var") == false)

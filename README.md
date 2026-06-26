@@ -61,10 +61,10 @@ Blink a no-PSRAM P2 Edge LED on pin `56`:
 ```berry
 import p2
 
-p2.pinmode(56, p2.OUTPUT)
+p2.pin.dir_high(56)
 for i: 0..5
-    p2.toggle(56)
-    p2.waitms(150)
+    p2.pin.toggle(56)
+    p2.clock.waitms(150)
 end
 ```
 
@@ -75,7 +75,7 @@ import p2
 import task
 
 def blink(pin, ms)
-    p2.toggle(pin)
+    p2.pin.toggle(pin)
     return task.sleep(ms)
 end
 
@@ -95,7 +95,9 @@ later:
 import p2
 
 def blinker(pin, ms)
-    return p2.cog.blinker(pin, ms)
+    p2.pin.dir_high(pin)
+    p2.pin.toggle(pin)
+    return ms
 end
 
 h38 = p2.cog.spawn(blinker, 38, 250)
@@ -259,9 +261,9 @@ A hardware-flavored function can wrap a repeated pin action:
 ```berry
 def pulse(pin, ms)
     import p2
-    p2.high(pin)
-    p2.waitms(ms)
-    p2.low(pin)
+    p2.pin.high(pin)
+    p2.clock.waitms(ms)
+    p2.pin.low(pin)
 end
 
 pulse(56, 100)
@@ -383,15 +385,15 @@ end
 import p2
 
 pin = 56
-p2.pinmode(pin, p2.OUTPUT)
+p2.pin.dir_high(pin)
 
 for i: 0..9
     if i % 2 == 0
-        p2.high(pin)
+        p2.pin.high(pin)
     else
-        p2.low(pin)
+        p2.pin.low(pin)
     end
-    p2.waitms(50)
+    p2.clock.waitms(50)
 end
 ```
 
@@ -418,23 +420,23 @@ class Led
     def init(pin)
         import p2
         self.pin = pin
-        p2.pinmode(pin, p2.OUTPUT)
+        p2.pin.dir_high(pin)
     end
 
     def on()
         import p2
-        p2.high(self.pin)
+        p2.pin.high(self.pin)
     end
 
     def off()
         import p2
-        p2.low(self.pin)
+        p2.pin.low(self.pin)
     end
 
     def blink(ms)
         import p2
         self.on()
-        p2.waitms(ms)
+        p2.clock.waitms(ms)
         self.off()
     end
 end
@@ -483,12 +485,12 @@ rewriting the whole object.
 class ActiveLowLed : Led
     def on()
         import p2
-        p2.low(self.pin)
+        p2.pin.low(self.pin)
     end
 
     def off()
         import p2
-        p2.high(self.pin)
+        p2.pin.high(self.pin)
     end
 end
 
@@ -503,10 +505,10 @@ Closures let a function remember values from the scope where it was created.
 ```berry
 def make_toggler(pin)
     import p2
-    p2.pinmode(pin, p2.OUTPUT)
+    p2.pin.dir_high(pin)
 
     def toggle_once()
-        p2.toggle(pin)
+        p2.pin.toggle(pin)
     end
 
     return toggle_once
@@ -577,7 +579,7 @@ import p2
 import task
 
 def heartbeat(pin, ms)
-    p2.toggle(pin)
+    p2.pin.toggle(pin)
     return task.sleep(ms)
 end
 
@@ -888,22 +890,21 @@ The main P2 areas are:
 
 The core VM lives under `src/`, while the Propeller 2 runtime, overrides,
 probes, and status notes live under `port/p2/`. P2 build logic lives under
-`mk/`. Tool bootstrap and loader helpers live under `tools/p2/`. Downloaded
-toolchains belong in `.third_party_cache/` or user-provided paths, not in git.
+`mk/`. Tool bootstrap and loader helpers live under `tools/p2/`. Loader tool
+caches belong in `.third_party_cache/` or user-provided paths, not in git.
 
 ## Toolchain Model
 
 Catalina is the preferred and verified compiler flow for Berry on P2:
 
 ```sh
-make p2 TOOLCHAIN=catalina CATALINA_DIR=/opt/catalina
-make p2 TOOLCHAIN=catalina P2_PROFILE=minimal CATALINA_DIR=/opt/catalina
+make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2 TOOLCHAIN=catalina P2_PROFILE=minimal CATALINA_DIR=../Catalina
 make p2-run TOOLCHAIN=catalina LOADP2=/opt/flexprop/bin/loadp2 PORT=/dev/ttyUSB0
 ```
 
-Local managed caches are supported and ignored by git:
+Local managed loader caches are supported and ignored by git:
 
-- `.third_party_cache/catalina/`
 - `.third_party_cache/flexprop/` for loader tools such as `loadp2`
 
 The old `TOOLCHAIN=flexc` path remains in the tree for historical/debugging

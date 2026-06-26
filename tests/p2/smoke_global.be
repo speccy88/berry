@@ -3,7 +3,7 @@ print("P2_SMOKE_BEGIN global")
 import global
 
 assert(type(global) == "module")
-assert(type(global()) == "map")
+assert(isinstance(global(), map))
 assert(type(global.contains) == "function")
 assert(type(global.undef) == "function")
 

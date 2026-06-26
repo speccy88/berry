@@ -35,19 +35,19 @@ This note is the handoff for the next P2 porting session.
 
 On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
 
-- `make p2 TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88` builds a RAM image with Catalina 8.8.9:
+- `make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` builds a RAM image with Catalina 8.8.9:
  - image: `494624` bytes
  - code: `248300` bytes
  - const: `18376` bytes
  - init: `7360` bytes
  - data: `210420` bytes
-- `make p2-edge32 CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88` builds the P2 Edge 32 MB RAM profile:
+- `make p2-edge32 CATALINA_DIR=../Catalina` builds the P2 Edge 32 MB RAM profile:
  - image: `506080` bytes
  - code: `283940` bytes
  - const: `23048` bytes
  - init: `7516` bytes
  - data: `178240` bytes
-- `make p2-xmm CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88` builds the experimental P2 Edge 32 MB RAM XMM profile:
+- `make p2-xmm CATALINA_DIR=../Catalina` builds the experimental P2 Edge 32 MB RAM XMM profile:
  - Catalina model: `LARGE`
  - libraries/config: `-lcx -lpsram -lm` with explicit `-C PSRAM`
  - image: `726432` bytes under the `16 MiB` experimental XMM image limit
@@ -65,8 +65,8 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
  - standalone XMM flash boot now uses the fast sparse flash-to-PSRAM loader with an `Initializing PSRAM` spinner, then a post-banner `Starting Berry VM` spinner while native modules are initialized
  - current hardware capture reaches `berry>` in about `3.000` seconds after attach on `/dev/cu.usbserial-P97cvdxp`
  - verified banner reports `[xmm profile]`, `Berry heap external`, `XMM 16777216 B`, and `block 16777216 B @ 16777216`; `p2.status()` reports `main heap` total `15728640 B`
-- `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88` flashed and booted from flash on the P2 Edge 32 MB RAM board. The boot banner reported `P2_EDGE, PSRAM`, `[edge32 profile]`, `131072 B` heap, and `33554432 B` PSRAM block API.
-- `make p2-run TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88 PORT=/dev/cu.usbserial-P97cvdxp` RAM-loads and reaches the Berry prompt
+- `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_DIR=../Catalina` flashed and booted from flash on the P2 Edge 32 MB RAM board. The boot banner reported `P2_EDGE, PSRAM`, `[edge32 profile]`, `131072 B` heap, and `33554432 B` PSRAM block API.
+- `make p2-run TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/cu.usbserial-P97cvdxp` RAM-loads and reaches the Berry prompt
 - Non-destructive SD smoke tests now live under `tests/p2/` and can be driven
  from the host with `make p2-smoke`, `make p2-smoke-quick`, and
  `make p2-smoke-edge32` once that directory and `modules/` have been copied to

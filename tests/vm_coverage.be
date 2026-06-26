@@ -192,8 +192,12 @@ end
 # GETNGBL / SETNGBL: named global access via global module
 import global
 
-global.vm_test_ngbl = 99
-assert(global.vm_test_ngbl == 99)
-global.vm_test_ngbl = 100
-assert(global.vm_test_ngbl == 100)
-global.undef("vm_test_ngbl")
+if type(global) == "module"
+    global.vm_test_ngbl = 99
+    assert(global.vm_test_ngbl == 99)
+    global.vm_test_ngbl = 100
+    assert(global.vm_test_ngbl == 100)
+    global.undef("vm_test_ngbl")
+else
+    print("skip vm_coverage global-module named-global checks")
+end

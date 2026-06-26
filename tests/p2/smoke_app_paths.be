@@ -1,3 +1,4 @@
+# P2_SD_WRITE_AUDIT max_write_opens=2
 print("P2_SMOKE_BEGIN app_paths")
 
 import os
@@ -15,8 +16,8 @@ end
 ensure_dir("/berry")
 ensure_dir("/berry/app")
 
-var path = "/berry/app/p1_app_probe.be"
-var nested_dir = "/berry/app/p1_app_pkg"
+var path = "/berry/app/app_probe.be"
+var nested_dir = "/berry/app/app_probe_pkg"
 var made_nested_dir = false
 if !os.path.isdir(nested_dir)
     ensure_dir(nested_dir)
@@ -35,15 +36,15 @@ var nf = open(nested_path, "w")
 nf.write("return 84\n")
 nf.close()
 
-assert(libstore.app_path("p1_app_probe") == path)
-assert(libstore.app_exists("p1_app_probe"))
-assert(libstore.run_app("p1_app_probe") == 42)
-assert(libstore.app_path("p1_app_pkg.probe") == nested_path)
-assert(libstore.app_exists("p1_app_pkg.probe"))
-assert(libstore.run_app("p1_app_pkg.probe") == 84)
-assert(libstore.app_path("p1_no_such_app") == nil)
-assert(!libstore.app_exists("p1_no_such_app"))
-assert(libstore.run_app("p1_no_such_app") == nil)
+assert(libstore.app_path("app_probe") == path)
+assert(libstore.app_exists("app_probe"))
+assert(libstore.run_app("app_probe") == 42)
+assert(libstore.app_path("app_probe_pkg.probe") == nested_path)
+assert(libstore.app_exists("app_probe_pkg.probe"))
+assert(libstore.run_app("app_probe_pkg.probe") == 84)
+assert(libstore.app_path("no_such_app_probe") == nil)
+assert(!libstore.app_exists("no_such_app_probe"))
+assert(libstore.run_app("no_such_app_probe") == nil)
 
 try
     os.remove(path)

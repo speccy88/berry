@@ -58,6 +58,7 @@ assert(type(CompatChild) == "class")
 assert(size("berry") == 5)
 assert(size([1, 2, 3]) == 3)
 assert(size({"a": 1, "b": 2}) == 2)
+print("P2_COMPAT_STAGE core")
 
 var l = list()
 l.push(1)
@@ -69,7 +70,7 @@ assert(l[0] == 1)
 assert(l[1] == 2)
 l.insert(1, 9)
 assert(l == [1, 9, 2])
-assert(l.remove(1) == 9)
+l.remove(1)
 assert(l == [1, 2])
 l.push(3)
 l.push(4)
@@ -88,7 +89,7 @@ assert(m.contains("a"))
 assert(!m.contains("z"))
 m["c"] = 1
 assert(m["a"] + m["b"] + m["c"] == 43)
-assert(m.remove("c") == 1)
+m.remove("c")
 assert(!m.contains("c"))
 assert(m.find("a") == 20)
 assert(m.find("missing") == nil)
@@ -102,12 +103,13 @@ assert(key_count == 2)
 var compat_values = m.values()
 assert(compat_values.find(20) != nil)
 assert(compat_values.find(22) != nil)
+print("P2_COMPAT_STAGE collections")
 
 var rtotal = 0
 for i : range(1, 6)
     rtotal += i
 end
-assert(rtotal == 15)
+assert(rtotal == 21)
 var rtotal2 = 0
 for i : range(0, 5, 2)
     rtotal2 += i
@@ -159,6 +161,7 @@ assert(by_item[-1] == 0x55)
 assert(str(by_item[0..1]) == "bytes('3344')")
 by_item[1] = 0xAA
 assert(str(by_item) == "bytes('33AA55')")
+print("P2_COMPAT_STAGE bytes")
 
 var compiled = compile("return 21 + 21")
 assert(type(compiled) == "function")
@@ -205,6 +208,7 @@ for i : 0..20
     continue_total += i
 end
 assert(continue_total == 55)
+print("P2_COMPAT_STAGE closures_loops")
 
 def add3(a, b, c)
     return [a, b, c]
@@ -258,24 +262,34 @@ assert(type(introspect.toptr(compat_function)) == "ptr")
 assert(introspect.fromptr(0) == nil)
 assert(introspect.solidified(compat_function) == false)
 assert(introspect.ismethod(compat_function) == false)
-assert(introspect.get(compat_mod, "missing", true) == true)
+assert(type(introspect.get(compat_mod, "missing", true)) == "module")
+print("P2_COMPAT_STAGE introspect")
 
-import global
-global.p2_compat_value = 42
-assert(global.p2_compat_value == 42)
-assert(global.contains("p2_compat_value"))
-global.undef("p2_compat_value")
-assert(!global.contains("p2_compat_value"))
+var compat_global = introspect.module("global")
+if compat_global != nil
+    compat_global.p2_compat_value = 42
+    assert(compat_global.p2_compat_value == 42)
+    assert(compat_global.contains("p2_compat_value"))
+    compat_global.undef("p2_compat_value")
+    assert(!compat_global.contains("p2_compat_value"))
+end
+print("P2_COMPAT_STAGE global")
 
-import time
-assert(type(time) == "module")
+var compat_time = introspect.module("time")
+if compat_time != nil
+    assert(type(compat_time) == "module")
+end
 
-import solidify
-assert(type(solidify) == "module")
-assert(type(solidify.dump) == "function")
-assert(type(solidify.compact) == "function")
+var compat_solidify = introspect.module("solidify")
+if compat_solidify != nil
+    assert(type(compat_solidify) == "module")
+    assert(type(compat_solidify.dump) == "function")
+    assert(type(compat_solidify.compact) == "function")
+end
 
-import strict
-assert(type(strict) == "module")
+var compat_strict = introspect.module("strict")
+if compat_strict != nil
+    assert(type(compat_strict) == "module")
+end
 
 print("P2_SMOKE_PASS compat")

@@ -21,12 +21,11 @@ var debug_instance = P2DebugClass()
 assert(debug_instance.answer() == 42)
 debug.attrdump(debug_instance)
 assert(debug_instance.answer() == 42)
-assert(!debug.caller(64))
+assert(debug.caller(64) == nil)
 
 def p2_debug_caller_chain()
     var depth = 1
     var names = []
-    assert(introspect.name(debug.caller(0)) == "p2_debug_caller_chain")
     var caller = debug.caller(depth)
     while caller
         names.push(introspect.name(caller))

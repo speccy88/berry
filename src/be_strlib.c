@@ -19,6 +19,7 @@
 #include <limits.h>
 #include <float.h>
 #include <math.h>
+#include <stdint.h>
 
 #if BE_INTGER_TYPE == 0 /* int */
     #define M_IMAX    INT_MAX
@@ -42,6 +43,45 @@
 #define is_space(c)     ((c) == ' ' || (c) == '\t' || (c) == '\r' || (c) == '\n')
 #define is_digit(c)     ((c) >= '0' && (c) <= '9')
 #define skip_space(s)   while (is_space(*(s))) { ++(s); }
+
+static int real_is_nan(breal x)
+{
+#if BE_USE_SINGLE_FLOAT
+    union {
+        breal r;
+        uint32_t u;
+    } v;
+    v.r = x;
+    return (v.u & 0x7FFFFFFFUL) > 0x7F800000UL;
+#else
+    return x != x;
+#endif
+}
+
+static int real_is_inf(breal x)
+{
+#if BE_USE_SINGLE_FLOAT
+    union {
+        breal r;
+        uint32_t u;
+    } v;
+    v.r = x;
+    return (v.u & 0x7FFFFFFFUL) == 0x7F800000UL;
+#else
+    return x != (breal)0.0 && x + x == x;
+#endif
+}
+
+static void real2str(char *buf, size_t len, breal x)
+{
+    if (real_is_nan(x)) {
+        snprintf(buf, len, "nan");
+    } else if (real_is_inf(x)) {
+        snprintf(buf, len, x < (breal)0.0 ? "-inf" : "inf");
+    } else {
+        snprintf(buf, len, "%g", x);
+    }
+}
 
 static int str_strncasecmp(const char *s1, const char *s2, size_t n)
 {
@@ -161,7 +201,7 @@ bstring* be_num2str(bvm *vm, bvalue *v)
     if (var_isint(v)) {
         snprintf(buf, sizeof(buf),BE_INT_FORMAT, var_toint(v));
     } else if (var_isreal(v)) {
-        snprintf(buf, sizeof(buf), "%g", var_toreal(v));
+        real2str(buf, sizeof(buf), var_toreal(v));
     } else {
         snprintf(buf, sizeof(buf), "(nan)");
     }
@@ -193,7 +233,7 @@ static bstring* sim2str(bvm *vm, bvalue *v)
         snprintf(sbuf, sizeof(sbuf), BE_INT_FORMAT, var_toint(v));
         break;
     case BE_REAL:
-        snprintf(sbuf, sizeof(sbuf), "%g", var_toreal(v));
+        real2str(sbuf, sizeof(sbuf), var_toreal(v));
         break;
     case BE_CLOSURE: case BE_NTVCLOS: case BE_NTVFUNC: case BE_CTYPE_FUNC:
         snprintf(sbuf, sizeof(sbuf), "<function: %p>", var_toobj(v));

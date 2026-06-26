@@ -9,6 +9,18 @@ Always record the board and profile before running hardware tests:
 - `P2_PROFILE=full`, `edge32`, or `xmm`.
 - `P2_SILICON=latest`, `b`, `c`, or `a`.
 
+Current focused hardware work normally uses `/dev/ttyUSB0` at `230400` baud
+with the native sibling Catalina checkout:
+
+```sh
+make <target> PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+```
+
+Do not use pins reserved by the active profile. The current Catalina XMM P2
+Edge 32 MB profile reserves pins `40..57` for PSRAM, keeps the user LED
+examples on pins `38` and `39`, and leaves pins `0..7` available for the
+documented smart-pin loopback harness.
+
 ## Reserved pins
 
 - SD: pins `58..61`.
@@ -21,6 +33,14 @@ Tests must skip or fail clearly when a requested test pin is reserved by the sel
 
 Use short jumpers and document exact pins for each loopback test:
 
+- Current smart-pin jumper harness: connect `0-1`, `2-3`, `4-5`, and `6-7`
+  with short direct jumpers. These pairs are used by the focused smart-pin
+  smokes for GPIO, normal smart-pin mode, counters, PWM/NCO/pulse/transition
+  output into counters, async serial, staged sync serial diagnostics, and
+  DAC-output to ADC-input diagnostics.
+- Current sync-serial diagnostic groups: use `0-1` as the data pair with
+  `2-3` as the clock pair, and `4-5` as the data pair with `6-7` as the clock
+  pair.
 - UART loopback: connect TX to RX through a short jumper on non-reserved pins.
 - SPI loopback: connect MOSI to MISO for raw transfer smoke, or document the attached SPI device and expected response.
 - I2C: use pull-ups suitable for the bus voltage; existing BMP180 coverage uses `SCL=25`, `SDA=24`.
@@ -30,12 +50,32 @@ Use short jumpers and document exact pins for each loopback test:
 
 - I2C requires pull-ups unless the attached board provides them.
 - LEDs need current limiting unless they are onboard LEDs.
+- The current `0-1`, `2-3`, `4-5`, and `6-7` digital loopback smokes assume
+  direct jumpers with no series resistors. They must configure only one side as
+  a driven output at a time and clear/float pins during cleanup.
+- DAC-to-ADC diagnostics may reuse the same direct jumpers, but they are
+  diagnostic only: they record integer samples and polarity metadata, and do
+  not prove calibrated voltage, stable polarity, or nonzero low/high movement.
 - Avoid direct contention between two driven outputs.
 - Confirm voltage compatibility for attached modules.
 
 ## Skipped tests
 
 When hardware is unavailable, record the skip with board, missing wiring/device, and the exact test that was skipped. Do not mark a hardware feature verified from a skipped test.
+
+Current intentional diagnostic-only or skipped smart-pin areas:
+
+- ADC/DAC calibrated voltage scaling, stable polarity, and nonzero low/high
+  delta remain unverified on the current direct-jumper setup.
+- NCO-duty waveform validation remains unverified; the focused diagnostic can
+  report no counter delta on the current `0->1` jumper.
+- Quadrature setup/read/clear is covered with a static jumper, and synthetic
+  motion/direction is covered by driving pins `0` and `2` into inputs `1` and
+  `3`; mechanical encoder behavior remains open.
+- Sync serial setup and bounded transfer diagnostics are staged, but matched
+  received word validation remains open.
+- USB/HID and VGA examples report unsupported or setup-only status unless
+  matching hardware and a real implementation are present.
 
 ## Runnable entrypoints
 
@@ -45,3 +85,18 @@ make soak-p2 PORT=/dev/cu.usbserial-P97cvdxp BOARD=p2edge32 HOURS=1
 ```
 
 These are the standard scripted smoke/soak entrypoints once the board is already at a Berry prompt and the serial port is known.
+
+For current focused smart-pin checks, prefer the narrow targets instead of the
+broad suite:
+
+```sh
+make p2-smoke-smartpins-normal-pin PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-smoke-smartpins-counter-modes PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-smoke-smartpins-adc-dac-diag PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-smoke-smartpins-async-rx PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-smoke-smartpins-sync-diag PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-smoke-smartpins-quadrature-static PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-smoke-smartpins-quadrature-motion PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-smoke-smartpins-quadrature-diag PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-smoke-smartpins-nco-duty-diag PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+```

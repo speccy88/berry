@@ -28,14 +28,14 @@ floating-point/log/endian helpers.
 Primary validation command:
 
 ```sh
-make spin2 TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
+make spin2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 ```
 
 Temporary RAM SD-loader build:
 
 ```sh
 make spin2-sd-loader TOOLCHAIN=catalina \
- CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
+ CATALINA_DIR=../Catalina
 ```
 
 Direct hardware transfer requires a connected P2 serial port:

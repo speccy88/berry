@@ -10,7 +10,6 @@ import os
 import json
 import p2
 import string
-import sys
 
 var libstore = module("libstore")
 
@@ -39,6 +38,7 @@ libstore.known = [
     "p2compat",
     "p2ipc",
     "p2mem",
+    "p2smart",
     "task",
     "wifi"
 ]
@@ -112,6 +112,16 @@ libstore.coverage_table = {
         "low_memory_smoke": "/tests/p2/smoke_import_churn.be",
         "metadata_smoke": "/tests/p2/smoke_module_inventory.be",
         "reason": "p2mem module diagnostics plus SD import/cache/churn coverage"
+    },
+    "p2smart": {
+        "status": "covered",
+        "behavior_smoke": "/tests/p2/smoke_smartpins_loopback.be",
+        "sd_import_smoke": "/tests/p2/smoke_import_all_libs.be",
+        "repeated_import_smoke": "/tests/p2/smoke_import_cache.be",
+        "cache_smoke": "/tests/p2/smoke_import_cache.be",
+        "low_memory_smoke": "/tests/p2/smoke_import_churn.be",
+        "metadata_smoke": "/tests/p2/smoke_module_inventory.be",
+        "reason": "smart-pin wrapper behavior plus SD import/cache/churn coverage"
     },
     "task": {
         "status": "covered",
@@ -207,10 +217,36 @@ libstore.module_name = def(entry)
     return lower[0..(size(lower) - 4)]
 end
 
+libstore.valid_module_name = def(name)
+    if type(name) != "string" || size(name) == 0
+        return false
+    end
+    if string.find(name, "/") >= 0 || string.find(name, "\\") >= 0
+        return false
+    end
+    if string.startswith(name, ".") || string.endswith(name, ".")
+        return false
+    end
+    if string.find(name, "..") >= 0
+        return false
+    end
+    return true
+end
+
 libstore.module_file = def(name, ext)
+    if !libstore.valid_module_name(name)
+        raise "value_error", "invalid module name"
+    end
     var out = str(name)
     out = string.replace(out, ".", "/")
     return out + ext
+end
+
+libstore.module_file_or_nil = def(name, ext)
+    if !libstore.valid_module_name(name)
+        return nil
+    end
+    return libstore.module_file(name, ext)
 end
 
 libstore.hash_text = def(text)
@@ -234,7 +270,9 @@ libstore.source_stats = def(name)
             "hash": nil
         }
     end
-    var source = open(path, "r").read()
+    var f = open(path, "r")
+    var source = f.read()
+    f.close()
     return {
         "path": path,
         "exists": true,
@@ -253,7 +291,9 @@ libstore.compiled_stats = def(name)
             "hash": nil
         }
     end
-    var bytecode = open(path, "r").read()
+    var f = open(path, "r")
+    var bytecode = f.read()
+    f.close()
     return {
         "path": path,
         "exists": true,
@@ -279,19 +319,7 @@ libstore.path_add = def(path)
         end
     end
     libstore.paths.push(path)
-    if type(sys.path_add) == "function" && !libstore._sys_path_contains(path)
-        sys.path_add(path)
-    end
     return true
-end
-
-libstore._sys_path_contains = def(path)
-    for base : sys.path()
-        if base == path
-            return true
-        end
-    end
-    return false
 end
 
 libstore.path_remove = def(path)
@@ -330,8 +358,251 @@ libstore.coverage = def(name)
     }
 end
 
+libstore._coverage_snapshot = def(item)
+    return {
+        "status": item["status"],
+        "behavior_smoke": item["behavior_smoke"],
+        "sd_import_smoke": item["sd_import_smoke"],
+        "repeated_import_smoke": item["repeated_import_smoke"],
+        "cache_smoke": item["cache_smoke"],
+        "low_memory_smoke": item["low_memory_smoke"],
+        "metadata_smoke": item["metadata_smoke"],
+        "reason": item["reason"]
+    }
+end
+
+libstore.capabilities = def()
+    return {
+        "lazy_sd_source": true,
+        "path_list": true,
+        "path_add_remove": true,
+        "coverage_metadata": true,
+        "inventory": true,
+        "info": true,
+        "source_stats": true,
+        "compiled_stats": true,
+        "compiled_manifest": true,
+        "compiled_fallback": true,
+        "compile_cache_planning": true,
+        "psram_source_cache": true,
+        "policy_diagnostics": true,
+        "status_diagnostics": true,
+        "app_paths": true,
+        "example_paths": true,
+        "pasm_paths": true,
+        "pasm_storage_policy": true,
+        "valid_module_name": true,
+        "audit": true,
+        "audit_policy": "metadata_only_no_sd_scan_or_cache_mutation"
+    }
+end
+
+libstore.capability = def(name)
+    if type(name) != "string"
+        return nil
+    end
+    var caps = libstore.capabilities()
+    if caps.contains(name)
+        return caps[name]
+    end
+    return nil
+end
+
+libstore.required_capability_keys = def()
+    return [
+        "lazy_sd_source",
+        "path_list",
+        "path_add_remove",
+        "coverage_metadata",
+        "inventory",
+        "info",
+        "source_stats",
+        "compiled_stats",
+        "compiled_manifest",
+        "compiled_fallback",
+        "compile_cache_planning",
+        "psram_source_cache",
+        "policy_diagnostics",
+        "status_diagnostics",
+        "app_paths",
+        "example_paths",
+        "pasm_paths",
+        "pasm_storage_policy",
+        "valid_module_name",
+        "audit",
+        "audit_policy"
+    ]
+end
+
+libstore.audit = def()
+    var caps = libstore.capabilities()
+    var problems = []
+    var missing_capability_keys = []
+    var seen = {}
+    var covered = 0
+    var hardware_deferred = 0
+    var unknown = 0
+
+    for name : libstore.required_capability_keys()
+        if !caps.contains(name)
+            missing_capability_keys.push(name)
+        elif name != "audit_policy" && !caps[name]
+            problems.push(name + "_capability_disabled")
+        end
+    end
+    if missing_capability_keys.size() != 0
+        problems.push("missing_capability_keys")
+    end
+    if caps["audit_policy"] != "metadata_only_no_sd_scan_or_cache_mutation"
+        problems.push("audit_policy_mismatch")
+    end
+    if libstore.capability("coverage_metadata") != caps["coverage_metadata"]
+        problems.push("coverage_metadata_lookup_mismatch")
+    end
+    if libstore.capability("missing") != nil
+        problems.push("missing_lookup_not_nil")
+    end
+    if libstore.capability(nil) != nil
+        problems.push("nil_lookup_not_nil")
+    end
+    if libstore.POLICY_SD_LAZY != "sd_only"
+        problems.push("sd_lazy_policy_mismatch")
+    end
+    if libstore.POLICY_SD_CACHE_PSRAM != "sd_cache_psram"
+        problems.push("sd_cache_policy_mismatch")
+    end
+    if libstore.POLICY_SD_PRELOAD_PSRAM != "sd_preload_psram"
+        problems.push("sd_preload_policy_mismatch")
+    end
+    if !libstore._policy_supported(libstore.POLICY_SD_LAZY) ||
+            !libstore._policy_supported(libstore.POLICY_SD_CACHE_PSRAM) ||
+            !libstore._policy_supported(libstore.POLICY_SD_PRELOAD_PSRAM)
+        problems.push("policy_support_mismatch")
+    end
+    if libstore._normalize_policy("missing") != nil
+        problems.push("unknown_policy_normalized")
+    end
+    if libstore.MANIFEST_FORMAT != "berry-p2-bec-manifest-v1"
+        problems.push("manifest_format_mismatch")
+    end
+    if libstore.paths.size() == 0 || libstore.paths[0] != "/modules"
+        problems.push("module_path_root_mismatch")
+    end
+    if libstore.compiled_paths.size() == 0 || libstore.compiled_paths[0] != "/berry/cache"
+        problems.push("compiled_path_root_mismatch")
+    end
+    if libstore.app_paths.size() == 0 || libstore.app_paths[0] != "/berry/app"
+        problems.push("app_path_root_mismatch")
+    end
+    if libstore.example_paths.size() == 0 || libstore.example_paths[0] != "/berry/examples"
+        problems.push("example_path_root_mismatch")
+    end
+    if libstore.pasm_paths.size() == 0 || libstore.pasm_paths[0] != "/berry/pasm"
+        problems.push("pasm_path_root_mismatch")
+    end
+    var pasm_policy = libstore.pasm_policy()
+    if pasm_policy["storage_root"] != "/berry/pasm"
+        problems.push("pasm_policy_root_mismatch")
+    end
+    if pasm_policy["execution_supported"] || pasm_policy["executable"]
+        problems.push("pasm_policy_execution_mismatch")
+    end
+    if pasm_policy["reason"] != "pasm_execution_deferred"
+        problems.push("pasm_policy_reason_mismatch")
+    end
+    if !libstore.valid_module_name("pkg.mod")
+        problems.push("valid_dotted_module_rejected")
+    end
+    if libstore.valid_module_name("") || libstore.valid_module_name(nil) ||
+            libstore.valid_module_name("../escape") ||
+            libstore.valid_module_name("bad/name") ||
+            libstore.valid_module_name(".hidden") ||
+            libstore.valid_module_name("trailing.")
+        problems.push("invalid_module_name_accepted")
+    end
+    if libstore.module_file_or_nil("pkg.mod", ".be") != "pkg/mod.be"
+        problems.push("module_file_mapping_mismatch")
+    end
+    if libstore.module_file_or_nil("../escape", ".be") != nil
+        problems.push("invalid_module_file_not_nil")
+    end
+
+    for name : libstore.known
+        if seen.contains(name)
+            problems.push("duplicate_known_module:" + name)
+        end
+        seen[name] = true
+        if !libstore.valid_module_name(name)
+            problems.push("invalid_known_module:" + name)
+        end
+        if !libstore.coverage_table.contains(name)
+            problems.push("missing_coverage:" + name)
+        else
+            var cov = libstore.coverage_table[name]
+            if !cov.contains("status") || !cov.contains("sd_import_smoke") ||
+                    !cov.contains("repeated_import_smoke") ||
+                    !cov.contains("cache_smoke") ||
+                    !cov.contains("low_memory_smoke") ||
+                    !cov.contains("metadata_smoke") ||
+                    !cov.contains("reason")
+                problems.push("coverage_shape_mismatch:" + name)
+            else
+                if cov["status"] == "covered"
+                    covered += 1
+                    if cov["behavior_smoke"] == nil
+                        problems.push("covered_behavior_missing:" + name)
+                    end
+                elif cov["status"] == "hardware_deferred"
+                    hardware_deferred += 1
+                    if cov["behavior_smoke"] != nil
+                        problems.push("hardware_deferred_behavior_present:" + name)
+                    end
+                else
+                    unknown += 1
+                    problems.push("unknown_coverage_status:" + name)
+                end
+                if cov["sd_import_smoke"] != "/tests/p2/smoke_import_all_libs.be"
+                    problems.push("sd_import_smoke_mismatch:" + name)
+                end
+                if cov["metadata_smoke"] != "/tests/p2/smoke_module_inventory.be"
+                    problems.push("metadata_smoke_mismatch:" + name)
+                end
+            end
+        end
+    end
+
+    return {
+        "ok": problems.size() == 0,
+        "problem_count": problems.size(),
+        "problems": problems,
+        "missing_capability_keys": missing_capability_keys,
+        "audit_policy": caps["audit_policy"],
+        "known_count": libstore.known.size(),
+        "coverage_count": size(libstore.coverage_table),
+        "covered_count": covered,
+        "hardware_deferred_count": hardware_deferred,
+        "unknown_coverage_count": unknown,
+        "pasm_policy": pasm_policy,
+        "lazy_sd_source": caps["lazy_sd_source"],
+        "coverage_metadata": caps["coverage_metadata"],
+        "compiled_fallback": caps["compiled_fallback"],
+        "psram_source_cache": caps["psram_source_cache"]
+    }
+end
+
+libstore.audit_problems = def()
+    return libstore.audit()["problems"]
+end
+
+libstore.audit_ok = def()
+    return libstore.audit()["ok"]
+end
+
 libstore.app_path = def(name)
-    var file = libstore.module_file(name, ".be")
+    var file = libstore.module_file_or_nil(name, ".be")
+    if file == nil
+        return nil
+    end
     for base : libstore.app_paths
         var path = base + "/" + file
         if os.path.exists(path)
@@ -354,7 +625,10 @@ libstore.run_app = def(name)
 end
 
 libstore.example_path = def(name)
-    var file = libstore.module_file(name, ".be")
+    var file = libstore.module_file_or_nil(name, ".be")
+    if file == nil
+        return nil
+    end
     for base : libstore.example_paths
         var path = base + "/" + file
         if os.path.exists(path)
@@ -377,7 +651,10 @@ libstore.run_example = def(name)
 end
 
 libstore.pasm_path = def(name)
-    var file = libstore.module_file(name, ".bin")
+    var file = libstore.module_file_or_nil(name, ".bin")
+    if file == nil
+        return nil
+    end
     for base : libstore.pasm_paths
         var path = base + "/" + file
         if os.path.exists(path)
@@ -391,6 +668,23 @@ libstore.pasm_exists = def(name)
     return libstore.pasm_path(name) != nil
 end
 
+libstore.pasm_policy = def()
+    return {
+        "ok": true,
+        "storage_supported": true,
+        "storage_root": "/berry/pasm",
+        "path_pattern": "/berry/pasm/*.bin",
+        "nested_module_names": true,
+        "load_supported": true,
+        "load_result_helper": true,
+        "executable": false,
+        "execution_supported": false,
+        "execution_policy": "deferred_to_p2_asm_marker_fixture",
+        "reason": "pasm_execution_deferred",
+        "native_launch_policy": "p2.asm exact marker fixture only"
+    }
+end
+
 libstore.pasm_info = def(name)
     var path = libstore.pasm_path(name)
     if path == nil
@@ -398,14 +692,63 @@ libstore.pasm_info = def(name)
             "name": name,
             "path": nil,
             "exists": false,
+            "size": 0,
+            "hash": nil,
             "executable": false,
             "reason": "missing"
         }
     end
+    var f = open(path, "r")
+    var data = f.read()
+    f.close()
     return {
         "name": name,
         "path": path,
         "exists": true,
+        "size": size(data),
+        "hash": libstore.hash_text(data),
+        "executable": false,
+        "reason": "pasm_execution_deferred"
+    }
+end
+
+libstore.pasm_load = def(name)
+    var path = libstore.pasm_path(name)
+    if path == nil
+        return nil
+    end
+    var f = open(path, "r")
+    var data = f.read()
+    f.close()
+    return data
+end
+
+libstore.pasm_load_result = def(name)
+    var path = libstore.pasm_path(name)
+    if path == nil
+        return {
+            "ok": false,
+            "found": false,
+            "name": name,
+            "path": nil,
+            "data": nil,
+            "size": 0,
+            "hash": nil,
+            "executable": false,
+            "reason": libstore.valid_module_name(name) ? "missing" : "invalid_module_name"
+        }
+    end
+    var f = open(path, "r")
+    var data = f.read()
+    f.close()
+    return {
+        "ok": true,
+        "found": true,
+        "name": name,
+        "path": path,
+        "data": data,
+        "size": size(data),
+        "hash": libstore.hash_text(data),
         "executable": false,
         "reason": "pasm_execution_deferred"
     }
@@ -575,7 +918,7 @@ libstore.status = def()
     var window = libstore.cache_ensure()
     var heap = psram["heap"] ? "external" : "hub"
     return {
-        "paths": libstore.paths,
+        "paths": libstore.path_list(),
         "lazy": true,
         "source": "sd",
         "policy": policy,
@@ -591,10 +934,20 @@ libstore.status = def()
         "psram_cache_used": libstore.cache_next - libstore.cache_base,
         "psram_cache_free": libstore.cache_base + libstore.cache_limit - libstore.cache_next,
         "psram_cache_items": libstore.cache.size(),
-        "library_count": libstore.modules().size(),
+        "library_count": libstore.known_source_count(),
         "psram_max_transfer": psram["max_transfer"],
         "heap": heap
     }
+end
+
+libstore.known_source_count = def()
+    var count = 0
+    for name : libstore.known
+        if libstore.source_path(name) != nil
+            count += 1
+        end
+    end
+    return count
 end
 
 libstore.modules = def()
@@ -602,7 +955,10 @@ libstore.modules = def()
 end
 
 libstore.source_path = def(name)
-    var file = libstore.module_file(name, ".be")
+    var file = libstore.module_file_or_nil(name, ".be")
+    if file == nil
+        return nil
+    end
     for base : libstore.paths
         var path = base + "/" + file
         if os.path.exists(path)
@@ -613,7 +969,10 @@ libstore.source_path = def(name)
 end
 
 libstore.compiled_path = def(name)
-    var file = libstore.module_file(name, ".bec")
+    var file = libstore.module_file_or_nil(name, ".bec")
+    if file == nil
+        return nil
+    end
     for base : libstore.compiled_paths
         var path = base + "/" + file
         if os.path.exists(path)
@@ -628,21 +987,25 @@ libstore.compiled_exists = def(name)
 end
 
 libstore.compiled_candidate_path = def(name)
-    return libstore.compiled_paths[0] + "/" + libstore.module_file(name, ".bec")
+    var file = libstore.module_file_or_nil(name, ".bec")
+    if file == nil
+        return nil
+    end
+    return libstore.compiled_paths[0] + "/" + file
 end
 
 libstore.compiled_manifest_candidate_path = def(name)
-    return libstore.compiled_candidate_path(name) + ".json"
+    var path = libstore.compiled_candidate_path(name)
+    if path == nil
+        return nil
+    end
+    if string.endswith(path, ".bec")
+        return path[0..(size(path) - 5)] + ".jsn"
+    end
+    return path + ".jsn"
 end
 
 libstore.compiled_manifest_path = def(name)
-    var cpath = libstore.compiled_path(name)
-    if cpath != nil
-        var path = cpath + ".json"
-        if os.path.exists(path)
-            return path
-        end
-    end
     var candidate = libstore.compiled_manifest_candidate_path(name)
     if os.path.exists(candidate)
         return candidate
@@ -651,6 +1014,15 @@ libstore.compiled_manifest_path = def(name)
 end
 
 libstore.compiled_manifest = def(name)
+    if !libstore.valid_module_name(name)
+        return {
+            "path": nil,
+            "exists": false,
+            "valid": false,
+            "reason": "invalid_module_name",
+            "data": nil
+        }
+    end
     var path = libstore.compiled_manifest_path(name)
     if path == nil
         return {
@@ -661,9 +1033,21 @@ libstore.compiled_manifest = def(name)
             "data": nil
         }
     end
-    var text = open(path, "r").read()
+    var f = open(path, "r")
+    var text = f.read()
+    f.close()
+    if !string.startswith(text, "{")
+        return {
+            "path": path,
+            "exists": true,
+            "valid": false,
+            "reason": "invalid_manifest",
+            "data": nil
+        }
+    end
     var data = json.load(text)
-    var valid = type(data) == "map"
+    var data_type = type(data)
+    var valid = data_type == "map" || data_type == "instance"
     var reason = valid ? "ok" : "invalid_manifest"
     if valid
         if !data.contains("format") || data["format"] != libstore.MANIFEST_FORMAT
@@ -687,12 +1071,28 @@ libstore.compiled_manifest = def(name)
 end
 
 libstore.compiled_manifest_template = def(name)
+    if !libstore.valid_module_name(name)
+        return {
+            "available": false,
+            "reason": "invalid_module_name",
+            "format": libstore.MANIFEST_FORMAT,
+            "path": libstore.compiled_manifest_candidate_path(name),
+            "data": nil
+        }
+    end
     var stats = libstore.source_stats(name)
+    if !stats["exists"]
+        return {
+            "available": false,
+            "reason": "source_missing",
+            "format": libstore.MANIFEST_FORMAT,
+            "path": libstore.compiled_manifest_candidate_path(name),
+            "data": nil
+        }
+    end
     var cstats = libstore.compiled_stats(name)
     var reason = "ok"
-    if !stats["exists"]
-        reason = "source_missing"
-    elif !cstats["exists"]
+    if !cstats["exists"]
         reason = "compiled_missing"
     end
     if reason != "ok"
@@ -792,7 +1192,12 @@ libstore.compile_cache_probe = def()
     end
     libstore._ensure_parent_dir(libstore.compile_cache_probe_path)
     var f = open(libstore.compile_cache_probe_path, "w")
-    var supported = type(f.savecode) == "function"
+    var saver = nil
+    try
+        saver = f.savecode
+    except .. as e, m
+    end
+    var supported = type(saver) == "function"
     f.close()
     try
         os.remove(libstore.compile_cache_probe_path)
@@ -810,16 +1215,40 @@ libstore.compile_cache_plan = def(name, probe)
     if probe
         libstore.compile_cache_probe()
     end
+    var valid_name = libstore.valid_module_name(name)
     var stats = libstore.source_stats(name)
     var cstats = libstore.compiled_stats(name)
     var manifest = libstore.compiled_manifest(name)
-    var manifest_template = libstore.compiled_manifest_template(name)
-    var resolved = libstore.resolve(name)
     var reason = libstore.compile_cache_reason
-    if !stats["exists"]
+    if !valid_name
+        reason = "invalid_module_name"
+    elif !stats["exists"]
         reason = "source_missing"
     end
-    var can_emit = libstore.compile_cache_supported && stats["exists"]
+    var can_emit = valid_name && libstore.compile_cache_supported && stats["exists"]
+    var manifest_template_available = false
+    var manifest_template_reason = valid_name ? (stats["exists"] ? (cstats["exists"] ? "ok" : "compiled_missing") : "source_missing") : "invalid_module_name"
+    var manifest_template_data = nil
+    if valid_name && stats["exists"] && cstats["exists"]
+        var manifest_template = libstore.compiled_manifest_template(name)
+        manifest_template_available = manifest_template["available"]
+        manifest_template_reason = manifest_template["reason"]
+        manifest_template_data = manifest_template["data"]
+    end
+    var selected_path = nil
+    var selected_kind = nil
+    var resolve_reason = "missing"
+    if !valid_name
+        resolve_reason = "invalid_module_name"
+    elif stats["exists"]
+        selected_path = stats["path"]
+        selected_kind = "source"
+        resolve_reason = cstats["exists"] ? "compiled_unsupported_source_fallback" : "source"
+    elif cstats["exists"]
+        resolve_reason = "compiled_unsupported_no_source"
+    else
+        resolve_reason = reason
+    end
     return {
         "name": name,
         "supported": libstore.compile_cache_supported,
@@ -830,9 +1259,9 @@ libstore.compile_cache_plan = def(name, probe)
         "manifest_required": true,
         "validator_required": true,
         "execution_required": true,
-        "manifest_template_available": manifest_template["available"],
-        "manifest_template_reason": manifest_template["reason"],
-        "manifest_template": manifest_template["data"],
+        "manifest_template_available": manifest_template_available,
+        "manifest_template_reason": manifest_template_reason,
+        "manifest_template": manifest_template_data,
         "target_path": libstore.compiled_candidate_path(name),
         "manifest_target_path": libstore.compiled_manifest_candidate_path(name),
         "source_path": stats["path"],
@@ -847,13 +1276,16 @@ libstore.compile_cache_plan = def(name, probe)
         "manifest_exists": manifest["exists"],
         "manifest_valid": manifest["valid"],
         "manifest_reason": manifest["reason"],
-        "selected_path": resolved["selected_path"],
-        "selected_kind": resolved["selected_kind"],
-        "resolve_reason": resolved["reason"]
+        "selected_path": selected_path,
+        "selected_kind": selected_kind,
+        "resolve_reason": resolve_reason
     }
 end
 
 libstore.compile_cache_emit = def(name)
+    if !libstore.valid_module_name(name)
+        raise "value_error", "invalid module name"
+    end
     var plan = libstore.compile_cache_plan(name, true)
     if !plan["source_exists"]
         raise "value_error", "source module is missing"
@@ -865,7 +1297,9 @@ libstore.compile_cache_emit = def(name)
     libstore._ensure_parent_dir(plan["target_path"])
     libstore._ensure_parent_dir(plan["manifest_target_path"])
 
-    var source = open(plan["source_path"], "r").read()
+    var source_file = open(plan["source_path"], "r")
+    var source = source_file.read()
+    source_file.close()
     var fn = compile(source)
     var out = open(plan["target_path"], "w")
     if type(out.savecode) != "function"
@@ -1062,7 +1496,9 @@ libstore.compiled_validation = def(name)
     var comparable = false
     var fresh = false
     var valid = false
-    if stats["exists"] && cstats["exists"]
+    if !libstore.valid_module_name(name)
+        reason = "invalid_module_name"
+    elif stats["exists"] && cstats["exists"]
         if !manifest["exists"]
             reason = "bytecode_freshness_manifest_unavailable"
         elif !manifest["valid"]
@@ -1112,8 +1548,17 @@ end
 
 libstore.compiled_load_plan = def(name)
     var fresh = libstore.compiled_freshness(name)
-    var validation = libstore.compiled_validation(name)
     var reason = fresh["reason"]
+    var validation = {
+        "valid": false,
+        "reason": reason,
+        "loader_supported": libstore.compiled_loader_supported,
+        "supported": libstore.compiled_validator_supported,
+        "execution_supported": libstore.compiled_supported
+    }
+    if fresh["compiled_exists"] && fresh["fresh"]
+        validation = libstore.compiled_validation(name)
+    end
     if fresh["compiled_exists"] && fresh["fresh"] && !validation["valid"]
         reason = validation["reason"]
     end
@@ -1144,7 +1589,21 @@ end
 
 libstore.compiled_status = def(name)
     var fresh = libstore.compiled_freshness(name)
-    var validation = libstore.compiled_validation(name)
+    var validation = {
+        "supported": libstore.compiled_validator_supported,
+        "valid": false,
+        "fresh": fresh["fresh"],
+        "comparable": fresh["comparable"],
+        "reason": fresh["reason"],
+        "loader_supported": libstore.compiled_loader_supported,
+        "execution_supported": libstore.compiled_supported,
+        "source_path": fresh["source_path"],
+        "compiled_path": fresh["compiled_path"],
+        "manifest_path": fresh["manifest_path"]
+    }
+    if fresh["compiled_exists"] && fresh["fresh"]
+        validation = libstore.compiled_validation(name)
+    end
     var load_plan = libstore.compiled_load_plan(name)
     var emit_plan = libstore.compile_cache_plan(name)
     return {
@@ -1333,7 +1792,9 @@ libstore.compiled_freshness = def(name)
     var comparable = false
     var fresh = false
     var usable = false
-    if stats["exists"] && cstats["exists"]
+    if !libstore.valid_module_name(name)
+        reason = "invalid_module_name"
+    elif stats["exists"] && cstats["exists"]
         if !manifest["exists"]
             reason = "bytecode_freshness_manifest_unavailable"
         elif !manifest["valid"]
@@ -1395,7 +1856,10 @@ libstore.resolve = def(name)
     var compiled_preferred = cpath != nil && freshness["fresh"]
     var compiled_blocked_reason = cpath == nil ? "compiled_missing" : nil
 
-    if libstore.compiled_supported && freshness["usable"]
+    if !libstore.valid_module_name(name)
+        reason = "invalid_module_name"
+        compiled_blocked_reason = "invalid_module_name"
+    elif libstore.compiled_supported && freshness["usable"]
         selected_path = cpath
         selected_kind = "compiled"
         reason = "compiled_supported"
@@ -1441,10 +1905,11 @@ libstore.info = def(name)
     var execution_probe = libstore.compiled_execution_probe()
     var path = libstore.source_path(name)
     var cpath = libstore.compiled_path(name)
-    var resolved = libstore.resolve(name)
     var stats = libstore.source_stats(name)
     var cstats = libstore.compiled_stats(name)
     var freshness = libstore.compiled_freshness(name)
+    var validation = libstore.compiled_validation(name)
+    var load_plan = libstore.compiled_load_plan(name)
     var psram = p2.psram_info()
     var window = libstore.cache_ensure()
     var heap = psram["heap"] ? "external" : "hub"
@@ -1455,11 +1920,34 @@ libstore.info = def(name)
         load = "lazy_source"
     end
     var cached = libstore.cache.contains(name) ? libstore.cache[name] : nil
-    var coverage = libstore.coverage(name)
-    var cache_plan = libstore.compile_cache_plan(name)
-    var validation = libstore.compiled_validation(name)
-    var load_plan = libstore.compiled_load_plan(name)
-    var compiled_status = libstore.compiled_status(name)
+    var coverage = libstore._coverage_snapshot(libstore.coverage(name))
+    var valid_name = libstore.valid_module_name(name)
+    var compile_cache_reason = valid_name ? (path != nil ? libstore.compile_cache_reason : "source_missing") : "invalid_module_name"
+    var compile_cache_can_emit = valid_name && libstore.compile_cache_supported && path != nil
+    var template_available = valid_name && path != nil && cpath != nil
+    var template_reason = template_available ? "ok" : (valid_name ? (path == nil ? "source_missing" : "compiled_missing") : "invalid_module_name")
+    var selected_path = nil
+    var selected_kind = nil
+    var resolve_reason = "missing"
+    var compiled_preferred = cpath != nil && freshness["fresh"]
+    var compiled_blocked_reason = cpath == nil ? "compiled_missing" : nil
+    if !valid_name
+        resolve_reason = "invalid_module_name"
+        compiled_blocked_reason = "invalid_module_name"
+    elif libstore.compiled_supported && freshness["usable"]
+        selected_path = cpath
+        selected_kind = "compiled"
+        resolve_reason = "compiled_supported"
+        compiled_blocked_reason = nil
+    elif path != nil
+        selected_path = path
+        selected_kind = "source"
+        resolve_reason = cpath != nil ? "compiled_unsupported_source_fallback" : "source"
+        compiled_blocked_reason = cpath != nil ? freshness["reason"] : "compiled_missing"
+    elif cpath != nil
+        resolve_reason = "compiled_unsupported_no_source"
+        compiled_blocked_reason = freshness["reason"]
+    end
     return {
         "name": name,
         "path": path,
@@ -1482,29 +1970,29 @@ libstore.info = def(name)
         "compiled_bytecode_loader": execution_probe["loader_supported"],
         "compiled_validator_supported": execution_probe["validator_supported"],
         "compiled_loader_reason": execution_probe["reason"],
-        "compiled_validation_supported": validation["supported"],
+        "compiled_validation_supported": execution_probe["validator_supported"],
         "compiled_validation_valid": validation["valid"],
         "compiled_validation_reason": validation["reason"],
         "compiled_load_can": load_plan["can_load"],
         "compiled_load_reason": load_plan["reason"],
-        "compiled_status_can_load": compiled_status["can_load"],
-        "compiled_status_can_emit": compiled_status["can_emit"],
-        "compiled_status_reason": compiled_status["load_reason"],
-        "compiled_preferred": resolved["compiled_preferred"],
-        "compiled_blocked_reason": resolved["compiled_blocked_reason"],
-        "compile_cache_supported": cache_plan["supported"],
-        "compile_cache_can_emit": cache_plan["can_emit"],
-        "compile_cache_reason": cache_plan["reason"],
-        "compile_cache_blocked_reason": cache_plan["emit_blocked_reason"],
-        "compile_cache_target_path": cache_plan["target_path"],
-        "compile_cache_manifest_target_path": cache_plan["manifest_target_path"],
-        "compile_cache_manifest_format": cache_plan["manifest_format"],
-        "compile_cache_manifest_template_available": cache_plan["manifest_template_available"],
-        "compile_cache_manifest_template_reason": cache_plan["manifest_template_reason"],
-        "selected_path": resolved["selected_path"],
-        "selected_kind": resolved["selected_kind"],
-        "resolve_reason": resolved["reason"],
-        "source_fallback": resolved["source_fallback"],
+        "compiled_status_can_load": load_plan["can_load"],
+        "compiled_status_can_emit": compile_cache_can_emit,
+        "compiled_status_reason": load_plan["reason"],
+        "compiled_preferred": compiled_preferred,
+        "compiled_blocked_reason": compiled_blocked_reason,
+        "compile_cache_supported": libstore.compile_cache_supported,
+        "compile_cache_can_emit": compile_cache_can_emit,
+        "compile_cache_reason": compile_cache_reason,
+        "compile_cache_blocked_reason": compile_cache_can_emit ? nil : compile_cache_reason,
+        "compile_cache_target_path": libstore.compiled_candidate_path(name),
+        "compile_cache_manifest_target_path": libstore.compiled_manifest_candidate_path(name),
+        "compile_cache_manifest_format": libstore.MANIFEST_FORMAT,
+        "compile_cache_manifest_template_available": template_available,
+        "compile_cache_manifest_template_reason": template_reason,
+        "selected_path": selected_path,
+        "selected_kind": selected_kind,
+        "resolve_reason": resolve_reason,
+        "source_fallback": selected_kind == "source" && cpath != nil,
         "source": "sd",
         "load": load,
         "heap": heap,
@@ -1516,7 +2004,7 @@ libstore.info = def(name)
         "cache_miss_count": libstore.cache_misses_for(name),
         "last_used": cached == nil ? nil : cached["last_used"],
         "cached": cached != nil,
-        "cache": cached,
+        "cache": cached == nil ? nil : libstore._cache_item_snapshot(cached),
         "coverage": coverage,
         "coverage_status": coverage["status"],
         "behavior_smoke": coverage["behavior_smoke"],
@@ -1554,6 +2042,9 @@ libstore.cached = def(name)
 end
 
 libstore.cache_source = def(name)
+    if !libstore.valid_module_name(name)
+        return nil
+    end
     var policy = libstore._policy_resolve()
     var use_psram_cache = libstore._policy_uses_psram_cache(policy)
     if !use_psram_cache
@@ -1578,7 +2069,9 @@ libstore.cache_source = def(name)
     end
     libstore._bump_counter(libstore.cache_misses, name)
 
-    var source = open(path, "r").read()
+    var source_file = open(path, "r")
+    var source = source_file.read()
+    source_file.close()
     var total = size(source)
     var max_transfer = psram["max_transfer"]
     if max_transfer <= 0
@@ -1639,7 +2132,15 @@ libstore.cached_source = def(name)
     item["last_used"] = libstore.cache_access
     var out = ""
     for chunk : item["chunks"]
-        out += p2.psram_read(chunk["address"], chunk["size"])
+        var part = p2.psram_read(chunk["address"], chunk["size"])
+        if type(part) != "string" || size(part) != chunk["size"]
+            raise "io_error", "PSRAM cache read failed"
+        end
+        out += part
+    end
+    if item.contains("source_hash") && item["source_hash"] != nil && libstore.hash_text(out) != item["source_hash"]
+        libstore.cache.remove(name)
+        return nil
     end
     return out
 end
@@ -1678,33 +2179,128 @@ libstore.cache_many = def(*names)
     return out
 end
 
-libstore.cache_all = def()
-    var out = []
-    for name : libstore.modules()
-        if libstore.exists(name)
-            out.push(libstore.cache_source(name))
+libstore._cache_item_snapshot = def(item)
+    var chunks = []
+    for chunk : item["chunks"]
+        chunks.push({
+            "address": chunk["address"],
+            "size": chunk["size"]
+        })
+    end
+    return {
+        "name": item["name"],
+        "path": item["path"],
+        "address": item["address"],
+        "size": item["size"],
+        "source_hash": item["source_hash"],
+        "chunks": chunks,
+        "chunk_count": item["chunk_count"],
+        "max_transfer": item["max_transfer"],
+        "cache_hit_count": item["cache_hit_count"],
+        "cache_miss_count": item["cache_miss_count"],
+        "last_used": item["last_used"]
+    }
+end
+
+libstore.cache_many_report = def(*names)
+    var items = []
+    var skipped = []
+    for name : names
+        if !libstore.valid_module_name(name)
+            skipped.push({
+                "module": name,
+                "error": "invalid_module_name",
+                "message": "invalid module name"
+            })
+        elif libstore.source_path(name) == nil
+            skipped.push({
+                "module": name,
+                "error": "source_missing",
+                "message": "source missing"
+            })
+        else
+            try
+                var item = libstore.cache_source(name)
+                if item != nil
+                    items.push(libstore._cache_item_snapshot(item))
+                else
+                    skipped.push({
+                        "module": name,
+                        "error": nil,
+                        "message": "cache unavailable"
+                    })
+                end
+            except .. as e, m
+                skipped.push({
+                    "module": name,
+                    "error": e,
+                    "message": m
+                })
+            end
         end
     end
-    return out
+    return {
+        "ok": skipped.size() == 0,
+        "items": items,
+        "skipped": skipped,
+        "cached_count": items.size(),
+        "skipped_count": skipped.size()
+    }
+end
+
+libstore.cache_all_report = def()
+    var items = []
+    var skipped = []
+    for name : libstore.modules()
+        if libstore.exists(name)
+            try
+                var item = libstore.cache_source(name)
+                if item != nil
+                    items.push(libstore._cache_item_snapshot(item))
+                else
+                    skipped.push({
+                        "module": name,
+                        "error": nil,
+                        "message": "cache unavailable"
+                    })
+                end
+            except .. as e, m
+                skipped.push({
+                    "module": name,
+                    "error": e,
+                    "message": m
+                })
+            end
+        end
+    end
+    return {
+        "ok": skipped.size() == 0,
+        "items": items,
+        "skipped": skipped,
+        "cached_count": items.size(),
+        "skipped_count": skipped.size()
+    }
+end
+
+libstore.cache_all = def()
+    return libstore.cache_all_report()["items"]
 end
 
 libstore.cache_report = def()
     var items = []
-    for name : libstore.modules()
-        if libstore.cache.contains(name)
-            var item = libstore.cache[name]
-            items.push({
-                "name": name,
-                "path": item["path"],
-                "address": item["address"],
-                "size": item["size"],
-                "source_hash": item["source_hash"],
-                "chunks": item["chunk_count"],
-                "cache_hit_count": libstore.cache_hits_for(name),
-                "cache_miss_count": libstore.cache_misses_for(name),
-                "last_used": item["last_used"]
-            })
-        end
+    for name : libstore.cache.keys()
+        var item = libstore.cache[name]
+        items.push({
+            "name": name,
+            "path": item["path"],
+            "address": item["address"],
+            "size": item["size"],
+            "source_hash": item["source_hash"],
+            "chunks": item["chunk_count"],
+            "cache_hit_count": libstore.cache_hits_for(name),
+            "cache_miss_count": libstore.cache_misses_for(name),
+            "last_used": item["last_used"]
+        })
     end
     return {
         "status": libstore.status(),

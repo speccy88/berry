@@ -13,10 +13,20 @@
 #include "be_object.h"
 #include "be_string.h"
 #include "be_vm.h"
+#include "berry.h"
 
 #if BE_USE_INTROSPECT_MODULE
 
 #define global(vm)      ((vm)->gbldesc.global)
+
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+static void introspect_module_set_func(bvm *vm, const char *name, bntvfunc func)
+{
+    be_pushntvfunction(vm, func);
+    be_setmember(vm, -2, name);
+    be_pop(vm, 1);
+}
+#endif
 
 static void p2_dump_map_keys(bvm *vm, bmap *map)
 {
@@ -132,13 +142,24 @@ static int m_toptr(bvm *vm)
     int top = be_top(vm);
 
     if (top >= 1) {
-        if ((be_isint(vm, 1) && be_toint(vm, 1) == 0) || be_isnil(vm, 1)) {
+        bvalue *v = be_indexof(vm, 1);
+        if (be_isnil(vm, 1)) {
             be_pushcomptr(vm, NULL);
             be_return(vm);
         }
         if (be_iscomptr(vm, 1)) {
             be_pushcomptr(vm, be_tocomptr(vm, 1));
             be_return(vm);
+        }
+        if (be_isint(vm, 1)) {
+            if (be_toint(vm, 1) == 0) {
+                be_pushcomptr(vm, NULL);
+                be_return(vm);
+            }
+            be_raise(vm, "value_error", "integer pointer conversion is disabled on P2");
+        }
+        if (var_type(v) != BE_STRING && var_basetype(v) < BE_FUNCTION && var_basetype(v) < BE_GCOBJECT) {
+            be_raise(vm, "value_error", "unsupported for this type");
         }
         /*
          * Preserve the public shape of introspect.toptr() on P2 without
@@ -254,6 +275,28 @@ static int m_name(bvm *vm)
     }
     be_return_nil(vm);
 }
+
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+void be_cache_introspectmodule(bvm *vm)
+{
+    bstring *name = be_newstr(vm, "introspect");
+    be_newmodule(vm);
+    be_setname(vm, -1, "introspect");
+    introspect_module_set_func(vm, "members", m_attrlist);
+    introspect_module_set_func(vm, "get", m_findmember);
+    introspect_module_set_func(vm, "set", m_setmember);
+    introspect_module_set_func(vm, "contains", m_contains);
+    introspect_module_set_func(vm, "module", m_getmodule);
+    introspect_module_set_func(vm, "setmodule", m_setmodule);
+    introspect_module_set_func(vm, "toptr", m_toptr);
+    introspect_module_set_func(vm, "fromptr", m_fromptr);
+    introspect_module_set_func(vm, "solidified", m_solidified);
+    introspect_module_set_func(vm, "name", m_name);
+    introspect_module_set_func(vm, "ismethod", m_ismethod);
+    be_cache_module(vm, name);
+    be_pop(vm, 1);
+}
+#endif
 
 #if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 be_native_module_attr_table(introspect) {

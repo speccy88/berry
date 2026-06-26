@@ -1,3 +1,4 @@
+# P2_SD_WRITE_AUDIT max_write_opens=2
 print("P2_SMOKE_BEGIN example_paths")
 
 import os
@@ -15,8 +16,8 @@ end
 ensure_dir("/berry")
 ensure_dir("/berry/examples")
 
-var path = "/berry/examples/p1_example_probe.be"
-var nested_dir = "/berry/examples/p1_example_pkg"
+var path = "/berry/examples/exprobe.be"
+var nested_dir = "/berry/examples/expkg"
 var made_nested_dir = false
 if !os.path.isdir(nested_dir)
     ensure_dir(nested_dir)
@@ -35,15 +36,15 @@ var nf = open(nested_path, "w")
 nf.write("return 84\n")
 nf.close()
 
-assert(libstore.example_path("p1_example_probe") == path)
-assert(libstore.example_exists("p1_example_probe"))
-assert(libstore.run_example("p1_example_probe") == 42)
-assert(libstore.example_path("p1_example_pkg.probe") == nested_path)
-assert(libstore.example_exists("p1_example_pkg.probe"))
-assert(libstore.run_example("p1_example_pkg.probe") == 84)
-assert(libstore.example_path("p1_no_such_example") == nil)
-assert(!libstore.example_exists("p1_no_such_example"))
-assert(libstore.run_example("p1_no_such_example") == nil)
+assert(libstore.example_path("exprobe") == path)
+assert(libstore.example_exists("exprobe"))
+assert(libstore.run_example("exprobe") == 42)
+assert(libstore.example_path("expkg.probe") == nested_path)
+assert(libstore.example_exists("expkg.probe"))
+assert(libstore.run_example("expkg.probe") == 84)
+assert(libstore.example_path("noexprobe") == nil)
+assert(!libstore.example_exists("noexprobe"))
+assert(libstore.run_example("noexprobe") == nil)
 
 try
     os.remove(path)

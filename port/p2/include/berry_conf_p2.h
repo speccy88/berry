@@ -109,7 +109,7 @@
 #define BE_USE_OS                       1
 #define BE_USE_FILE                     1
 #define BE_USE_INTROSPECT               (BE_P2_PROFILE != BE_P2_PROFILE_SDDIAG)
-#define BE_USE_SOLIDIFY                 0
+#define BE_USE_SOLIDIFY                 (BE_P2_PROFILE == BE_P2_PROFILE_XMM)
 #define BE_USE_DEBUG                    0
 
 #define BE_P2_USE_PROP2_GLOBALS         (BE_P2_PROFILE != BE_P2_PROFILE_SDDIAG)
@@ -141,10 +141,14 @@
 #define BE_P2_HEAP_SIZE                 (96 * 1024)
 #define BE_P2_STACK_SLOTS               1024
 #else
-#define BE_P2_HEAP_SIZE                 (128 * 1024)
+#define BE_P2_HEAP_SIZE                 (92 * 1024)
 #define BE_P2_STACK_SLOTS               1024
 #endif
+#if BE_P2_PROFILE == BE_P2_PROFILE_XMM
 #define BE_P2_WORKER_HEAP_SIZE          (16 * 1024)
+#else
+#define BE_P2_WORKER_HEAP_SIZE          (8 * 1024)
+#endif
 #define BE_P2_BYTES_MAX                 (4 * 1024)
 
 #elif BE_P2_PROFILE == BE_P2_PROFILE_FULL
@@ -230,7 +234,7 @@
 #endif
 
 #ifndef BE_P2_ENABLE_TIME_MODULE
-#define BE_P2_ENABLE_TIME_MODULE        0
+#define BE_P2_ENABLE_TIME_MODULE        BE_P2_ENABLE_EXTENDED_MODULES
 #endif
 
 #ifndef BE_P2_ENABLE_SD_DIAGNOSTICS
@@ -258,8 +262,15 @@
 #define BE_P2_ENABLE_MAIN_INTERRUPT     1
 #define BE_USE_PERF_COUNTERS            0
 #define BE_VM_OBSERVABILITY_SAMPLING    18
+#ifndef BE_P2_TRACE_GC_COLLECT
 #define BE_P2_TRACE_GC_COLLECT          0
+#endif
+#ifndef BE_P2_TRACE_GC_MODULE
 #define BE_P2_TRACE_GC_MODULE           0
+#endif
+#ifndef BE_P2_TRACE_NATIVE_CALL
+#define BE_P2_TRACE_NATIVE_CALL         0
+#endif
 
 #define BE_STACK_TOTAL_MAX              BE_P2_STACK_SLOTS
 #define BE_STACK_FREE_MIN               8

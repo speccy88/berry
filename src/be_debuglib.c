@@ -18,6 +18,15 @@
 
 #if BE_USE_DEBUG_MODULE
 
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+static void debug_module_set_func(bvm *vm, const char *name, bntvfunc func)
+{
+    be_pushntvfunction(vm, func);
+    be_setmember(vm, -2, name);
+    be_pop(vm, 1);
+}
+#endif
+
 static void dump_map(bmap *map)
 {
     bmapnode *node;
@@ -239,6 +248,36 @@ static int m_reallocs(bvm *vm) {
     be_return_nil(vm);
 #endif
 }
+
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+void be_cache_debugmodule(bvm *vm)
+{
+    bstring *name = be_newstr(vm, "debug");
+    be_newmodule(vm);
+    debug_module_set_func(vm, "attrdump", m_attrdump);
+    debug_module_set_func(vm, "codedump", m_codedump);
+    debug_module_set_func(vm, "traceback", m_traceback);
+#if BE_USE_DEBUG_HOOK
+    debug_module_set_func(vm, "sethook", m_sethook);
+#endif
+#if BE_USE_PERF_COUNTERS
+    debug_module_set_func(vm, "counters", m_counters);
+#endif
+    debug_module_set_func(vm, "calldepth", m_calldepth);
+    debug_module_set_func(vm, "top", m_top);
+#if BE_DEBUG_VAR_INFO
+    debug_module_set_func(vm, "varname", m_varname);
+    debug_module_set_func(vm, "upvname", m_upvname);
+#endif
+    debug_module_set_func(vm, "caller", m_caller);
+    debug_module_set_func(vm, "allocs", m_allocs);
+    debug_module_set_func(vm, "frees", m_frees);
+    debug_module_set_func(vm, "reallocs", m_reallocs);
+    debug_module_set_func(vm, "gcdebug", m_gcdebug);
+    be_cache_module(vm, name);
+    be_pop(vm, 1);
+}
+#endif
 
 #if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 be_native_module_attr_table(debug) {

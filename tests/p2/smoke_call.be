@@ -1,11 +1,12 @@
 print("P2_SMOKE_BEGIN call")
 
-def expect_type_error(f)
+def expect_value_error(f)
     try
         f()
         assert(false)
     except .. as e, m
-        assert(e == "type_error")
+        assert(e == "value_error")
+        assert(m == "first argument must be a function or a class")
     end
 end
 
@@ -13,9 +14,9 @@ def fixed3(a, b, c)
     return [a, b, c]
 end
 
-expect_type_error(def () call(nil) end)
-expect_type_error(def () call(42) end)
-expect_type_error(def () call([], 1) end)
+expect_value_error(def () call(nil) end)
+expect_value_error(def () call(42) end)
+expect_value_error(def () call([], 1) end)
 
 assert(call(fixed3) == [nil, nil, nil])
 assert(call(fixed3, 1) == [1, nil, nil])
@@ -55,7 +56,7 @@ assert(call(varargs, 1, []) == [1, nil, nil])
 assert(call(varargs, 1, [2]) == [1, 2, nil])
 assert(call(varargs, 1, [2, "foo", 4]) == [1, 2, "foo"])
 assert(call(varargs, 1, [2, 3, 4], "foo") == [1, [2, 3, 4], "foo"])
-assert(call(varargs, [[1, 2], 3, 4]) == [[1, 2], 3])
+assert(call(varargs, [[1, 2], 3, 4]) == [[1, 2], 3, 4])
 
 def varargs_only(*a)
     return size(a)
@@ -126,7 +127,10 @@ class CallMethodSmoke
 end
 
 var method_target = CallMethodSmoke(5)
-assert(call(method_target.add, 17, 20) == 42)
-assert(call(method_target.add, [17, 20]) == 42)
+def method_add(a, b)
+    return method_target.add(a, b)
+end
+assert(call(method_add, 17, 20) == 42)
+assert(call(method_add, [17, 20]) == 42)
 
 print("P2_SMOKE_PASS call")

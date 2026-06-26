@@ -10,7 +10,9 @@ The user-facing blinker pattern is:
 import p2
 
 def blinker(pin, ms)
-    return p2.cog.blinker(pin, ms)
+    p2.pin.dir_high(pin)
+    p2.pin.toggle(pin)
+    return ms
 end
 
 h38 = p2.cog.spawn(blinker, 38, 250)
@@ -24,9 +26,9 @@ p2.cog.stop(h39)
 In Berry, `blinker` is the function entity and `blinker(38, 250)` calls the
 function immediately on the current cog. To hand the function entity to the cog
 launcher, pass the function first and the primitive arguments after it:
-`p2.cog.spawn(blinker, 38, 250)`. In the current supported blinker path,
-`blinker` returns a native task descriptor and `spawn()` starts that task on a
-new cog.
+`p2.cog.spawn(blinker, 38, 250)`. In the current supported native-blink path,
+`blinker` performs setup work and returns the blink period; `spawn()` starts the
+native backend on a new cog.
 
 An explicit descriptor form is still available for native task backends:
 
@@ -36,12 +38,13 @@ def blinker(pin, ms)
 end
 ```
 
-`p2.cog.blinker(pin, ms)` is shorthand for `p2.cog.task("blinker", pin, ms)`.
+`p2.cog.blinker(pin, ms)` is a compatibility shorthand for
+`p2.cog.task("blinker", pin, ms)`.
 
 ## Introspection
 
 ```berry
-t = p2.cog.blinker(38, 250)
+t = p2.cog.task("blinker", 38, 250)
 print(p2.cog.is_task(t))
 print(p2.cog.task_kinds())
 print(p2.cog.task_info(t))
@@ -65,7 +68,7 @@ Useful fields include:
 - `setup_function`: true when the handle came from a passed Berry function
   entity such as `p2.cog.spawn(blinker, 38, 250)`.
 - `setup_descriptor_return`: true when that setup function returned a native
-  task descriptor such as `p2.cog.blinker(pin, ms)`.
+  task descriptor such as `p2.cog.task("blinker", pin, ms)`.
 - `task_kind`: currently `"blinker"` for this task kind.
 - `native_pin`: pin used by the native blinker backend.
 - `period_ms`: blink period in milliseconds.
@@ -104,7 +107,7 @@ The safe XMM-supported path today is native task descriptors. The eventual arbit
 Useful hardware smoke scripts for this feature:
 
 - `tests/p2/smoke_closure_blinker.be`: function-entity `p2.cog.spawn(blinker, 38, 250)` style.
-- `tests/p2/smoke_closure_blinker_descriptor_return.be`: function-entity spawn where `blinker` returns `p2.cog.blinker(pin, ms)`.
+- `tests/p2/smoke_closure_blinker_descriptor_return.be`: function-entity spawn where `blinker` returns `p2.cog.task("blinker", pin, ms)`.
 - `tests/p2/smoke_closure_blinker_setup_return.be`: proves the function entity is invoked during setup and its integer return controls the blink period.
 - `tests/p2/smoke_cog_descriptor_varargs.be`: descriptor vararg transport and metadata.
 - `tests/p2/smoke_cog_spawn_task_blinker.be`: explicit `p2.cog.spawn_task(task)` alias.

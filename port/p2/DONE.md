@@ -18,6 +18,7 @@ Maintenance rule:
 - [x] Verified board path in the handoff is `/dev/cu.usbserial-P97cvdxp`.
 - [x] Verified native macOS Catalina/lcc at `/Users/fred/Documents/Code/catalina-speccy88`.
 - [x] Verified Catalina remains the working toolchain path for this P2 work.
+- [x] Documented the current focused P2 hardware test harness in `docs/hardware-tests.md`: `/dev/ttyUSB0` at `230400`, native sibling Catalina `CATALINA_DIR=../Catalina`, P2 Edge 32 MB XMM reserved-pin policy, LED pins `38`/`39`, direct smart-pin jumpers `0-1`, `2-3`, `4-5`, and `6-7`, sync-serial data/clock grouping, no-series-resistor digital loopback assumption, and explicit diagnostic-only/skipped status for ADC/DAC calibration, NCO-duty waveform validation, quadrature motion/direction, sync-serial received words, USB/HID, and VGA.
 
 ## Native macOS Catalina toolchain repair
 
@@ -118,6 +119,10 @@ Maintenance rule:
 - [x] Added read-only `p2.vm_copyable(value)` diagnostics to classify VM-boundary transfer support: nil, bool, int, and bounded string are copyable; list, map, function/closure, and other live objects are rejected.
 - [x] Extended the `xmm-vm-probe` serial suite to verify the VM-boundary copy/reject table for primitive values and live objects.
 - [x] Added remaining child-partition capacity diagnostics to `p2.heap_info()`: `vm_partition_free_capacity` and `vm_partition_free_remainder`, derived from current parent main-heap free space after any child partitions have already been reserved.
+- [x] Fixed native `p2.vm_copyable(value)` so Berry list and map instances are classified as rejected `list` and `map` values rather than generic unsupported values.
+- [x] Added focused `p2-smoke-p2compat` / `scripts/p2/repl_smoke.py --suite p2compat` hardware entrypoints that upload only `modules/p2compat.be` and `/tests/p2/smoke_p2compat.be`.
+- [x] Hardware-verified `/tests/p2/smoke_p2compat.be` on `/dev/ttyUSB0` with the flashed Catalina XMM image (`1043072 / 16777216` bytes): it passed `P2_SMOKE_PASS p2compat` and now covers native `p2.vm_copyable()` nil/bool/int/string copyable diagnostics, list/map/function rejection diagnostics, no-argument rejection, and p2compat bytecode/report snapshot isolation.
+- [x] Wired the focused p2compat VM-boundary smoke into the Priority 4 aggregate paths: `make p2-smoke-priority4`, `scripts/p2/repl_smoke.py --suite priority4`, and the already-staged `priority1-4` suite.
 - [x] Extended the `xmm-vm-probe` serial suite to sanity-check total partition capacity versus created partitions and remaining free partition capacity reporting.
 - [x] Rebuilt the focused Catalina XMM target after child VM partition/copy-boundary changes: `make p2-xmm TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88 PORT=/dev/cu.usbserial-P97cvdxp` completed successfully with image `687040` bytes.
 - [x] Reflashed the focused Catalina XMM image with `make p2-xmm-flash ... PORT=/dev/cu.usbserial-P97cvdxp`; local `loadp2` still lacks `-FLASHRAW`, so the make target used the equivalent `-HIMEM=flash` raw-image fallback and installed the standalone SPI flash image.
@@ -198,7 +203,7 @@ Maintenance rule:
 - [x] Added `p2mem.native_module_sources_warm_if_fits(names)`, which plans a module-source preload, refuses to reserve upper-PSRAM cache entries when sources are missing or aligned reservation bytes exceed current native cache free space, and otherwise performs the verified warm.
 - [x] Added batch module-source cache diagnostics/cleanup helpers in `p2mem`: `native_module_sources_status(names)` checks presence/verification for a warmed list, and `native_module_sources_release(names)` releases warmed module-source entries in reverse order to respect the current LIFO cache policy.
 - [x] Added latest-owner lookup for native PSRAM cache reservations: `p2.psram_cache_find_latest(owner)` returns the newest matching reservation record, `p2mem.native_cache_find_latest(owner)` exposes it at the diagnostics/facade layer, and `p2mem.native_cache_get(owner)` now reads the newest owner match instead of the oldest.
-- [x] Added `p2mem.native_cache_replace(owner, data)` as a conservative owner-scoped blob replacement helper: it releases the latest owner match only when the LIFO cache-release policy can safely rewind it, then reserves/writes the replacement payload.
+- [x] Added `p2mem.native_cache_replace(owner, data)` as a conservative owner-scoped blob replacement helper. It originally released the latest owner match before writing the replacement when LIFO-safe; later Priority 1 hardening changed it to write replacements as new latest entries so a failed write or verification cannot discard the previous owner payload.
 - [x] Added `p2mem.native_cache_release_owner(owner)` as a conservative owner-scoped release helper: it finds the newest owner match and releases it only when the LIFO cache-release policy can safely rewind that entry.
 - [x] Added owner-history helpers to the `p2mem` native cache facade: `native_cache_owner_history(owner)` exposes all owner-matching reservations, and `native_cache_release_owner_chain(owner)` repeatedly releases the newest owner match while the LIFO policy allows it.
 
@@ -215,7 +220,7 @@ Maintenance rule:
 - [x] `/modules/math.be` is visible and imports from SD.
 - [x] `import math; print(math.sqrt(81))` returns `9` with the current card/image.
 
-## P1 source-level Berry compatibility smoke additions
+## Priority 1 source-level Berry compatibility smoke additions
 
 - [x] Added source-level `tests/p2/smoke_map_keys.be` coverage for equivalent fresh custom-hash key replacement, including the forced hash-collision bucket case. This is not hardware-verified yet.
 
@@ -304,9 +309,9 @@ Maintenance rule:
 - [x] Low-level SD sector tracing was moved out of noisy `printf()` paths and into queryable diagnostics.
 - [x] Current diagnosis is documented: the current SD card has no usable sector-0 partition table but has a valid FAT boot sector at `2048`.
 
-## P1 compatibility test coverage
+## Priority 1 compatibility test coverage
 
-- [x] Added `/tests/p2/smoke_compat.be` to `/tests/p2/smoke_all.be` so the full SD smoke chain now exercises the P1 Berry compatibility checks instead of leaving them as a standalone file.
+- [x] Added `/tests/p2/smoke_compat.be` to `/tests/p2/smoke_all.be` so the full SD smoke chain now exercises the Priority 1 Berry compatibility checks instead of leaving them as a standalone file.
 - [x] Added `/tests/p2/smoke_vm_ops.be` and wired it into `/tests/p2/smoke_all.be`; it covers arithmetic, bitwise operations, comparisons, string/list slicing, and class operator overloads. Hardware execution remains open in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_sys.be` to cover native `sys.path_add()` import-root snapshot isolation: an older `sys.path()` list stays unchanged while a later `sys.path()` call sees the newly appended root and can import from it. Hardware execution remains open in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_p2compat.be` to check declarative capability inventory integrity: `p2compat.items()` records match `p2compat.summary()` counts, each record has string name/status/summary fields, and mutating the returned list does not alter module metadata. Hardware execution remains open in `TODO.md`.
@@ -329,7 +334,7 @@ Maintenance rule:
 - [x] Added a focused host-driven `compat` suite to `scripts/p2/repl_smoke.py` so interactive `input()` coverage can be run over the REPL without changing the file-based smoke scripts.
 - [x] Hardware execution of the expanded compatibility smoke remains open in `TODO.md`; these entries record implemented test coverage, not a new hardware verification claim.
 
-## P1 SD import layout progress
+## Priority 1 SD import layout progress
 
 - [x] Added optional `/berry/main.be` startup support in the P2 runtime: after VM creation, the firmware attempts to load and run `/berry/main.be` once, treats missing file as normal, warns and falls through to the REPL on script failure, and preserves the existing `os.exit()` exit path.
 - [x] Added `/BERRY/LIB` and `/BERRY/APP` to the P2 VM startup module path after the existing `/MODULES` root, preserving the known-good `/modules` layout while staging the requested `/berry/...` source layout.
@@ -337,7 +342,7 @@ Maintenance rule:
 - [x] Added `/tests/p2/smoke_import_layout.be`, which creates tiny source modules under `/berry/lib` and `/berry/app`, checks `libstore.source_path(...)`, imports both modules through the normal lazy import path, and removes the temporary source files afterward.
 - [x] Added `/tests/p2/smoke_import_alias.be` and wired it into `/tests/p2/smoke_all.be`; it checks `import name as alias` for native and SD-loaded modules including `string`, `json`, `math`, `libstore`, and `p2compat`. Hardware execution remains open in `TODO.md`.
 - [x] Added `/tests/p2/smoke_import_cwd.be` and wired it into `/tests/p2/smoke_all.be`; it creates a tiny source module in the active SD working directory, imports it by name to preserve current-directory import coverage, restores the previous directory, and removes the temporary source file and working directory. Hardware execution remains open in `TODO.md`.
-- [x] Tightened `/tests/p2/smoke_import_cwd.be` so it removes `/berry/app/p1cwd` only when the smoke created that temporary directory, preserving any pre-existing SD directory. Hardware execution remains open in `TODO.md`.
+- [x] Tightened `/tests/p2/smoke_import_cwd.be` so it removes `/berry/app/p2cwd` only when the smoke created that temporary directory, preserving any pre-existing SD directory. Hardware execution remains open in `TODO.md`.
 - [x] Added `/tests/p2/smoke_import_native_first.be` and wired it into `/tests/p2/smoke_all.be`; it stages a fake `/berry/app/json.be`, imports `json`, verifies the native module still wins over SD source shadowing, and removes the staged file when the smoke created it. Hardware execution remains open in `TODO.md`.
 - [x] Added `/tests/p2/smoke_import_missing.be` and wired it into `/tests/p2/smoke_all.be`; it verifies a missing module import fails catchably and `libstore` reports explicit missing source/compiled/selected metadata. Hardware execution remains open in `TODO.md`.
 - [x] Added `/tests/p2/smoke_import_order.be` and wired it into `/tests/p2/smoke_all.be`; it stages the same temporary module under `/modules`, `/berry/lib`, and `/berry/app`, then verifies `/modules` remains the first source root. Hardware execution remains open in `TODO.md`.
@@ -496,11 +501,11 @@ Maintenance rule:
 
 - `examples/blink.be`: board LED blink using `p2.status_info()`, `p2.pin`, and `p2.clock`.
 - `examples/repl_sd.be`: SD card directory inspection and optional `/berry/main.be` startup handoff.
-- `examples/import_all_libs.be`: import sweep for top-level libraries including `binary_heap`, `math`, `p2mem`, `taskspin`, and optional `wifi`.
+- `examples/import_all_libs.be`: import sweep for top-level libraries including `binary_heap`, `configstore`, `math`, `p2compat`, `p2ipc`, `p2mem`, `task`, and optional `wifi`.
 - `examples/json_sd.be`: JSON encode/write/read/decode flow on SD storage with a root-file fallback.
 - `examples/file_sd.be`: basic SD file create/read/delete smoke example.
-- `examples/cog_channel.be`: lightweight `rtos.channel` send/receive example across tasks.
-- `examples/task_scheduler.be`: cooperative `taskspin` scheduler example with two tasks.
+- `examples/cog_channel.be`: current-VM `p2ipc` channel send/receive/result diagnostic example.
+- `examples/task_scheduler.be`: cooperative `task` scheduler example with two tasks.
 - `examples/cordic_demo.be`: grouped `p2.cordic` and `p2.math` numeric helper demo.
 - `examples/psram_cache_stats.be`: `libstore` cache attempt plus `p2mem.cache()`/`p2mem.evict()` diagnostics.
 - `examples/debug_report.be`: compact debug snapshot using `p2.debug_snapshot()` and `p2mem` reports.
@@ -528,7 +533,7 @@ Maintenance rule:
 - [x] Added `p2.asm.getrnd()`, `p2.asm.getct()`, `p2.asm.waitx(cycles)`, and `p2.asm.hubset(value)`.
 - [x] Added `p2.asm` smoke coverage to `/tests/p2/smoke_p2_api.be`, including negative-argument error checks for `waitx` and `hubset`.
 - [x] Added `examples/pasm_direct.be` as a safe PASM-adjacent intrinsic example.
-- [x] Documented that arbitrary assembly text, PASM blob loading, function bridging, and unsafe execution remain open.
+- [x] Documented the initial safe-intrinsic-only state; later entries below record the subsequent PASM blob loading progress while arbitrary assembly text, function bridging, and unsafe execution remain open.
 
 ## Structured p2.debug facade
 
@@ -542,10 +547,11 @@ Maintenance rule:
 
 ## Lower-case task facade
 
-- [x] Added `modules/task.be` as the lower-case cooperative task facade over `taskspin`.
-- [x] Implemented `task.spin(task_id, closure, *args)` with first-free slot behavior for `-1`, fixed task IDs `0..31`, stack metadata via trailing `{"stack": value}`, and task ID / `-1` return semantics.
-- [x] Implemented `task.next()`, `task.stop(id)`, `task.halt(id)`, `task.cont(id)`, `task.chk(id)`, `task.id()`, `task.hlt()`, `task.info()`, `task.tasks()`, and `task.task_info(id)`.
-- [x] Implemented nil/false/`task.STOP` top-level task return as task stop, `task.HALT` as halt, and `task.info()["all_halted"]` for all-halted behavior.
+- [x] Added `modules/task.be` as the lower-case cooperative task facade for the current source-level scheduler.
+- [x] Implemented `task.start(fn, *args)` / `task.start_result(fn, *args)` with first-free slot behavior across 16 cooperative task slots.
+- [x] Implemented `task.next()`, `task.run()`, `task.stop(id)`, `task.pause(id)`, `task.resume(id)`, `task.status(id)`, `task.current()`, `task.info()`, `task.list()`, and `task.task_info(id)`.
+- [x] Later Priority 4 entries below record the added `task.spin`, `task.halt`/`task.hlt`, `task.cont`, `task.chk`, `task.id`, and `task.tasks` compatibility names over this current scheduler.
+- [x] Implemented nil/false/`task.done` top-level task return as task stop and `task.paused` as pause.
 - [x] Added cooperative source-level `task.Semaphore`, `task.Mutex`, `task.Queue`, `task.EventFlags`, and `task.Timer` primitives.
 - [x] Added `tests/p2/host_task.be` and included it in `make test-host`.
 - [x] Added P2 smoke coverage for the lower-case `task` facade and cooperative primitives in `/tests/p2/smoke_libraries.be`.
@@ -1073,7 +1079,7 @@ Maintenance rule:
  - `A ok ok`
  - `B 2048 -1 2 ok`
  - `C 120 0 254`
-- [x] Removed the Catalina Docker build path from the Berry P2 build system. `mk/p2.mk` now invokes native Catalina directly, exports `LCCDIR=$(CATALINA_DIR)`, and the flash/XMM helper scripts require native Catalina tools instead of falling back to Docker.
+- [x] Removed the old alternate Catalina build path from the Berry P2 build system. `mk/p2.mk` now invokes native Catalina directly, exports `LCCDIR=$(CATALINA_DIR)`, and the flash/XMM helper scripts require native Catalina tools.
 
 ## 2026-06-07 - Native Catalina XMM SD service repair progress
 
@@ -1116,39 +1122,39 @@ Maintenance rule:
 - [x] Verified non-XMM Edge32 RAM-load path under a PTY: `make p2-edge32-ram TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88 PORT=/dev/cu.usbserial-P97cvdxp` reached `[edge32 profile]`, imported `p2` and `os`, `p2.fs_info("/")` mounted with `mount_result_name='ok'`, `sd_response=0`, `partition_start=2048`, and `os.listdir("/")` returned `[]`.
 - [x] Restored the board to the repaired standalone XMM flash image after non-XMM validation with `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88 CATALINA_PLAIN_SD=1 PORT=/dev/cu.usbserial-P97cvdxp`.
 
-## P1 source-only smoke preservation hardening
+## Priority 1 source-only smoke preservation hardening
 
-- [x] Tightened `/tests/p2/smoke_configstore.be` so its missing-config negative remove check first asserts the temporary config name is absent before calling `configstore.remove()`. This keeps the P1 configstore smoke aligned with the P0 rule that smoke tests must not pre-delete possible user/card content. Hardware execution remains pending in `TODO.md`.
+- [x] Tightened `/tests/p2/smoke_configstore.be` so its missing-config negative remove check first asserts the temporary config name is absent before calling `configstore.remove()`. This keeps the Priority 1 configstore smoke aligned with the Priority 0 rule that smoke tests must not pre-delete possible user/card content. Hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated introspect smoke coverage
+## Priority 1 dedicated introspect smoke coverage
 
 - [x] Added `/tests/p2/smoke_introspect.be` and wired it into `/tests/p2/smoke_all.be` so the native `introspect` module has dedicated P2 source-level coverage for module/class/instance member lookup and mutation, method classification, pointer conversion and same-VM round-trip behavior, `solidified()`, `members()` edge cases, fallback reads, and missing-module handling. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated global smoke coverage
+## Priority 1 dedicated global smoke coverage
 
 - [x] Added `/tests/p2/smoke_global.be` and wired it into `/tests/p2/smoke_all.be` so the native `global` module has dedicated P2 source-level coverage for contains/listing/member lookup, compile visibility of created globals, mutation, list-valued globals, non-string edge cases, and cleanup-oriented undef/redefine behavior. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated strict smoke coverage
+## Priority 1 dedicated strict smoke coverage
 
 - [x] Added `/tests/p2/smoke_strict.be` and wired it into `/tests/p2/smoke_all.be` after the existing `smoke_stdlib.be` strict activation point. The smoke covers native `strict` compiler-mode activation, expression-without-side-effect rejection, missing-global rejection, accepted side-effect expressions, known-global compile visibility, and cleanup after `global.undef()`. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_strict.be` with strict compiler-mode coverage for known and missing global lookups inside compiled function bodies, preserving cleanup through `global.undef()`. Hardware execution remains open in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_string.be` with native `string` module API-shape coverage for the main exported helpers: `find`, `count`, `split`, `escape`, `tr`, `replace`, `format`, `startswith`, and `endswith`. Hardware execution remains open in `TODO.md`.
 
-## P1 dedicated time smoke coverage
+## Priority 1 dedicated time smoke coverage
 
 - [x] Added `/tests/p2/smoke_time.be` and wired it into `/tests/p2/smoke_all.be` before the later strict-mode checks. The smoke covers native `time.clock()`, deterministic `time.dump()` map shape and fixed epochs, invalid dump inputs, and `time.time()` / `time.dump(time.time())` consistency without assuming a real RTC date. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_time.be` with native `time.dump()` edge coverage for integer field types and returned-map mutation isolation across repeated deterministic epoch dumps. Hardware execution remains open in `TODO.md`.
 
-## P1 dedicated JSON smoke coverage
+## Priority 1 dedicated JSON smoke coverage
 
 - [x] Added `/tests/p2/smoke_json.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers native `json` scalar and exponent parsing, escape and Unicode decoding, malformed input rejection, nested object/list parsing, formatted dumps, map subclass dumps, and round trips. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_json.be` with native `json` module API-shape coverage for callable `load` and `dump` exports before the parser/dumper behavior assertions. Hardware execution remains open in `TODO.md`.
 
-## P1 dedicated string smoke coverage
+## Priority 1 dedicated string smoke coverage
 
 - [x] Added `/tests/p2/smoke_string.be` and wired it into `/tests/p2/smoke_all.be` before JSON/time users. The smoke covers native `string` find/count/split, escape/translate/replace, format conversions, range indexing, prefix/suffix helpers, and string multiplication. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated bytes smoke coverage
+## Priority 1 dedicated bytes smoke coverage
 
 - [x] Added `/tests/p2/smoke_bytes.be` and wired it into `/tests/p2/smoke_all.be` near the core compatibility smokes. The smoke covers builtin `bytes` construction, add/get endianness, resize/clear, equality/concat/append, appendhex, indexing/ranges, mutation/index errors, copy isolation, string conversion, and hex conversion. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_bytes.be` with builtin `bytes` method API-shape coverage for callable `add`, `get`, `resize`, `clear`, `append`, `appendhex`, `copy`, `asstring`, `fromstring`, and `tohex`. Hardware execution remains open in `TODO.md`.
@@ -1156,402 +1162,402 @@ Maintenance rule:
 - [x] Extended `/tests/p2/smoke_list_core.be` with builtin `list` method API-shape coverage for callable `iter`, `copy`, `insert`, `remove`, `reverse`, `push`, `pop`, `find`, `keys`, and `concat`. Hardware execution remains open in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_map_core.be` with builtin `map` method API-shape coverage for callable `find`, `contains`, `remove`, `insert`, `iter`, and `size`. Hardware execution remains open in `TODO.md`.
 
-## P1 dedicated collection smoke coverage
+## Priority 1 dedicated collection smoke coverage
 
 - [x] Added `/tests/p2/smoke_collections.be` and wired it into `/tests/p2/smoke_all.be` near the core compatibility smokes. The smoke covers builtin list indexing/slicing/iteration/mutation/copy/concat/find/clear, map lookup/insert/remove/keys/values and selected key errors, plus range iteration, accessors, `setrange()`, string forms, and selected value errors. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated call smoke coverage
+## Priority 1 dedicated call smoke coverage
 
 - [x] Added `/tests/p2/smoke_call.be` and wired it into `/tests/p2/smoke_all.be` near the core compatibility smokes. The smoke covers builtin `call()` behavior for fixed-argument functions, varargs functions, varargs-only functions, terminal list expansion, non-terminal list preservation, native function calls, moderate argument-list expansion, and class constructor calls. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_call.be` with builtin `call()` coverage for captured closures, including direct arguments and terminal-list expansion while preserving closure state. Hardware execution remains open in `TODO.md`.
 
-## P1 dedicated conversion/type smoke coverage
+## Priority 1 dedicated conversion/type smoke coverage
 
 - [x] Added `/tests/p2/smoke_conversions.be` and wired it into `/tests/p2/smoke_all.be` near the core compatibility smokes. The smoke covers core conversion/type behavior for `str`, `number`, `int`, `real`, `bool`, `type`, `size`, custom conversion hooks, `classname`, `classof`, `super`, `issubclass`, and `isinstance`. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_conversions.be` with invalid `int()` / `real()` conversion fallback coverage for non-numeric strings and `nil`, matching the existing `number()` negative-path behavior. Hardware execution remains open in `TODO.md`.
 
-## P1 dedicated compile/module/assert smoke coverage
+## Priority 1 dedicated compile/module/assert smoke coverage
 
 - [x] Added `/tests/p2/smoke_compile_module.be` and wired it into `/tests/p2/smoke_all.be` near the core compatibility smokes. The smoke covers core `assert`, `compile`, and `module` behavior: assert pass/fail exceptions, compile success/failure, compiled global lookup, module member mutation, and introspect-assisted module metadata. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_compile_module.be` with `compile()` coverage for returning a captured closure from compiled source and invoking it after the compiled entry function returns. Hardware execution remains open in `TODO.md`.
 
-## P1 dedicated solidify smoke coverage
+## Priority 1 dedicated solidify smoke coverage
 
 - [x] Added `/tests/p2/smoke_solidify.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers native `solidify` API shape, no-argument behavior, invalid-type errors, compacting a tiny class without noisy generated dump output, and optional `nocompact()` behavior when that helper is present. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_solidify.be` with compact inherited-class coverage so a compacted child class still resolves `super()` method behavior plus static member/method access. Hardware execution remains open in `TODO.md`.
 
-## P1 dedicated virtual member smoke coverage
+## Priority 1 dedicated virtual member smoke coverage
 
 - [x] Added `/tests/p2/smoke_virtual_members.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers the native `undefined` sentinel, class-level virtual `member()` dispatch for dynamic methods and fields, undefined-triggered attribute errors, module-level virtual `member()` dispatch, nil fallback behavior, and `introspect.get(..., true)` returning the `undefined` sentinel for missing members. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated module-system smoke coverage
+## Priority 1 dedicated module-system smoke coverage
 
 - [x] Added `/tests/p2/smoke_module_system.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers `module()` creation with and without names, module member mutation and functions, `sys.path()` shape, cached module injection via `introspect.setmodule()`, and a native `string` module monkey-patch/restore path that delegates missing members back to the original module. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated super/inheritance smoke coverage
+## Priority 1 dedicated super/inheritance smoke coverage
 
 - [x] Added `/tests/p2/smoke_super.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers multi-level constructor chaining through `super(self).init(...)`, instance and class `super()` traversal, leveled `super(obj, Class)` selection, inherited default `init()` behavior when a parent lacks one, and parent-chain method dispatch where a parent implementation calls back into the concrete child method. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated subobject smoke coverage
+## Priority 1 dedicated subobject smoke coverage
 
 - [x] Added `/tests/p2/smoke_subobject.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style builtin subclass behavior for `classof([])`, list class/instance `issubclass()` and `isinstance()` distinctions, and a compact `map` subclass with inherited initialization and index mutation. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated static class smoke coverage
+## Priority 1 dedicated static class smoke coverage
 
 - [x] Added `/tests/p2/smoke_static_classes.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers richer upstream static class behavior: mixed static initializer values, instance access to static members, subclass static overrides, `_class` in static initializer and static method contexts, and nested static classes with static and instance methods. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated conditional-expression smoke coverage
+## Priority 1 dedicated conditional-expression smoke coverage
 
 - [x] Added `/tests/p2/smoke_cond_expr.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers Berry conditional expressions for truthy and falsey selection, nesting, use inside `if` conditions, map lookups with fallback branches, loop-generated values, and branch laziness by raising from the unselected branch if it executes. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated compound-assignment smoke coverage
+## Priority 1 dedicated compound-assignment smoke coverage
 
 - [x] Added `/tests/p2/smoke_compound.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers scalar arithmetic compound assignments, member compound updates inside methods, direct instance-member compound updates, list index compound updates, computed map-key compound updates, and bitwise/shift compound operators. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated suffix-expression smoke coverage
+## Priority 1 dedicated suffix-expression smoke coverage
 
 - [x] Added `/tests/p2/smoke_suffix.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style suffix behavior for dynamic map keys, string concatenation with numeric conversion through `..`, list append expressions, nested list appends, and member slice/index regression cases. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated boolean smoke coverage
+## Priority 1 dedicated boolean smoke coverage
 
 - [x] Added `/tests/p2/smoke_bool.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style boolean comparisons, double-negation, `&&`/`||` behavior, short-circuit laziness, unary-not input preservation, `bool()` conversion for scalar and collection values, and the local-value preservation pattern from the upstream boolean regression. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_bool.be` with boolean operator coverage for truthy non-bool operands and falsey collection operands, while preserving short-circuit laziness. Hardware execution remains open in `TODO.md`.
 
-## P1 dedicated relational/equality smoke coverage
+## Priority 1 dedicated relational/equality smoke coverage
 
 - [x] Added `/tests/p2/smoke_relop.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style relational and equality behavior for ints, reals, nil/bool distinctions, builtin class identity, list equality including nested lists, list-vs-nil behavior, and map equality. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_relop.be` with bytes value equality/inequality coverage and bytes-vs-nil distinctions. Hardware execution remains open in `TODO.md`.
 
-## P1 dedicated assignment smoke coverage
+## Priority 1 dedicated assignment smoke coverage
 
 - [x] Added `/tests/p2/smoke_assignment.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style continuous suffix assignment for direct instance members, nested instance members, local nested members inside a function, and map-selected object member chains with compound updates. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated reference/cycle smoke coverage
+## Priority 1 dedicated reference/cycle smoke coverage
 
 - [x] Added `/tests/p2/smoke_reference.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style cyclic list stringification with `[...]`, nested cyclic rendering, custom `tostring()` participation in list rendering, exception propagation from `tostring()`, and recovery of cyclic rendering after the exception path. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated integer numeric smoke coverage
+## Priority 1 dedicated integer numeric smoke coverage
 
 - [x] Added `/tests/p2/smoke_int_numeric.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style custom `toint()` conversion, hexadecimal string parsing including a large literal, bitwise AND/OR/XOR with variables and literals, and bitwise NOT. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated lexer smoke coverage
+## Priority 1 dedicated lexer smoke coverage
 
 - [x] Added `/tests/p2/smoke_lexer.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style lexer behavior for hex and octal string escapes, standard escaped characters, numeric literal forms, Unicode escape encoding through bytes conversion, and malformed literal/token syntax errors. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated map key smoke coverage
+## Priority 1 dedicated map key smoke coverage
 
 - [x] Added `/tests/p2/smoke_map_keys.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style map keys for real numbers, instances with custom `hash()` and `==`, instances without `hash()` using identity behavior, and the `runtime_error` path when an instance `hash()` method returns a non-integer. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated division-by-zero smoke coverage
+## Priority 1 dedicated division-by-zero smoke coverage
 
 - [x] Added `/tests/p2/smoke_divzero.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style integer and real division/modulo-by-zero exceptions with `divzero_error` and `division by zero`, plus normal integer and real division/modulo operations. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_divzero.be` with computed-denominator zero coverage so runtime expression evaluation paths raise the same `divzero_error` as literal zero denominators. Hardware execution remains open in `TODO.md`.
 
-## P1 dedicated class constant/static-member smoke coverage
+## Priority 1 dedicated class constant/static-member smoke coverage
 
 - [x] Added `/tests/p2/smoke_class_const.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style static member defaults, class-member attribute errors, instance access to static members, dynamic function values stored in instance and static members, static method/static function fields, GC survival for static string/real members, and subclass static overrides that reference parent classes. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated bytes base64/fixed-size smoke coverage
+## Priority 1 dedicated bytes base64/fixed-size smoke coverage
 
 - [x] Added `/tests/p2/smoke_bytes_b64_fixed.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style `bytes.tob64()`, `bytes.fromb64()`, fixed-size `bytes(-n)` initialization, fixed-size hex/base64 initialization, fixed-size get/set/index mutation, unchanged-size resize, fixed-size mutation rejection paths, and fixed-size concatenation. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`. Mapped-pointer bytes remain a separate XMM-aware compatibility item.
 
-## P1 dedicated advanced JSON smoke coverage
+## Priority 1 dedicated advanced JSON smoke coverage
 
 - [x] Added `/tests/p2/smoke_json_advanced.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style uppercase exponent parsing, slash/backspace/formfeed escapes, Unicode expansion sizing, invalid Unicode escape rejection, unescaped control-character rejection, valid escaped control characters, invalid escape rejection, moderate long strings, mixed ASCII/Unicode text, nested Unicode objects, and malformed string/object rejection. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated for-loop smoke coverage
+## Priority 1 dedicated for-loop smoke coverage
 
 - [x] Added `/tests/p2/smoke_for_loop.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style range `for` summation, loop `break`, loop `continue`, return from inside a loop, and a compact recursive `for` recurrence that exercises repeated `stop_iteration` handling. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated closure/upvalue smoke coverage
+## Priority 1 dedicated closure/upvalue smoke coverage
 
 - [x] Added `/tests/p2/smoke_closure.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers independent factory closures, captured upvalue mutation, post-creation outer mutation visibility, loop-variable plus local capture, returned-closure arguments, and the upstream closure-compilation shape with a captured numeric update. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated range smoke coverage
+## Priority 1 dedicated range smoke coverage
 
 - [x] Added `/tests/p2/smoke_range.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style literal ranges, positive and negative `range()` increments, same-bound descending ranges, large increments, range accessors, string forms, positive and custom-increment `setrange()` reconfiguration, post-`setrange()` iteration, and selected `value_error` paths. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated vararg smoke coverage
+## Priority 1 dedicated vararg smoke coverage
 
 - [x] Added `/tests/p2/smoke_vararg.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style direct varargs with required and varargs-only functions, nil-preserving vararg lists, returned closure varargs, and method varargs that preserve `self` plus required and rest arguments. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_vararg.be` with vararg-list mutation isolation coverage: mutating one returned rest-list does not alter closure-captured state or later vararg calls. Hardware execution remains open in `TODO.md`.
 
-## P1 dedicated compiler/parser regression smoke coverage
+## Priority 1 dedicated compiler/parser regression smoke coverage
 
 - [x] Added `/tests/p2/smoke_compiler_parser.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style compiler/parser regression shapes for member-index access through `self`, negative index register ordering, string slicing followed by a `for` loop, ternary assignment parsing, nested map access followed by loop return, and boolean short-circuit parser compilation. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_compiler_parser.be` with call-argument ternary expressions that contain chained list suffixes, covering another compact parser/register-ordering edge without touching runtime hardware paths. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 static declaration method-visible field coverage
+## Priority 1 static declaration method-visible field coverage
 
 - [x] Extended `/tests/p2/smoke_static_decls.be` with an instance method that updates a grouped static field through the class and reads it through instance fallback, covering static field visibility inside method bodies. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 inherited static class member readback coverage
+## Priority 1 inherited static class member readback coverage
 
 - [x] Extended `/tests/p2/smoke_class_const.be` with inherited static readback through both a subclass and subclass instance, including parent-side mutation after instance creation. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 subclass-from-module inherited static fallback coverage
+## Priority 1 subclass-from-module inherited static fallback coverage
 
 - [x] Extended `/tests/p2/smoke_static_super_member.be` with a subclass static override observed through an inherited base method, covering instance fallback to the dynamic subclass static field while preserving the base-class value on base instances. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 class iterator closure isolation coverage
+## Priority 1 class iterator closure isolation coverage
 
 - [x] Extended `/tests/p2/smoke_classes.be` with two independent iterator closures returned from the same class instance, confirming their captured iteration state does not alias and `stop_iteration` remains scoped to the exhausted iterator. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 indirect static member write coverage
+## Priority 1 indirect static member write coverage
 
 - [x] Extended `/tests/p2/smoke_member_indirect.be` with computed-name indirect assignment to a class static field and direct/indirect readback. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 builtin subclass method/storage coverage
+## Priority 1 builtin subclass method/storage coverage
 
 - [x] Extended `/tests/p2/smoke_subobject.be` with user-defined methods on list and map subclasses that mutate their inherited builtin storage, then verify list indexing and map key lookup read the updated values. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 map hash-collision instance-key coverage
+## Priority 1 map hash-collision instance-key coverage
 
 - [x] Extended `/tests/p2/smoke_map_keys.be` with distinct instance keys that intentionally share the same integer hash, verifying equality still separates entries and `contains()` rejects a same-hash missing key. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 virtual member real-member precedence coverage
+## Priority 1 virtual member real-member precedence coverage
 
 - [x] Extended `/tests/p2/smoke_virtual_members.be` so class and module `member()` hooks return alternate values for real member names, while direct reads/calls still use the real field or method. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 virtual setmember computed-name write coverage
+## Priority 1 virtual setmember computed-name write coverage
 
 - [x] Extended `/tests/p2/smoke_virtual_setmember.be` with computed-name assignment through `setmember()` for a virtual payload, plus computed-name assignment to a real field to confirm real-member writes do not get routed into the virtual assignment map. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 external super-proxy method call coverage
+## Priority 1 external super-proxy method call coverage
 
 - [x] Extended `/tests/p2/smoke_super.be` with direct method calls through `super(c)` and `super(super(c))`, confirming external super proxies dispatch to the expected parent methods while preserving inherited route behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 integer conversion and shift precedence coverage
+## Priority 1 integer conversion and shift precedence coverage
 
 - [x] Extended `/tests/p2/smoke_int_numeric.be` with negative `toint()` conversion and compact left/right shift assertions, including parenthesized bitwise/shift precedence combinations. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 lexer hex escape boundary coverage
+## Priority 1 lexer hex escape boundary coverage
 
 - [x] Extended `/tests/p2/smoke_lexer.be` with uppercase hex escape and NUL byte escape readback, plus incomplete `\x` escape syntax-error cases. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 conditional-expression collection truthiness coverage
+## Priority 1 conditional-expression collection truthiness coverage
 
 - [x] Extended `/tests/p2/smoke_cond_expr.be` with empty/non-empty list and map operands in conditional expressions, covering Berry collection truthiness in ternary selection. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 computed-member compound assignment coverage
+## Priority 1 computed-member compound assignment coverage
 
 - [x] Extended `/tests/p2/smoke_compound.be` with compound assignment through a computed member name, verifying direct and indirect readback agree after the update. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 computed nested assignment coverage
+## Priority 1 computed nested assignment coverage
 
 - [x] Extended `/tests/p2/smoke_assignment.be` with nested assignment and compound update through computed member names, verifying direct and indirect readback match. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 suffix method-chain indexing coverage
+## Priority 1 suffix method-chain indexing coverage
 
 - [x] Extended `/tests/p2/smoke_suffix.be` with method-call suffix chaining that returns an object/list and immediately indexes the returned list, covering another compact suffix parser/runtime shape. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 cyclic map reference stringification coverage
+## Priority 1 cyclic map reference stringification coverage
 
 - [x] Extended `/tests/p2/smoke_reference.be` with cyclic map rendering and post-exception recovery readback, covering map self-reference formatting alongside the existing cyclic list recovery path. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 walrus sequential value-expression coverage
+## Priority 1 walrus sequential value-expression coverage
 
 - [x] Extended `/tests/p2/smoke_walrus_edges.be` with sequential assignment expressions inside a list literal, verifying left-to-right value production and readback from the assigned local. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 f-string indexed expression formatting coverage
+## Priority 1 f-string indexed expression formatting coverage
 
 - [x] Extended `/tests/p2/smoke_syntax.be` with f-string expressions that read list/map suffixes, including integer formatting from an indexed arithmetic expression. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 map nil-value presence coverage
+## Priority 1 map nil-value presence coverage
 
 - [x] Extended `/tests/p2/smoke_map_core.be` with a present key whose value is `nil`, confirming `contains()` distinguishes presence while `find(key, default)` still returns the stored `nil` instead of the default. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 collection map values coverage
+## Priority 1 collection map values coverage
 
 - [x] Extended `/tests/p2/smoke_collections.be` with order-independent `map.values()` assertions, matching the existing collection coverage goal for map keys and values. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 list index-list ordering coverage
+## Priority 1 list index-list ordering coverage
 
 - [x] Extended `/tests/p2/smoke_list_core.be` with duplicate/reordered list-of-indices selection, confirming selection preserves requested order and duplicate indexes. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 compile-to-module mutation coverage
+## Priority 1 compile-to-module mutation coverage
 
 - [x] Extended `/tests/p2/smoke_compile_module.be` with compiled source that mutates a module member through a global module reference, then verifies the module state is visible to normal and introspect reads. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 inherited introspect.ismethod coverage
+## Priority 1 inherited introspect.ismethod coverage
 
 - [x] Extended `/tests/p2/smoke_introspect_ismethod.be` with inherited method and inherited static-method checks through both subclass and subclass instance lookup. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 binary operator-overload instance result coverage
+## Priority 1 binary operator-overload instance result coverage
 
 - [x] Extended `/tests/p2/smoke_operator_overload.be` with a binary `+` overload between two instances that returns a new instance, then verifies the resulting instance payload. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 module member real-attribute precedence coverage
+## Priority 1 module member real-attribute precedence coverage
 
 - [x] Extended `/tests/p2/smoke_module_attrs.be` so a module with a virtual `member()` hook also has a real field with the same name, confirming real module attributes take precedence while other names still use dynamic dispatch. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 injected module import identity coverage
+## Priority 1 injected module import identity coverage
 
 - [x] Extended `/tests/p2/smoke_module_system.be` with repeated import of an injected module after mutation through the imported alias, confirming repeated imports keep the same live module object and state. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 custom conversion edge-value coverage
+## Priority 1 custom conversion edge-value coverage
 
 - [x] Extended `/tests/p2/smoke_conversions.be` with custom conversion hooks returning an empty string, a negative integer, and a negative real value, covering edge values through `str()`, `int()`, and `real()`. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 range iterator isolation coverage
+## Priority 1 range iterator isolation coverage
 
 - [x] Extended `/tests/p2/smoke_range.be` with two independent iterators from the same range object, confirming iterator state does not alias and the range remains reusable for later `for` expansion. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 VM full-span negative slicing coverage
+## Priority 1 VM full-span negative slicing coverage
 
 - [x] Extended `/tests/p2/smoke_vm_ops.be` with full-span negative-index string and list slices, covering boundary normalization for `[-len..-1]` style slices. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 VM shift-operator error coverage
+## Priority 1 VM shift-operator error coverage
 
 - [x] Extended `/tests/p2/smoke_vm_error_paths.be` with invalid shift operand cases for `<<` and `>>`, covering shift-operator `type_error` paths alongside the existing arithmetic error coverage. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 call bound-method dispatch coverage
+## Priority 1 call bound-method dispatch coverage
 
 - [x] Extended `/tests/p2/smoke_call.be` with `call()` on a bound instance method, including direct arguments and list-expanded arguments. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 broad compat map values coverage
+## Priority 1 broad compat map values coverage
 
 - [x] Extended `/tests/p2/smoke_compat.be` with compact `map.values()` readback, ensuring the top-level core compat smoke samples map values as well as keys. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 closure parameter/local capture coverage
+## Priority 1 closure parameter/local capture coverage
 
 - [x] Extended `/tests/p2/smoke_function_capture.be` with a returned closure that captures both an outer function parameter and an inner local, then combines them with a call argument. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 escaped vararg rest-list capture coverage
+## Priority 1 escaped vararg rest-list capture coverage
 
 - [x] Extended `/tests/p2/smoke_vararg.be` with a returned closure that captures the vararg rest list and reads it back later, covering escaped vararg storage separately from immediate return. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 nested closure upvalue-chain coverage
+## Priority 1 nested closure upvalue-chain coverage
 
 - [x] Extended `/tests/p2/smoke_closure.be` with a nested returned closure that captures and mutates values from two enclosing scopes, covering chained upvalue state across repeated calls. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 nested for-loop control-flow isolation coverage
+## Priority 1 nested for-loop control-flow isolation coverage
 
 - [x] Extended `/tests/p2/smoke_for_loop.be` with nested loops that use inner `continue` and `break`, confirming inner-loop control flow does not leak into the outer loop. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 map equality order/nil coverage
+## Priority 1 map equality order/nil coverage
 
 - [x] Extended `/tests/p2/smoke_relop.be` with order-independent map equality and nil-valued map equality/distinction checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 safe API map copy isolation coverage
+## Priority 1 safe API map copy isolation coverage
 
 - [x] Extended `/tests/p2/smoke_be_api_edges.be` with map `copy()` mutation-isolation coverage, mirroring the existing list copy isolation probe through safe Berry-level behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated assert-failure exception smoke coverage
+## Priority 1 dedicated assert-failure exception smoke coverage
 
 - [x] Added `/tests/p2/smoke_exception_assert.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style `assert_failed` exception capture for an assertion failure raised inside a `for` loop, including preservation of the custom assertion message. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_exception_assert.be` with a passing assert guard plus function-call and closure-call assert propagation coverage, confirming a custom `assert_failed` message survives across call and closure frames. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated plain map smoke coverage
+## Priority 1 dedicated plain map smoke coverage
 
 - [x] Added `/tests/p2/smoke_map_core.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style plain map access/find/contains behavior, missing-key removal preserving a map, boolean keys, `key_error` lookup, insert true/false semantics, comma-bearing map stringification, `map.iter()` value iteration, and bulk insert/remove behavior that exercises collision-chain cleanup. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated list core smoke coverage
+## Priority 1 dedicated list core smoke coverage
 
 - [x] Added `/tests/p2/smoke_list_core.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style list stringification, iterator order, negative-index insert/remove/reverse behavior, `..` append expression behavior, pop variants, `find()` edge cases including nested lists and nil, `keys()` for populated/nil/empty lists, rich `concat()` delimiter behavior, negative-index compound assignment, list-of-indices selection, and out-of-range list-index selection returning `nil`. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated operator-overload smoke coverage
+## Priority 1 dedicated operator-overload smoke coverage
 
 - [x] Added `/tests/p2/smoke_operator_overload.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style class operator overload behavior for callable instances through `def ()()` and the no-argument `def +()` overload shape used by the upstream regression test. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated string format/edge smoke coverage
+## Priority 1 dedicated string format/edge smoke coverage
 
 - [x] Added `/tests/p2/smoke_string_format_extra.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style string format conversion edges for custom `toint()`, empty conversions for unsupported numeric formatting, `%c`, `%q`, adjacent string literal concatenation with comments, larger short/long string multiplication boundaries, invalid string multiplication type errors, and multiplication inside expressions. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated module attribute smoke coverage
+## Priority 1 dedicated module attribute smoke coverage
 
 - [x] Added `/tests/p2/smoke_module_attrs.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style module `member()` dynamic attribute dispatch, `member()` returning `undefined` as an `attribute_error`, missing attributes on modules without `member()`, and `introspect.module("string")` returning the native module object. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated indirect-member smoke coverage
+## Priority 1 dedicated indirect-member smoke coverage
 
 - [x] Added `/tests/p2/smoke_member_indirect.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style indirect member syntax for module writes and reads, class static reads, instance initialization through dynamic member names, indirect member writes from expressions, indirect method calls, class-valued method returns, chained indirect member reads, and chained compound updates. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated bytes extra smoke coverage
+## Priority 1 dedicated bytes extra smoke coverage
 
 - [x] Added `/tests/p2/smoke_bytes_extra.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style bytes extra method API shape, float get/set/add behavior, `fromhex()`/`tohex()`, `setbytes()` range and truncation behavior, `reverse()` with offset/length/grouping arguments, bytes truthiness and `tobool()`, three-byte little/big-endian `get()`, `appendb64()` with offsets, three-byte `add()`, and selected `type_error` paths for `set()`, `add()`, and `addfloat()`. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`. Mapped-pointer bytes remain a separate XMM-aware compatibility item.
 - [x] Extended `/tests/p2/smoke_bytes_extra.be` with `fromstring()` plus `copy()` mutation-isolation coverage, confirming a copied bytes object does not alias after the original buffer is mutated. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated introspect ismethod edge smoke coverage
+## Priority 1 dedicated introspect ismethod edge smoke coverage
 
 - [x] Added `/tests/p2/smoke_introspect_ismethod.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style `introspect.ismethod()` edge behavior for missing arguments, non-closure values, modules, native functions, plain Berry functions, instance methods, static methods, and function-valued instance members. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated virtual setmember smoke coverage
+## Priority 1 dedicated virtual setmember smoke coverage
 
 - [x] Added `/tests/p2/smoke_virtual_setmember.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style class `setmember()` behavior for virtual attribute assignment, rejected virtual assignment, map-backed virtual members, and function-valued assignments that must remain callable after passing through `setmember()`. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated VM runtime error-path smoke coverage
+## Priority 1 dedicated VM runtime error-path smoke coverage
 
 - [x] Added `/tests/p2/smoke_vm_error_paths.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style VM runtime error paths for unary, binary, call, concat, and string-repetition type errors, instance operator overload edges for subtraction/multiply/divide/modulo/unary operations, default instance truthiness, invalid comparison return types, instance/class attribute errors, and named-global reads/writes through `global`. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated debug module smoke coverage
+## Priority 1 dedicated debug module smoke coverage
 
 - [x] Added `/tests/p2/smoke_debug.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style native `debug` module behavior for `attrdump()` no-crash class inspection and `debug.caller()` stack introspection with function names resolved through `introspect.name()`. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 - [x] Extended `/tests/p2/smoke_debug.be` with nested wrapper coverage so `debug.caller()` must preserve a three-frame named call chain resolved through `introspect.name()`. Hardware execution remains open in `TODO.md`.
 
-## P1 dedicated static superclass module-member smoke coverage
+## Priority 1 dedicated static superclass module-member smoke coverage
 
 - [x] Added `/tests/p2/smoke_static_super_member.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers the upstream-style static-class regression where a subclass inherits from a superclass stored in a module member while defining static members on the subclass, preserving subclass checks, instance checks, inherited methods, and static member reads. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated Berry C API edge smoke coverage
+## Priority 1 dedicated Berry C API edge smoke coverage
 
 - [x] Added `/tests/p2/smoke_be_api_edges.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style Berry C API edge paths through safe Berry-level probes for closure/function type checks, builtin list/map instance checks, pointer conversion, missing module-member lookup, no-op non-object member setting, list copy isolation, closure upvalue mutation, comparison operators, class inheritance, and native function type checks. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated function closure-capture smoke coverage
+## Priority 1 dedicated function closure-capture smoke coverage
 
 - [x] Added `/tests/p2/smoke_function_capture.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style escaped function closure capture where a closure is stored outside its defining function and still sees captured locals, plus independent factory closures with separate mutable captured state. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated walrus edge smoke coverage
+## Priority 1 dedicated walrus edge smoke coverage
 
 - [x] Added `/tests/p2/smoke_walrus_edges.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style walrus regression behavior for local builtin-name shadowing, global and list-index walrus expressions returning the assigned value, member walrus assignment in conditions, and cleanup of temporary global-module state. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated static declaration-form smoke coverage
+## Priority 1 dedicated static declaration-form smoke coverage
 
 - [x] Added `/tests/p2/smoke_static_decls.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers upstream-style legacy `static name` declarations, grouped `static var` declarations, class-vs-instance static visibility, class-side attribute errors for instance fields and missing members, instance reads of static values, and function-valued static members. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated JSON generated stack/growth smoke coverage
+## Priority 1 dedicated JSON generated stack/growth smoke coverage
 
 - [x] Added `/tests/p2/smoke_json_stack.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers compact upstream-style JSON stack/growth behavior with a generated 128-key object plus a generated list of nested objects, asserting successful parse results without turning the P2 smoke into a large heap stress. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 dedicated math parity smoke coverage
+## Priority 1 dedicated math parity smoke coverage
 
 - [x] Added `/tests/p2/smoke_math_parity.be` and wired it into `/tests/p2/smoke_all.be`. The smoke covers adapted upstream math semantics for `nan`/`inf` string and JSON behavior, `round` including half-boundaries around zero, `min`/`max` value/type/error behavior, no-argument fallbacks, deterministic `srand`/`rand`, and core constants while preserving the P2 module's documented invalid-domain `nil` behavior. This is source-level smoke coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 explicit REPL input smoke harness coverage
+## Priority 1 explicit REPL input smoke harness coverage
 
 - [x] Tightened `scripts/p2/repl_smoke.py --suite compat` so the interactive `input()` check waits for the prompt marker, sends the response text, then asserts the echoed value before returning to `berry>`. This is harness-level source coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 additive sys.path import-root support
+## Priority 1 additive sys.path import-root support
 
 - [x] Added native `sys.path_add(path)` to append deliberate runtime import roots through Berry's VM module-path API without replacing or reordering the P2 startup roots. `libstore.path_add(path)` now bridges to `sys.path_add(path)` when available, `/tests/p2/smoke_sys_path_add.be` stages a tiny module under `/berry/sys_path` and imports it through the normal importer, and `p2compat` now documents additive path support while keeping removal/reordering unsupported. This is source-level support only; hardware execution remains pending in `TODO.md`.
 - [x] Hardened the additive import-root path so repeated `libstore.path_add(path)` calls do not duplicate VM module roots. `/tests/p2/smoke_sys_path_add.be` now checks duplicate-safe append behavior before importing its staged probe module. This is source-level support only; hardware execution remains pending in `TODO.md`.
 
-### P1 module coverage metadata
+### Priority 1 module coverage metadata
 
 - Added curated per-module coverage metadata to `libstore.info()` / `libstore.inventory()` for the current SD module set: behavior smoke, SD import smoke, repeated import/cache smoke, PSRAM source-cache smoke, low-memory churn smoke, metadata smoke, status, and reason.
 - Extended `/tests/p2/smoke_module_inventory.be` so every known SD module must report coverage metadata, while keeping `wifi` honestly marked as hardware-deferred rather than pretending hardware behavior is covered.
 - Updated `docs/coverage-matrix.md` and `port/p2/TODO.md` to reflect the new metadata coverage while leaving hardware verification open.
 
-### P1 `.bec` sidecar freshness metadata
+### Priority 1 `.bec` sidecar freshness metadata
 
 - Added staged `.bec` sidecar freshness manifest support through `libstore.compiled_manifest_path()`, `libstore.compiled_manifest()`, and expanded `libstore.compiled_freshness()` metadata.
 - Sidecars use `<module>.bec.json` beside the staged bytecode and can prove `fresh == true` / `comparable == true`, while still reporting `compiled_usable == false` until real `.bec` execution support is enabled.
 - Extended `p2mem.module()` diagnostics and `/tests/p2/smoke_bec_fallback.be` so fresh, stale, missing-manifest, compiled-only, and source-fallback cases stay explicit.
 - Updated SD layout, module, architecture, PSRAM-loader, limitations, TODO, and coverage docs to distinguish staged freshness metadata from still-open `.bec` execution and compile-to-cache emission.
 
-### P1 math CORDIC backend metadata
+### Priority 1 math CORDIC backend metadata
 
 - Added `math.accel_info()` to the SD-loaded P2 `math` module so the active math backend is explicit at runtime.
 - The metadata reports when P2 CORDIC is used for compatible scaled trig/polar paths (`sin`, `cos`, `tan`, `atan2`, and indirect `asin`/`acos`) and keeps `sqrt`, `exp`, and `log` marked unaccelerated to avoid overclaiming unsafe or unmeasured paths.
 - Extended `/tests/p2/smoke_modules.be` and `/tests/p2/smoke_math_parity.be` to assert the accelerator metadata while preserving the existing Berry finite/error semantics checks.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md` so CORDIC progress is visible but hardware timing/measurement remains open.
 
-### P1 nested package string imports
+### Priority 1 nested package string imports
 
 - Added native loader filesystem normalization so dotted module names are probed as nested paths for source/bytecode files, e.g. `pkg.mod` maps to `pkg/mod.be` or `pkg/mod.bec` under the current directory and configured module roots.
 - Extended `/tests/p2/smoke_package_paths.be` so the staged `/berry/app/pkg/mod.be` module loads both through `libstore.load("pkg.mod")` and through native string import syntax `import "pkg.mod" as native_pkg_mod`.
 - Updated `docs/sd-layout.md`, `docs/coverage-matrix.md`, and `port/p2/TODO.md` to mark nested string imports as staged while leaving bare dotted identifier syntax such as `import pkg.mod` open unless the parser grammar is intentionally extended.
 
-### P1 bare dotted package imports
+### Priority 1 bare dotted package imports
 
 - Extended the Berry parser import grammar to accept bare dotted module names such as `import pkg.mod` and `import pkg.mod as alias`.
 - Bare dotted imports use the full dotted string as the module cache/load key and bind the final segment by default, so `import pkg.mod` stores the module in `mod` unless an explicit alias is supplied.
@@ -1559,107 +1565,107 @@ Maintenance rule:
 - Extended `/tests/p2/smoke_package_paths.be` to cover `libstore.load("pkg.mod")`, `import "pkg.mod" as native_pkg_mod`, `import pkg.mod as dotted_pkg_mod`, and `import pkg.mod` against the same staged `/berry/app/pkg/mod.be` file.
 - Updated `docs/sd-layout.md`, `docs/coverage-matrix.md`, and `port/p2/TODO.md`; hardware execution remains pending in TODO.
 
-### P1 invalid `.bec` manifest fallback coverage
+### Priority 1 invalid `.bec` manifest fallback coverage
 
 - Extended `/tests/p2/smoke_bec_fallback.be` to stage an invalid `<module>.bec.json` sidecar and assert `libstore.compiled_manifest()`, `compiled_freshness()`, `resolve()`, and `compile_cache_plan()` all report the invalid manifest explicitly.
 - Confirmed the invalid-manifest case remains non-fresh, non-comparable, non-usable, and still selects the matching `.be` source fallback instead of pretending the `.bec` can execute.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md` so the `.bec` fallback item now names missing, invalid, stale, unsupported, compiled-only, and fully-missing metadata cases.
 
-### P1 `.bec` sidecar manifest validation
+### Priority 1 `.bec` sidecar manifest validation
 
 - Tightened `libstore.compiled_manifest(name)` so a `.bec.json` sidecar must use format `berry-p2-bec-manifest-v1`, must not name a different module, and must include source and compiled hashes before it can be considered structurally valid.
 - Extended `/tests/p2/smoke_bec_fallback.be` to cover invalid JSON, invalid format, module mismatch, missing hashes, stale hashes, and fresh-but-execution-disabled manifests while preserving `.be` source fallback.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md` so `.bec` fallback coverage now distinguishes malformed sidecars from stale-but-comparable sidecars.
 
-### P1 comma-separated dotted package imports
+### Priority 1 comma-separated dotted package imports
 
 - Extended `/tests/p2/smoke_package_paths.be` to stage a second nested package module and cover comma-separated dotted import syntax: `import pkg.mod, pkg.other`.
 - The smoke now proves nested SD package lookup works for `libstore.load("pkg.mod")`, string-path import, bare dotted import with alias, bare dotted import with default final-segment binding, and comma-separated dotted imports.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md`; hardware execution remains pending in TODO.
 
-### P1 SD file/open mode coverage
+### Priority 1 SD file/open mode coverage
 
 - Extended `/tests/p2/smoke_sd.be` with cleanup-oriented coverage for append mode (`a`), read/write update mode (`r+`), additional `os.path.join()` checks, and missing-path negative checks for `exists`, `isfile`, and `isdir`.
 - Kept the smoke small and sequential: it stages only `/P2SMOKE.TXT`, `/P2LINES.TXT`, `/P2SMOKE2.TXT`, and `/P2DIR`, and removes the paths it creates.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md` to reflect broader file/open and `os.path` smoke coverage while leaving hardware verification open.
 
-### P1 dotted package import cache identity
+### Priority 1 dotted package import cache identity
 
 - Extended `/tests/p2/smoke_package_paths.be` to verify nested package imports reuse the same cached module object across `import "pkg.mod" as ...`, repeated string import, `import pkg.mod as ...`, default `import pkg.mod`, and comma-separated `import pkg.mod, pkg.other` forms.
 - The smoke uses `introspect.toptr()` for identity checks and keeps the same tiny cleanup-oriented staged package files under `/berry/app/pkg`.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md`; hardware execution remains pending in TODO.
 
-### P1 p2compat capability metadata refresh
+### Priority 1 p2compat capability metadata refresh
 
 - Added `package_import` as a supported `p2compat` capability for dotted SD imports that map to nested paths, including string, alias, bare, and comma-separated forms.
 - Added `bec_manifest` as a staged `p2compat` capability for `.bec.json` sidecar format/module/hash validation used by fallback metadata, explicitly separate from disabled `.bec` execution.
 - Extended `/tests/p2/smoke_p2compat.be` to assert the new capability entries and updated `port/p2/TODO.md` plus `docs/coverage-matrix.md`.
 
-### P1 missing-import cache recovery
+### Priority 1 missing-import cache recovery
 
 - Extended `/tests/p2/smoke_import_missing.be` so a failed import is followed by staging the same module under `/berry/app` and importing it successfully.
 - This proves missing imports fail catchably without creating bogus selected metadata or poisoning the module cache for a later SD source module.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md`; hardware execution remains pending in TODO.
 
-### P1 `.bec` preference/blocker metadata
+### Priority 1 `.bec` preference/blocker metadata
 
 - Added `compiled_preferred` and `compiled_blocked_reason` to `libstore.resolve()` and `libstore.info()` so a fresh staged `.bec` candidate can be identified without enabling bytecode execution.
 - Extended `/tests/p2/smoke_bec_fallback.be` to assert missing-manifest, fresh-but-execution-disabled, and stale-manifest preference/blocker metadata while keeping `.be` source selected.
 - Extended `/tests/p2/smoke_module_inventory.be` to require the new metadata fields on inventory records.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md`; `.bec` execution remains disabled and hardware execution remains pending in TODO.
 
-### P1 compile-cache plan blocker metadata
+### Priority 1 compile-cache plan blocker metadata
 
 - Added `libstore.MANIFEST_FORMAT` and expanded `libstore.compile_cache_plan(name)` with `manifest_format`, `manifest_required`, `validator_required`, `execution_required`, and `emit_blocked_reason` fields.
 - Extended `/tests/p2/smoke_bec_fallback.be` so normal, compiled-only, and missing-source cache plans assert the explicit blockers while `can_emit` remains false.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md`; this is planning metadata only and does not enable `.bec` emission or execution.
 
-### P1 compile-cache plan summary in module diagnostics
+### Priority 1 compile-cache plan summary in module diagnostics
 
 - Added compile-cache plan summary fields to `libstore.info()` / `libstore.inventory()`: support flag, can-emit flag, reason, blocked reason, target `.bec` path, target manifest path, and manifest format.
 - Added matching fields to `p2mem.module(name)` so diagnostics expose why `.bec` emission is currently blocked without requiring a separate planner call.
 - Extended `/tests/p2/smoke_module_inventory.be` and `/tests/p2/smoke_bec_fallback.be` to assert the new metadata while keeping `.bec` emission/execution disabled.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md`; this is diagnostic/planning metadata only.
 
-### P1 SD `+` file mode coverage
+### Priority 1 SD `+` file mode coverage
 
 - Extended `/tests/p2/smoke_sd.be` with cleanup-oriented coverage for `w+` and `a+` read/write file modes using a tiny `/P2PLUS.TXT` temporary file.
 - The smoke now covers documented `open()` modes `w`, `a`, `r+`, `w+`, and `a+` without expanding into broad host-like filesystem assumptions.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md`; hardware execution remains pending in TODO.
 
-### P1 `.bec` manifest template planning
+### Priority 1 `.bec` manifest template planning
 
 - Added `libstore.compiled_manifest_template(name)` to compute the sidecar manifest payload that a future `.be` to `.bec` cache writer would emit when source and staged bytecode both exist.
 - Extended `libstore.compile_cache_plan(name)` with manifest-template availability, reason, and data fields while keeping `can_emit == false` and bytecode execution disabled.
 - Extended `/tests/p2/smoke_bec_fallback.be` to assert manifest-template metadata for matched, compiled-only, and missing cases.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md`; this is planning metadata only.
 
-### P1 manifest-template status in module diagnostics
+### Priority 1 manifest-template status in module diagnostics
 
 - Added manifest-template availability and reason fields to `libstore.info()` / `libstore.inventory()` and `p2mem.module(name)` so module diagnostics can report whether future `.bec` sidecar payload generation is possible.
 - Kept the full template payload in `libstore.compile_cache_plan(name)` to avoid bloating every inventory record.
 - Extended `/tests/p2/smoke_module_inventory.be` and `/tests/p2/smoke_bec_fallback.be` to assert the new status fields.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md`; this remains planning metadata only.
 
-### P1 `.bec` manifest text preview
+### Priority 1 `.bec` manifest text preview
 
 - Added `libstore.compiled_manifest_text(name)` to preview the JSON sidecar payload a future `.be` to `.bec` cache writer would save when source and staged bytecode both exist.
 - Extended `/tests/p2/smoke_bec_fallback.be` to parse the preview text and verify its format, module, source hash, and compiled hash; compiled-only and missing cases return `nil`.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md`; this is preview/planning metadata only and does not write manifests, emit `.bec`, or enable `.bec` execution.
 
-### P1 `os.path` helper-shape coverage
+### Priority 1 `os.path` helper-shape coverage
 
 - Extended `/tests/p2/smoke_sd.be` with additional `os.path` helper-shape assertions for nested paths, local relative filenames, missing extensions, and empty-directory split/dirname cases.
 - Covered basename, dirname, join, split, and splitext behavior without adding new SD writes beyond the existing smoke files.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md`; hardware execution remains pending in TODO.
 
-### P1 SD directory listing coverage
+### Priority 1 SD directory listing coverage
 
 - Extended `/tests/p2/smoke_sd.be` so the temporary `/P2DIR` directory creates a tiny cwd-relative `INNER.TXT`, verifies `os.listdir(".")` sees it, checks relative `exists` / `isfile`, removes the file, and then removes the directory.
 - Kept the SD writes small, sequential, and cleanup-oriented within the existing smoke directory footprint.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md`; hardware execution remains pending in TODO.
 
-### P1 opt-in `.bec` compile-cache emission helper
+### Priority 1 opt-in `.bec` compile-cache emission helper
 
 - Added `BE_P2_ENABLE_BYTECODE_SAVER` as an explicit P2 build gate for Berry's bytecode saver, leaving default P2 firmware with bytecode saving disabled.
 - Added `libstore.compile_cache_probe()` and `libstore.compile_cache_emit(name)`: the helper compiles a source module, writes the target `.bec`, writes the matching `.bec.json` sidecar manifest, and reports freshness metadata only when the opt-in saver exists.
@@ -1683,9 +1689,9 @@ Maintenance rule:
 - Extended `/tests/p2/smoke_bec_fallback.be` to cover both default unsupported emission and opt-in saver-enabled emission behavior without requiring `.bec` execution, and relaxed `/tests/p2/smoke_module_inventory.be` so compile-cache blocker metadata can be `nil` when an opt-in saver build can emit.
 - Updated `port/p2/TODO.md`, `docs/coverage-matrix.md`, `docs/sd-layout.md`, and `docs/P2_MODULES.md`; hardware execution remains pending in TODO.
 
-### P1 native `sys` module coverage
+### Priority 1 native `sys` module coverage
 
-### P1 module inventory mutation-isolation coverage
+### Priority 1 module inventory mutation-isolation coverage
 
 - [x] Extended `/tests/p2/smoke_module_inventory.be` so returned `libstore.inventory()` and `libstore.compiled_inventory()` records are mutated by the caller and then reacquired to prove fresh snapshots are not poisoned by caller-side metadata edits. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
 
@@ -1694,893 +1700,893 @@ Maintenance rule:
 - Added `sys_module` as a supported `p2compat` capability and extended `/tests/p2/smoke_p2compat.be` to assert the supported metadata.
 - Updated `port/p2/TODO.md` and `docs/coverage-matrix.md`; hardware execution remains pending in TODO.
 
-### P1 module inventory mutation-isolation coverage
+### Priority 1 module inventory mutation-isolation coverage
 
 - [x] Extended `/tests/p2/smoke_module_inventory.be` so returned `libstore.inventory()` and `libstore.compiled_inventory()` records are mutated by the caller and then reacquired to prove fresh snapshots are not poisoned by caller-side metadata edits. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 repeated missing-import recovery coverage
+### Priority 1 repeated missing-import recovery coverage
 
 - [x] Extended `/tests/p2/smoke_import_missing.be` so the same missing module can fail repeatedly without creating bogus metadata, then be staged under `/berry/app`, imported, mutated, and imported again through an alias without losing the recovered cached module state. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 native-first import shadow-root coverage
+### Priority 1 native-first import shadow-root coverage
 
-- [x] Extended `/tests/p2/smoke_import_native_first.be` so native `json` must beat fake `/berry/lib/json.be` and `/berry/app/json.be` shadows, including a repeated aliased import. The smoke now asserts both shadow paths are absent before staging and removes only the files it created, preserving the P0 SD-card write guardrail. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
+- [x] Extended `/tests/p2/smoke_import_native_first.be` so native `json` must beat fake `/berry/lib/json.be` and `/berry/app/json.be` shadows, including a repeated aliased import. The smoke now asserts both shadow paths are absent before staging and removes only the files it created, preserving the Priority 0 SD-card write guardrail. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 full SD source-root order coverage
+### Priority 1 full SD source-root order coverage
 
 - [x] Extended `/tests/p2/smoke_import_order.be` so the temporary source-root collision coverage now proves `/modules` wins over appended roots, `/berry/lib` wins over `/berry/app` when `/modules` is absent, and repeated aliased imports keep the selected module object cached. The smoke still asserts temporary paths are absent before staging and removes only files it created. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 SD alias import cache-identity coverage
+### Priority 1 SD alias import cache-identity coverage
 
 - [x] Extended `/tests/p2/smoke_import_alias.be` with a temporary `/berry/app/p2_alias_cache.be` module that is imported under two aliases. The smoke mutates state through the first alias and verifies the second alias sees the cached module object, while asserting the temporary path is absent before staging and removing only the file it created. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 current-directory import precedence coverage
+### Priority 1 current-directory import precedence coverage
 
 - [x] Extended `/tests/p2/smoke_import_cwd.be` so a module in the active SD working directory wins over a same-name `/berry/app` source shadow, then remains cached after restoring the previous working directory and re-importing through an alias. The smoke asserts both temporary files are absent before staging and removes only files/directories it created. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 scoped libstore path mutation coverage
+### Priority 1 scoped libstore path mutation coverage
 
-- [x] Tightened `/tests/p2/smoke_libstore_paths.be` so `libstore.path_add()` / `path_remove()` coverage uses a dedicated temporary `/berry/app/p1paths` root instead of mutating the default `/berry/app` root. The smoke now asserts its temporary file is absent before staging and removes the temporary directory only if it created it. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
+- [x] Tightened `/tests/p2/smoke_libstore_paths.be` so `libstore.path_add()` / `path_remove()` coverage uses a dedicated temporary `/berry/app/p2paths` root instead of mutating the default `/berry/app` root. The smoke now asserts its temporary file is absent before staging and removes the temporary directory only if it created it. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 nested app helper path coverage
+### Priority 1 nested app helper path coverage
 
-- [x] Extended `/tests/p2/smoke_app_paths.be` so `libstore.app_path()`, `app_exists()`, and `run_app()` cover both a flat `/berry/app/*.be` script and a dotted nested app path such as `p1_app_pkg.probe` resolving to `/berry/app/p1_app_pkg/probe.be`. The smoke asserts temporary files are absent before staging and removes the nested app directory only if it created it. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
+- [x] Extended `/tests/p2/smoke_app_paths.be` so `libstore.app_path()`, `app_exists()`, and `run_app()` cover both a flat `/berry/app/*.be` script and a dotted nested app path such as `app_probe_pkg.probe` resolving to `/berry/app/app_probe_pkg/probe.be`. The smoke asserts temporary files are absent before staging and removes the nested app directory only if it created it. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 nested example helper path coverage
+### Priority 1 nested example helper path coverage
 
-- [x] Extended `/tests/p2/smoke_example_paths.be` so `libstore.example_path()`, `example_exists()`, and `run_example()` cover both a flat `/berry/examples/*.be` script and a dotted nested example path such as `p1_example_pkg.probe` resolving to `/berry/examples/p1_example_pkg/probe.be`. The smoke asserts temporary files are absent before staging and removes the nested example directory only if it created it. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
+- [x] Extended `/tests/p2/smoke_example_paths.be` so `libstore.example_path()`, `example_exists()`, and `run_example()` cover both a flat `/berry/examples/*.be` script and a dotted nested example path such as `example_probe_pkg.probe` resolving to `/berry/examples/example_probe_pkg/probe.be`. The smoke asserts temporary files are absent before staging and removes the nested example directory only if it created it. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 nested PASM blob metadata coverage
+### Priority 1 nested PASM blob metadata coverage
 
-- [x] Extended `/tests/p2/smoke_pasm_layout.be` so `libstore.pasm_path()`, `pasm_exists()`, and `pasm_info()` cover both a flat `/berry/pasm/*.bin` blob and a dotted nested blob path such as `p1_pasm_pkg.probe` resolving to `/berry/pasm/p1_pasm_pkg/probe.bin`. The smoke keeps `executable == false` / `pasm_execution_deferred`, asserts temporary files are absent before staging, and removes the nested PASM directory only if it created it. This is source-level metadata coverage only; PASM execution remains deferred in `TODO.md`.
+- [x] Extended `/tests/p2/smoke_pasm_layout.be` so `libstore.pasm_path()`, `pasm_exists()`, and `pasm_info()` cover both a flat `/berry/pasm/*.bin` blob and a dotted nested blob path such as `pasm_probe_pkg.probe` resolving to `/berry/pasm/pasm_probe_pkg/probe.bin`. The smoke keeps `executable == false` / `pasm_execution_deferred`, asserts temporary files are absent before staging, and removes the nested PASM directory only if it created it. This is source-level metadata coverage only; PASM execution remains deferred in `TODO.md`.
 
-### P1 configstore load/fresh-reload coverage
+### Priority 1 configstore load/fresh-reload coverage
 
 - [x] Extended `/tests/p2/smoke_configstore.be` so missing config loads prove the caller-provided fallback object is returned as-is, while successful JSON config loads are re-read fresh from SD: caller-side mutations to a loaded map/list do not alter the saved file observed by a later `configstore.load()`. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 `/berry/main.be` startup smoke safety coverage
+### Priority 1 `/berry/main.be` startup smoke safety coverage
 
 - [x] Tightened `/tests/p2/smoke_sd_main.be` so the optional startup-path smoke refuses to overwrite a pre-existing `/berry/main.be`, stages a tiny import-capable main script using `json`, runs it explicitly with `run_file()`, and removes only the file it created. This is source-level path coverage only; hardware boot execution remains pending in `TODO.md`.
 
-### P1 nested `/berry/lib` source-layout coverage
+### Priority 1 nested `/berry/lib` source-layout coverage
 
-- [x] Extended `/tests/p2/smoke_import_layout.be` so the staged source-layout coverage now includes flat `/berry/lib`, flat `/berry/app`, and a nested `/berry/lib/p1_layout_pkg/mod.be` module resolved as `p1_layout_pkg.mod` through `libstore.source_path()` and native string import. The smoke asserts temporary files are absent before staging and removes the nested package directory only if it created it. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
+- [x] Extended `/tests/p2/smoke_import_layout.be` so the staged source-layout coverage now includes flat `/berry/lib`, flat `/berry/app`, and a nested `/berry/lib/layout_probe_pkg/mod.be` module resolved as `layout_probe_pkg.mod` through `libstore.source_path()` and native string import. The smoke asserts temporary files are absent before staging and removes the nested package directory only if it created it. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 import-all metadata-anchor coverage
+### Priority 1 import-all metadata-anchor coverage
 
 - [x] Extended `/tests/p2/smoke_import_all_libs.be` so the current SD module import sweep verifies each module's `libstore.info()` metadata reports `/tests/p2/smoke_import_all_libs.be` as its SD import smoke and `/tests/p2/smoke_module_inventory.be` as its metadata smoke, while keeping `wifi` explicitly `hardware_deferred`. This remains safe import/metadata coverage only and avoids WiFi or other peripheral transactions; hardware execution remains pending in `TODO.md`.
 
-### P1 repeated-import metadata-anchor coverage
+### Priority 1 repeated-import metadata-anchor coverage
 
 - [x] Extended `/tests/p2/smoke_import_cache.be` so the current SD module repeated-import/cache smoke verifies each module's `libstore.info()` metadata reports `/tests/p2/smoke_import_cache.be` as its repeated-import and cache smoke, `/tests/p2/smoke_import_churn.be` as its low-memory smoke, and keeps `wifi` explicitly `hardware_deferred`. This remains source-level import/cache metadata coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 low-memory import metadata-anchor coverage
+### Priority 1 low-memory import metadata-anchor coverage
 
 - [x] Extended `/tests/p2/smoke_import_churn.be` so the bounded allocation/GC/import-churn smoke verifies each current SD module's `libstore.info()` metadata reports `/tests/p2/smoke_import_churn.be` as its low-memory smoke, `/tests/p2/smoke_import_cache.be` as its repeated-import and cache smoke, and `/tests/p2/smoke_import_all_libs.be` as its SD-import smoke, while keeping `wifi` explicitly `hardware_deferred`. This remains source-level import/metadata coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 lazy-library diagnostic snapshot isolation coverage
+### Priority 1 lazy-library diagnostic snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_libraries.be` so `libstore.status()` and `libstore.strategy()` snapshots can be mutated by the caller without poisoning later lazy-loader diagnostics. This keeps SD-backed lazy-loading, no eager PSRAM execution, and cache-status reporting observable as fresh diagnostic data. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 compact stdlib JSON parse-freshness coverage
+### Priority 1 compact stdlib JSON parse-freshness coverage
 
 - [x] Extended `/tests/p2/smoke_stdlib.be` so compact JSON coverage now mutates a parsed map/list and reparses the same JSON text to prove each `json.load()` returns fresh caller-owned data rather than reusing poisoned parse state. This is source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 string format conversion hook invocation coverage
+## Priority 1 string format conversion hook invocation coverage
 
 - [x] Extended `/tests/p2/smoke_string_format_extra.be` so a custom `toint()` object is formatted twice and must update its return value on each call, proving `string.format("%i", value)` invokes the conversion hook per formatting operation rather than caching a stale conversion. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 JSON escaped object-key coverage
+## Priority 1 JSON escaped object-key coverage
 
 - [x] Extended `/tests/p2/smoke_json_advanced.be` with escaped Unicode object-key decoding, proving `json.load()` maps a key such as `"\\u006B\\u0065\\u0079"` to the decoded Berry map key `"key"`. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 time leap-day dump coverage
+## Priority 1 time leap-day dump coverage
 
 - [x] Extended `/tests/p2/smoke_time.be` with deterministic leap-day epoch coverage for `time.dump(951782400)`, asserting the decoded date is February 29, 2000 while preserving the existing integer field and epoch-shape checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 strict method-body global lookup coverage
+## Priority 1 strict method-body global lookup coverage
 
 - [x] Extended `/tests/p2/smoke_strict.be` with class-method strict lookup coverage: a method body can compile and read a known global while it is defined, and the same method-body shape is rejected after the global is undefined. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 debug caller boundary coverage
+## Priority 1 debug caller boundary coverage
 
 - [x] Extended `/tests/p2/smoke_debug.be` with an over-deep `debug.caller(64)` boundary assertion, proving the debug module returns a falsey result instead of a bogus stack frame when the requested caller depth is beyond the active stack. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 solidify repeated compaction coverage
+## Priority 1 solidify repeated compaction coverage
 
 - [x] Extended `/tests/p2/smoke_solidify.be` with repeated `solidify.compact(P2SolidifySmoke)` coverage, proving a class can be compacted twice without changing the expected instance method behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 sys.path element-mutation isolation coverage
+## Priority 1 sys.path element-mutation isolation coverage
 
 - [x] Extended `/tests/p2/smoke_sys.be` with returned-path-list element replacement coverage, proving a caller can mutate index `0` of a `sys.path()` snapshot without changing the VM's live import path list. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 global map-valued mutation coverage
+## Priority 1 global map-valued mutation coverage
 
 - [x] Extended `/tests/p2/smoke_global.be` with map-valued global storage and mutation coverage, proving a global map member can be read, updated in place, and cleaned up through the native `global` module path. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 JSON mixed stack-shape coverage
+## Priority 1 JSON mixed stack-shape coverage
 
 - [x] Extended `/tests/p2/smoke_json_stack.be` with a generated mixed object/list stack shape by embedding the existing generated nested-record list under an object key and asserting count plus mid-list record access. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 math abs parity coverage
+## Priority 1 math abs parity coverage
 
 - [x] Extended `/tests/p2/smoke_math_parity.be` with deterministic `math.abs()` sign/type coverage for negative and positive integers plus a negative real, complementing the existing no-argument fallback and upstream-adapted math parity checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 string adjacent replacement coverage
+## Priority 1 string adjacent replacement coverage
 
 - [x] Extended `/tests/p2/smoke_string.be` with adjacent non-overlapping replacement coverage for `string.replace("aaaa", "aa", "b") == "bb"`, making native string replacement semantics explicit for back-to-back matches. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 JSON whitespace parsing coverage
+## Priority 1 JSON whitespace parsing coverage
 
 - [x] Extended `/tests/p2/smoke_json.be` with whitespace-tolerant object/list parsing coverage, proving `json.load()` accepts spaces around object keys, separators, list values, and the top-level value while preserving `true` and `null` decoding. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 p2compat bytecode snapshot isolation coverage
+## Priority 1 p2compat bytecode snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_p2compat.be` with `p2compat.bytecode()` snapshot mutation isolation coverage, proving caller-side mutation of the returned bytecode diagnostics map does not alter the module's current bytecode execution metadata. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 file/open append-create coverage
+## Priority 1 file/open append-create coverage
 
 - [x] Extended `/tests/p2/smoke_sd.be` with append-mode creation coverage for a new temporary file, proving `open(path, "a")` can create, write, read back, and clean up a previously absent file. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 bytes range-slice isolation coverage
+## Priority 1 bytes range-slice isolation coverage
 
 - [x] Extended `/tests/p2/smoke_bytes.be` with range-slice copy isolation coverage, proving mutating a sliced `bytes` value does not alter the original buffer. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 bytes fromstring empty reset coverage
+## Priority 1 bytes fromstring empty reset coverage
 
 - [x] Extended `/tests/p2/smoke_bytes_extra.be` with empty `fromstring("")` reset coverage, proving a non-empty bytes buffer can be replaced by an empty string payload just as the existing `fromhex("")` path clears hex content. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 bytes base64 two-byte padding coverage
+## Priority 1 bytes base64 two-byte padding coverage
 
 - [x] Extended `/tests/p2/smoke_bytes_b64_fixed.be` with two-byte base64 padding coverage, proving `bytes("1122").tob64()` emits the single-padding form `"ESI="` and `fromb64("ESI=")` round-trips to `bytes("1122")`. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 map nil-valued insert coverage
+## Priority 1 map nil-valued insert coverage
 
 - [x] Extended `/tests/p2/smoke_map_core.be` with nil-valued `insert()` coverage, proving a map can insert a present key with a `nil` value and that a duplicate insert does not replace that nil-valued entry. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 range retargeted iterator preservation coverage
+## Priority 1 range retargeted iterator preservation coverage
 
 - [x] Extended `/tests/p2/smoke_range.be` with iterator preservation across `setrange()` retargeting, proving an iterator captured before retargeting continues its original sequence while the range object exposes the new bounds. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 list index-selection isolation coverage
+## Priority 1 list index-selection isolation coverage
 
 - [x] Extended `/tests/p2/smoke_list_core.be` with list-index selection copy-isolation coverage, proving mutating a selected result from `src[list(...)]` does not alter the original source list. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 collections map keys/values snapshot isolation coverage
+## Priority 1 collections map keys/values snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_collections.be` with map `keys()` and `values()` returned-list mutation isolation coverage, proving caller-side mutations to those snapshots do not add keys or values to the source map. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 numeric conversion parser edge coverage
+## Priority 1 numeric conversion parser edge coverage
 
 - [x] Extended `/tests/p2/smoke_conversions.be` with negative-exponent `number("1e-2")` and negative-real `real("-0.5")` string conversion coverage, tightening deterministic parser compatibility around numeric conversion helpers. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 call explicit nil list-expansion coverage
+## Priority 1 call explicit nil list-expansion coverage
 
 - [x] Extended `/tests/p2/smoke_call.be` with explicit `nil` values inside terminal list expansion, proving `call(f, [1, nil, 3])` preserves the nil argument for both fixed-argument and vararg functions. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 vararg method rest-list freshness coverage
+## Priority 1 vararg method rest-list freshness coverage
 
 - [x] Extended `/tests/p2/smoke_vararg.be` with method rest-list freshness coverage, proving mutating the returned `*rest` list from one method call does not leak into a later call with the same arguments. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 compiled closure retained-state coverage
+## Priority 1 compiled closure retained-state coverage
 
 - [x] Extended `/tests/p2/smoke_compile_module.be` with compiled closure retained-state coverage, proving a function returned by `compile()` can capture a mutable local and preserve updates across repeated calls. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 boolean short-circuit side-effect coverage
+## Priority 1 boolean short-circuit side-effect coverage
 
 - [x] Extended `/tests/p2/smoke_bool.be` with short-circuit side-effect accounting, proving skipped `&&` / `||` branches do not run while executed branches update a counter as expected. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 nested map equality coverage
+## Priority 1 nested map equality coverage
 
 - [x] Extended `/tests/p2/smoke_relop.be` with nested map order-insensitive equality coverage, proving maps nested inside maps compare equal even when their keys were inserted in different orders. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 divzero adjacent signed division coverage
+## Priority 1 divzero adjacent signed division coverage
 
 - [x] Extended `/tests/p2/smoke_divzero.be` with negative non-zero division and modulo checks, anchoring `-5 / 2 == -2` and `-5 % 2 == -1` next to the existing division-by-zero exception coverage. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 suffix method-chain slice coverage
+## Priority 1 suffix method-chain slice coverage
 
 - [x] Extended `/tests/p2/smoke_suffix.be` with method-chain range-slice coverage, proving a list returned through chained suffix calls can be sliced directly with `[0..1]`. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 shared reference stringification coverage
+## Priority 1 shared reference stringification coverage
 
 - [x] Extended `/tests/p2/smoke_reference.be` with shared-child list stringification coverage, proving repeated references to the same non-cyclic child list render normally and are not mistaken for recursive cycles. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 conditional-expression side-effect coverage
+## Priority 1 conditional-expression side-effect coverage
 
 - [x] Extended `/tests/p2/smoke_cond_expr.be` with selected-branch side-effect accounting, proving conditional expressions evaluate exactly the chosen branch while preserving the existing unselected-branch exception checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 conditional-expression condition-evaluation coverage
+## Priority 1 conditional-expression condition-evaluation coverage
 
 - [x] Extended `/tests/p2/smoke_cond_expr.be` with condition-operand side-effect accounting for empty and non-empty list operands, proving conditional expressions evaluate the condition once and then preserve branch laziness for the unselected arm. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 compound computed-index update coverage
+## Priority 1 compound computed-index update coverage
 
 - [x] Extended `/tests/p2/smoke_compound.be` with computed list-index compound assignment coverage, proving `values[value_index] += values[0]` updates the dynamically selected slot while preserving the surrounding list values. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 assignment computed map-key/member coverage
+## Priority 1 assignment computed map-key/member coverage
 
 - [x] Extended `/tests/p2/smoke_assignment.be` with computed map-key plus computed-member assignment coverage, proving a dynamic key can select an object and dynamic member names can assign and update its nested field. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 lexer comment-adjacent token coverage
+## Priority 1 lexer comment-adjacent token coverage
 
 - [x] Extended `/tests/p2/smoke_lexer.be` with comment-adjacent token parsing coverage, proving a compact block comment between expression tokens does not disrupt `compile()` or execution. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 walrus map-literal coverage
+## Priority 1 walrus map-literal coverage
 
 - [x] Extended `/tests/p2/smoke_walrus_edges.be` with map-literal assignment-expression coverage, proving walrus assignments can provide both a map key and value while preserving the assigned bindings. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 f-string computed-width coverage
+## Priority 1 f-string computed-width coverage
 
 - [x] Extended `/tests/p2/smoke_syntax.be` with computed-width f-string formatting coverage, proving an expression-supplied width such as `{42:0{fwidth}i}` formats through the compact syntax smoke path. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 virtual member state-backed read coverage
+## Priority 1 virtual member state-backed read coverage
 
 - [x] Extended `/tests/p2/smoke_virtual_members.be` with a state-backed virtual member, proving `member(name)` can compute a virtual field from an instance's real fields while preserving existing real-member precedence checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 virtual setmember replacement coverage
+## Priority 1 virtual setmember replacement coverage
 
 - [x] Extended `/tests/p2/smoke_virtual_setmember.be` with repeated virtual payload assignment coverage, proving a later `setmember()` write replaces the previous virtual value and the backing assignment map reports the new payload. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 module attribute real-precedence hook coverage
+## Priority 1 module attribute real-precedence hook coverage
 
 - [x] Extended `/tests/p2/smoke_module_attrs.be` with virtual `member()` lookup counting, proving real module attributes are returned without invoking the virtual member hook while missing attributes still dispatch through it. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 module same-name independence coverage
+## Priority 1 module same-name independence coverage
 
 - [x] Extended `/tests/p2/smoke_module_system.be` with same-name module independence coverage, proving repeated `module("name")` calls create distinct module objects until a module is explicitly injected into the import cache. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 signed right-shift numeric coverage
+## Priority 1 signed right-shift numeric coverage
 
 - [x] Extended `/tests/p2/smoke_int_numeric.be` with signed right-shift coverage, proving `-8 >> 1` produces `-4` alongside the existing integer conversion, hex parsing, bitwise, and positive shift checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 chained super argument-passing coverage
+## Priority 1 chained super argument-passing coverage
 
 - [x] Extended `/tests/p2/smoke_super.be` with chained `super(self).method(arg)` argument-passing coverage, proving a three-level class hierarchy can pass an argument through successive super calls while accumulating instance state. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 subobject builtin method preservation coverage
+## Priority 1 subobject builtin method preservation coverage
 
 - [x] Extended `/tests/p2/smoke_subobject.be` with builtin method preservation coverage for list/map subclasses, proving subclass instances retain native methods such as `copy()` and `keys()` while preserving subclass storage behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 static class mutable object sharing coverage
+## Priority 1 static class mutable object sharing coverage
 
 - [x] Extended `/tests/p2/smoke_static_classes.be` with mutable static-list sharing coverage, proving class-level and instance-level reads observe the same static list object after mutation. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 static declaration cross-instance sharing coverage
+## Priority 1 static declaration cross-instance sharing coverage
 
 - [x] Extended `/tests/p2/smoke_static_decls.be` with cross-instance static storage sharing coverage, proving multiple instances observe the same mutated static field values after class-level updates. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 static super live base-static coverage
+## Priority 1 static super live base-static coverage
 
 - [x] Extended `/tests/p2/smoke_static_super_member.be` with live base-static mutation coverage, proving an inherited method reads the updated base-class static value while the child class's static override remains separate. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 class static function reassignment coverage
+## Priority 1 class static function reassignment coverage
 
 - [x] Extended `/tests/p2/smoke_class_const.be` with static function reassignment readback coverage, proving both class-level and existing instance-level reads observe a replaced static callable. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 compact stdlib JSON dump-state coverage
+## Priority 1 compact stdlib JSON dump-state coverage
 
 - [x] Extended `/tests/p2/smoke_stdlib.be` with compact JSON dump-state coverage, proving `json.dump()` serializes the caller's current nested map/list state while leaving that caller-owned source object intact for subsequent reads. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 compact stdlib time dump snapshot coverage
+## Priority 1 compact stdlib time dump snapshot coverage
 
 - [x] Extended `/tests/p2/smoke_stdlib.be` with compact `time.dump()` snapshot-freshness coverage, proving caller-side mutation of one returned epoch map does not poison a later dump of the same epoch. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 time dump collection-input rejection coverage
+## Priority 1 time dump collection-input rejection coverage
 
 - [x] Extended `/tests/p2/smoke_time.be` with collection-valued invalid-input checks for `time.dump([])` and `time.dump({})`, complementing the existing nil/string/real/bool rejection coverage. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 global module API-shape coverage
+## Priority 1 global module API-shape coverage
 
 - [x] Extended `/tests/p2/smoke_global.be` with native `global` API-shape assertions, proving the imported object is a module and the callable table view reports as a map before exercising lookup, mutation, compile visibility, and cleanup behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 string module object-shape coverage
+## Priority 1 string module object-shape coverage
 
 - [x] Extended `/tests/p2/smoke_string.be` with an imported-module object-shape assertion, proving `string` reports as a module before the smoke exercises helper exports, formatting, replacement, prefix/suffix, indexing, and multiplication behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 JSON module object-shape coverage
+## Priority 1 JSON module object-shape coverage
 
 - [x] Extended `/tests/p2/smoke_json.be` with an imported-module object-shape assertion, proving `json` reports as a module before the smoke exercises `load`, `dump`, scalar parsing, malformed input rejection, nested data, formatted dumps, subclass dumps, and round-trip behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 solidify introspected helper coverage
+## Priority 1 solidify introspected helper coverage
 
 - [x] Extended `/tests/p2/smoke_solidify.be` with `introspect.contains()` checks for the native `solidify.dump` and `solidify.compact` helpers, proving the module's core helpers are both callable and discoverable before compacting class shapes. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 strict branch-condition global lookup coverage
+## Priority 1 strict branch-condition global lookup coverage
 
 - [x] Extended `/tests/p2/smoke_strict.be` with strict compiler-mode coverage for global lookup in branch conditions: the conditional shape compiles and runs while the global is defined, then the same shape is rejected after cleanup through `global.undef()`. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 debug module API-shape coverage
+## Priority 1 debug module API-shape coverage
 
 - [x] Extended `/tests/p2/smoke_debug.be` with native `debug` module/API-shape assertions and `introspect.contains()` checks for `attrdump` and `caller`, proving the core helpers are callable and discoverable before stack introspection coverage runs. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 sys module API-shape coverage
+## Priority 1 sys module API-shape coverage
 
 - [x] Extended `/tests/p2/smoke_sys.be` with native `sys` module/API-shape assertions, proving the imported object reports as a module and exposes `path()` as a function before the smoke exercises path snapshots, element-mutation isolation, `path_add()` error paths, and direct import-root behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 introspect module API-shape coverage
+## Priority 1 introspect module API-shape coverage
 
 - [x] Extended `/tests/p2/smoke_introspect.be` with native `introspect` module/API-shape assertions for the core reflection helpers before the smoke exercises member lookup, mutation, method classification, pointer round trips, solidified checks, fallback reads, and missing-module handling. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 bytes size API-shape coverage
+## Priority 1 bytes size API-shape coverage
 
 - [x] Extended `/tests/p2/smoke_bytes.be` with a callable `size()` API-shape assertion on a fresh bytes object, pinning the method before construction, resize, range, copy, conversion, and mutation behavior rely on it. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 bytes extra method API-shape coverage
+## Priority 1 bytes extra method API-shape coverage
 
 - [x] Extended `/tests/p2/smoke_bytes_extra.be` with callable API-shape assertions for extended bytes helpers such as `set`, float accessors, `fromhex`, `setbytes`, `reverse`, boolean conversion, and base64 append/encode methods before their behavior checks run. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 bytes base64 API-shape coverage
+## Priority 1 bytes base64 API-shape coverage
 
 - [x] Extended `/tests/p2/smoke_bytes_b64_fixed.be` with callable API-shape assertions for `tob64()` and `fromb64()` before the smoke exercises padding, no-padding, fixed-size initialization, fixed-size mutation rejection, and concatenation behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 list size API-shape coverage
+## Priority 1 list size API-shape coverage
 
 - [x] Extended `/tests/p2/smoke_list_core.be` with a callable `size()` API-shape assertion on a fresh list, pinning the method alongside iterator, copy, mutation, find, keys, and concat helper coverage. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 map keys-values API-shape coverage
+## Priority 1 map keys-values API-shape coverage
 
 - [x] Extended `/tests/p2/smoke_map_core.be` with callable `keys()` and `values()` API-shape assertions on a fresh map, pinning those helper methods alongside find/contains/remove/insert/iter/size before map lookup, iteration, insertion, and cleanup behavior runs. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 range method API-shape coverage
+## Priority 1 range method API-shape coverage
 
 - [x] Extended `/tests/p2/smoke_range.be` with callable API-shape assertions for `lower()`, `upper()`, `incr()`, `iter()`, and `setrange()` before the smoke exercises range accessors, retargeting, iterator independence, descending sequences, and value-error paths. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 range type classification coverage
+## Priority 1 range type classification coverage
 
 - [x] Extended `/tests/p2/smoke_conversions.be` with `type(range(0, 1)) == "range"`, pinning range object classification alongside the existing nil/bool/int/real/string/list/map/bytes type checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 call constructor list-expansion coverage
+## Priority 1 call constructor list-expansion coverage
 
 - [x] Extended `/tests/p2/smoke_call.be` with class-constructor terminal-list expansion coverage, proving `call(Class, [arg])` expands the final list into constructor arguments while preserving the existing direct constructor path. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 vararg direct rest-list freshness coverage
+## Priority 1 vararg direct rest-list freshness coverage
 
 - [x] Extended `/tests/p2/smoke_vararg.be` with direct required-plus-rest vararg freshness coverage, proving mutating a returned rest list from `f(1, 2)` does not leak into a later direct call with the same arguments. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 closure returned-function classification coverage
+## Priority 1 closure returned-function classification coverage
 
 - [x] Extended `/tests/p2/smoke_closure.be` with returned-closure `type(...) == "function"` assertions for independent counter closures before exercising their captured state and mutation behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 function-capture returned-function classification coverage
+## Priority 1 function-capture returned-function classification coverage
 
 - [x] Extended `/tests/p2/smoke_function_capture.be` with returned-function `type(...) == "function"` assertions for independent factory closures before exercising their separate captured mutable state. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 for-loop empty-range coverage
+## Priority 1 for-loop empty-range coverage
 
 - [x] Extended `/tests/p2/smoke_for_loop.be` with empty descending-range iteration coverage, proving a `for i : 5 .. 0` loop body is skipped and does not mutate surrounding state. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 map key-error exception coverage
+## Priority 1 map key-error exception coverage
 
 - [x] Extended `/tests/p2/smoke_errors.be` with map missing-key `key_error` coverage, adding that exception class beside the existing custom raise, syntax, type, bytes index, helper propagation, nested handling, and rethrow checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 assert default-message exception coverage
+## Priority 1 assert default-message exception coverage
 
 - [x] Extended `/tests/p2/smoke_exception_assert.be` with default-message `assert(false)` coverage, proving it raises `assert_failed` even when no custom assertion message is provided. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 operator-overload result class identity coverage
+## Priority 1 operator-overload result class identity coverage
 
 - [x] Extended `/tests/p2/smoke_operator_overload.be` with `classof(...)` assertions for overloaded `+` result instances, proving both direct and chained binary overload results preserve the expected class identity in addition to their payload values. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 VM comparison result-type coverage
+## Priority 1 VM comparison result-type coverage
 
 - [x] Extended `/tests/p2/smoke_vm_ops.be` with boolean result-type assertions for equality and relational comparisons, pinning comparison expressions as `bool` before the smoke exercises overloaded equality/inequality behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 VM named-global cleanup coverage
+## Priority 1 VM named-global cleanup coverage
 
 - [x] Extended `/tests/p2/smoke_vm_error_paths.be` with named-global cleanup coverage, proving the temporary global used for named-global read/write opcode checks is absent after `global.undef()`. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 compiler parser call-result chained-suffix coverage
+## Priority 1 compiler parser call-result chained-suffix coverage
 
 - [x] Extended `/tests/p2/smoke_compiler_parser.be` with a function-call-result chained-suffix parser shape, proving a nested list returned by a helper can be indexed immediately as `make_suffix_rows()[1][0]`. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 class instance identity coverage
+## Priority 1 class instance identity coverage
 
 - [x] Extended `/tests/p2/smoke_classes.be` with `classof(demo) == StaticDemo`, pinning class identity for a constructed instance before the smoke exercises instance state, static fallback, static methods, module-member construction, and indirect member access. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 indirect static method dispatch coverage
+## Priority 1 indirect static method dispatch coverage
 
 - [x] Extended `/tests/p2/smoke_member_indirect.be` with computed static method dispatch through `P2IndirectStatic.(static_methods[0])()`, complementing the existing module/class/instance indirect member reads, writes, instance method dispatch, dynamic static writes, and chained updates. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 nested static class identity coverage
+## Priority 1 nested static class identity coverage
 
 - [x] Extended `/tests/p2/smoke_static_classes.be` with first-class nested static class readback coverage, constructing an instance through a saved `P2StaticOuter.Inner` reference and checking `classof()` plus instance method dispatch. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 static declaration mutable map coverage
+## Priority 1 static declaration mutable map coverage
 
 - [x] Extended `/tests/p2/smoke_static_decls.be` with mutable static map sharing coverage, proving class-level and instance-level reads observe the same map after mutation through another instance. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 class constant scalar update coverage
+## Priority 1 class constant scalar update coverage
 
 - [x] Extended `/tests/p2/smoke_class_const.be` with class-side scalar compound update coverage, proving an existing instance observes the updated static value through instance fallback. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 static super child override mutation coverage
+## Priority 1 static super child override mutation coverage
 
 - [x] Extended `/tests/p2/smoke_static_super_member.be` with child static override mutation coverage, proving an inherited dynamic static lookup observes the updated child value while inherited base-method reads and base instances remain pinned to the base static value. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 module same-name member table independence coverage
+## Priority 1 module same-name member table independence coverage
 
 - [x] Extended `/tests/p2/smoke_module_system.be` with same-name module member-table independence coverage, proving repeated `module("name")` objects keep separate mutable member state until explicit import-cache injection. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 module post-virtual shadow precedence coverage
+## Priority 1 module post-virtual shadow precedence coverage
 
 - [x] Extended `/tests/p2/smoke_module_attrs.be` with post-virtual shadow precedence coverage, proving a real module field assigned after a virtual `member()` lookup takes precedence without invoking the virtual hook again. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 saved inherited ismethod coverage
+## Priority 1 saved inherited ismethod coverage
 
 - [x] Extended `/tests/p2/smoke_introspect_ismethod.be` with saved inherited method and saved inherited static-method classification, proving values fetched from a child instance preserve `ismethod()` behavior after assignment to locals. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 compiled local map mutation coverage
+## Priority 1 compiled local map mutation coverage
 
 - [x] Extended `/tests/p2/smoke_compile_module.be` with compiled local map mutation coverage, proving code produced by `compile()` can create a map, assign a new key, and read the updated values before returning. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 string format character conversion-hook coverage
+## Priority 1 string format character conversion-hook coverage
 
 - [x] Extended `/tests/p2/smoke_string_format_extra.be` with `%c` conversion-hook coverage for a stateful `toint()` object, proving character formatting invokes the conversion hook and updates object state. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 JSON multi-entry Unicode array coverage
+## Priority 1 JSON multi-entry Unicode array coverage
 
 - [x] Extended `/tests/p2/smoke_json_advanced.be` with escaped Unicode decoding inside a multi-entry JSON array, proving ASCII, two-byte, and three-byte escape expansions decode correctly in array values. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 JSON generated matrix stack coverage
+## Priority 1 JSON generated matrix stack coverage
 
 - [x] Extended `/tests/p2/smoke_json_stack.be` with a compact generated matrix/list-of-lists parse, proving JSON stack/growth coverage includes nested arrays with indexed numeric reads. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 time module API-shape coverage
+## Priority 1 time module API-shape coverage
 
 - [x] Extended `/tests/p2/smoke_time.be` with native `time` module/API-shape assertions for `clock`, `dump`, and `time` before deterministic epoch, invalid-input, mutation-isolation, and `time()` consistency checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 solidify static mutation after compaction coverage
+## Priority 1 solidify static mutation after compaction coverage
 
 - [x] Extended `/tests/p2/smoke_solidify.be` with static member mutation after `solidify.compact()`, proving a compacted class's static method observes the updated static value while inherited instance behavior still works. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 debug attrdump instance coverage
+## Priority 1 debug attrdump instance coverage
 
 - [x] Extended `/tests/p2/smoke_debug.be` with instance-level `debug.attrdump()` no-crash coverage, proving a normal instance method read still works before and after debug inspection. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 sys path fresh-list identity coverage
+## Priority 1 sys path fresh-list identity coverage
 
 - [x] Extended `/tests/p2/smoke_sys.be` with `introspect.toptr()` checks proving repeated `sys.path()` calls return distinct list objects before the smoke exercises snapshot mutation, `path_add()` error paths, and direct import-root behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 strict loop-condition global lookup coverage
+## Priority 1 strict loop-condition global lookup coverage
 
 - [x] Extended `/tests/p2/smoke_strict.be` with strict compiler-mode coverage for known-global lookup in `while` conditions, proving the loop-condition shape compiles and runs while the global is defined and is rejected after cleanup through `global.undef()`. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 global helper API-shape coverage
+## Priority 1 global helper API-shape coverage
 
 - [x] Extended `/tests/p2/smoke_global.be` with native `global.contains` and `global.undef` helper API-shape assertions before exercising lookup, mutation, compile visibility, table views, and cleanup behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 string count no-match coverage
+## Priority 1 string count no-match coverage
 
 - [x] Extended `/tests/p2/smoke_string.be` with `string.count()` no-match coverage, proving a missing substring returns zero before the smoke exercises bounded counts, splitting, escaping, replacement, formatting, prefix/suffix helpers, indexing, and multiplication behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 JSON formatted nested-list dump coverage
+## Priority 1 JSON formatted nested-list dump coverage
 
 - [x] Extended `/tests/p2/smoke_json.be` with formatted nested-list dump coverage, proving `json.dump(value, "format")` indents a nested list while preserving the existing scalar/list/map dump and round-trip checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 bytes empty append no-op coverage
+## Priority 1 bytes empty append no-op coverage
 
 - [x] Extended `/tests/p2/smoke_bytes.be` with empty `bytes()` append no-op coverage, proving appending an empty bytes value preserves the receiver before the smoke exercises string append, appendhex, range slicing, copy isolation, conversion, and mutation behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 virtual setmember computed scalar write coverage
+## Priority 1 virtual setmember computed scalar write coverage
 
 - [x] Extended `/tests/p2/smoke_virtual_setmember.be` with computed-name assignment to the scalar virtual field itself, proving `obj.(name) = value` routes through `setmember()` for `"virtual"` before the smoke exercises computed payload and function-valued assignments. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 module indirect function-call coverage
+## Priority 1 module indirect function-call coverage
 
 - [x] Extended `/tests/p2/smoke_member_indirect.be` with module indirect function-call coverage, proving a function-valued module member can be looked up through a computed `.(name)` expression and invoked immediately. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 subobject map keys snapshot isolation coverage
+## Priority 1 subobject map keys snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_subobject.be` with map-subclass `keys()` snapshot isolation coverage, proving a saved keys list from a map subclass does not grow after later subclass storage mutation while a fresh `keys()` call sees the new key. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 walrus local call-argument value coverage
+## Priority 1 walrus local call-argument value coverage
 
 - [x] Extended `/tests/p2/smoke_walrus_edges.be` with local walrus assignments inside function-call arguments, proving argument evaluation returns assigned values left-to-right and leaves the assigned locals readable after the call. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 f-string computed map-key expression coverage
+## Priority 1 f-string computed map-key expression coverage
 
 - [x] Extended `/tests/p2/smoke_syntax.be` with f-string computed map-key expression coverage, proving an f-string expression can index a map through a key variable after the existing list-index and literal map-key checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 lexer line-comment adjacent token coverage
+## Priority 1 lexer line-comment adjacent token coverage
 
 - [x] Extended `/tests/p2/smoke_lexer.be` with line-comment-adjacent token parsing coverage, proving a `#` line comment between expression tokens does not disrupt `compile()` or execution alongside the existing compact block-comment coverage. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 class static update observed by existing instance coverage
+## Priority 1 class static update observed by existing instance coverage
 
 - [x] Extended `/tests/p2/smoke_classes.be` with static field mutation after instance creation, proving an existing instance and its instance method observe the updated class static value through fallback lookup. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 function-capture shared-upvalue group independence coverage
+## Priority 1 function-capture shared-upvalue group independence coverage
 
 - [x] Extended `/tests/p2/smoke_function_capture.be` with a second shared-upvalue closure pair, proving closures from one factory call share their captured state while a separate factory call owns an independent shared-upvalue group. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 closure mutable capture independence coverage
+## Priority 1 closure mutable capture independence coverage
 
 - [x] Extended `/tests/p2/smoke_closure.be` with a second list-accumulator closure, proving separate factory calls retain independent captured mutable lists while the original accumulator keeps its own state. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 escaped vararg rest-list mutation persistence coverage
+## Priority 1 escaped vararg rest-list mutation persistence coverage
 
 - [x] Extended `/tests/p2/smoke_vararg.be` with escaped rest-list mutation persistence coverage, proving a closure-captured vararg list remains a retained mutable object across later closure calls. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 callable-instance list lookup invocation coverage
+## Priority 1 callable-instance list lookup invocation coverage
 
 - [x] Extended `/tests/p2/smoke_operator_overload.be` with callable-instance invocation after list lookup, proving an object implementing `def ()()` remains callable when fetched through an indexed collection suffix. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 integer variable shift-count coverage
+## Priority 1 integer variable shift-count coverage
 
 - [x] Extended `/tests/p2/smoke_int_numeric.be` with variable shift-count coverage, proving left and right shifts accept a runtime integer shift amount alongside the existing literal, zero-shift, signed right-shift, and precedence checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 method-call raise propagation coverage
+## Priority 1 method-call raise propagation coverage
 
 - [x] Extended `/tests/p2/smoke_errors.be` with method-call `raise` propagation coverage, proving a custom error type and message survive when raised inside an instance method and caught by the caller. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 method-call assert propagation coverage
+## Priority 1 method-call assert propagation coverage
 
 - [x] Extended `/tests/p2/smoke_exception_assert.be` with method-call assert propagation coverage, proving a custom `assert_failed` message survives when the failing assertion is raised inside an instance method. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 nested for-loop outer-break coverage
+## Priority 1 nested for-loop outer-break coverage
 
 - [x] Extended `/tests/p2/smoke_for_loop.be` with nested-loop outer `break` coverage, proving an outer-loop break stops later outer iterations after the completed inner-loop work for earlier outer values. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 suffix method-chain negative-index coverage
+## Priority 1 suffix method-chain negative-index coverage
 
 - [x] Extended `/tests/p2/smoke_suffix.be` with method-chain negative-index coverage, proving a list returned through chained suffix calls can be immediately indexed with `[-1]` after the existing positive-index and range-slice checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 compound computed map-key sibling isolation coverage
+## Priority 1 compound computed map-key sibling isolation coverage
 
 - [x] Extended `/tests/p2/smoke_compound.be` with computed map-key sibling isolation coverage, retargeting the dynamic key used for compound assignment and proving the selected map entry changes while the previously updated sibling remains stable. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 assignment computed map-key sibling isolation coverage
+## Priority 1 assignment computed map-key sibling isolation coverage
 
 - [x] Extended `/tests/p2/smoke_assignment.be` with computed map-key sibling isolation coverage, proving dynamic-key nested member assignment updates the selected object while preserving a previously updated sibling object. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 falsey collection OR branch execution coverage
+## Priority 1 falsey collection OR branch execution coverage
 
 - [x] Extended `/tests/p2/smoke_bool.be` with side-effect accounting for `[] || mark(...)`, proving a falsey collection on the left side of `||` evaluates the right branch rather than only returning the expected boolean result. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 list equality order-sensitivity coverage
+## Priority 1 list equality order-sensitivity coverage
 
 - [x] Extended `/tests/p2/smoke_relop.be` with list order-sensitivity checks, proving `[1, 2]` and `[2, 1]` compare unequal while map equality coverage remains order-independent. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 module computed virtual function read coverage
+## Priority 1 module computed virtual function read coverage
 
 - [x] Extended `/tests/p2/smoke_virtual_members.be` with computed-name module virtual function lookup, saving `dyn.("fn")` through an indirect name and invoking the returned function to prove function-valued virtual members survive computed reads. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 saved function-valued member ismethod coverage
+## Priority 1 saved function-valued member ismethod coverage
 
 - [x] Extended `/tests/p2/smoke_introspect_ismethod.be` with saved function-valued instance-member classification, proving a plain function stored on an instance remains `introspect.ismethod(...) == false` after assignment to a local. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 solidify compact string invalid-type coverage
+## Priority 1 solidify compact string invalid-type coverage
 
 - [x] Extended `/tests/p2/smoke_solidify.be` with string-valued invalid-input coverage for `solidify.compact()`, pairing the existing integer rejection and proving non-class compact targets raise `value_error` before normal class compaction behavior runs. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 global nil helper rejection coverage
+## Priority 1 global nil helper rejection coverage
 
 - [x] Extended `/tests/p2/smoke_global.be` with `global.contains(nil)` and `global.undef(nil)` rejection coverage, pairing the existing non-string integer helper checks and proving nil helper input is rejected without mutating the global table. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 time false-bool invalid dump input coverage
+## Priority 1 time false-bool invalid dump input coverage
 
 - [x] Extended `/tests/p2/smoke_time.be` with `time.dump(false) == nil`, pairing the existing true-bool rejection and proving falsey boolean input is rejected through the same invalid-input path. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 JSON top-level scalar whitespace coverage
+## Priority 1 JSON top-level scalar whitespace coverage
 
 - [x] Extended `/tests/p2/smoke_json.be` with whitespace-tolerant top-level scalar parsing coverage, proving `json.load()` accepts surrounding spaces for scalar `true` and `null` values before the smoke exercises numeric, string, object, list, dump, and round-trip behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 string adjacent substring count coverage
+## Priority 1 string adjacent substring count coverage
 
 - [x] Extended `/tests/p2/smoke_string.be` with adjacent multi-character `string.count()` coverage, proving non-overlapping adjacent substring matches such as `"aa"` in `"aaaa"` are counted as two matches. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 range retargeted iterator exhaustion coverage
+## Priority 1 range retargeted iterator exhaustion coverage
 
 - [x] Extended `/tests/p2/smoke_range.be` with iterator exhaustion checks after `setrange()` retargeting, proving preserved positive and negative iterators terminate on their original bounds rather than drifting into the retargeted range. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 map equivalent-key removal coverage
+## Priority 1 map equivalent-key removal coverage
 
 - [x] Extended `/tests/p2/smoke_map_keys.be` with equivalent fresh-key removal coverage, proving `remove()` honors custom `hash()`/`==` identity by deleting the existing logical key without disturbing a separate entry. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 bytes length-based truthiness coverage
+## Priority 1 bytes length-based truthiness coverage
 
 - [x] Extended `/tests/p2/smoke_bytes_extra.be` with `bytes("00").tobool() == true`, proving bytes truthiness is based on buffer length rather than nonzero byte contents. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 bytes four-byte base64 round-trip coverage
+## Priority 1 bytes four-byte base64 round-trip coverage
 
 - [x] Extended `/tests/p2/smoke_bytes_b64_fixed.be` with four-byte base64 padding coverage, proving `bytes("11223344").tob64()` emits `"ESIzRA=="` and `fromb64("ESIzRA==")` round-trips to the original bytes. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 map keys snapshot isolation coverage
+## Priority 1 map keys snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_map_core.be` with `keys()` snapshot isolation coverage, proving a previously captured keys list does not grow after the source map is mutated with a new key. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 list copy bidirectional isolation coverage
+## Priority 1 list copy bidirectional isolation coverage
 
 - [x] Extended `/tests/p2/smoke_list_core.be` with copied-list mutation isolation coverage, proving mutating the copied list after `copy()` does not alter the source list, complementing the existing source-mutation-does-not-alter-copy check. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 map-core values snapshot isolation coverage
+## Priority 1 map-core values snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_map_core.be` with `values()` snapshot isolation coverage, proving a previously captured values list does not grow after source-map mutation and that caller-side mutation of the values list does not mutate the source map. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 call non-callable error coverage
+## Priority 1 call non-callable error coverage
 
 - [x] Extended `/tests/p2/smoke_call.be` with non-callable rejection coverage for `nil`, integer, and list receivers before the existing positive `call()` dispatch and argument-expansion checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 bytes truthiness conversion coverage
+## Priority 1 bytes truthiness conversion coverage
 
 - [x] Extended `/tests/p2/smoke_conversions.be` with `bool(bytes()) == false` and `bool(bytes("00")) == true`, pinning core builtin truthiness for empty and non-empty bytes values by length. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 list iterator exhaustion coverage
+## Priority 1 list iterator exhaustion coverage
 
 - [x] Extended `/tests/p2/smoke_list_core.be` with an iterator exhaustion assertion after the last yielded list element, pinning the `nil` end-of-iteration result alongside existing iterator ordering coverage. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 string empty-subject find/count coverage
+## Priority 1 string empty-subject find/count coverage
 
 - [x] Extended `/tests/p2/smoke_string.be` with empty-subject `string.find()` and `string.count()` boundary coverage, pinning empty-needle behavior on `""` alongside the existing non-empty search/count cases. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 range independent iterator exhaustion coverage
+## Priority 1 range independent iterator exhaustion coverage
 
 - [x] Extended `/tests/p2/smoke_range.be` with exhaustion coverage for a second iterator captured from the same range object, proving independent iterator state reaches its own `nil` endpoint without aliasing the first iterator. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 string empty-subject prefix/suffix coverage
+## Priority 1 string empty-subject prefix/suffix coverage
 
 - [x] Extended `/tests/p2/smoke_string.be` with empty-subject negative assertions for `string.startswith("", "x")` and `string.endswith("", "x")`, pinning prefix/suffix helper boundaries alongside the existing empty-needle positive cases. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 JSON empty container load/dump coverage
+## Priority 1 JSON empty container load/dump coverage
 
 - [x] Extended `/tests/p2/smoke_json.be` with empty array/object `json.load()` and `json.dump()` assertions, pinning compact container boundaries alongside the existing scalar, nested, formatted, and round-trip cases. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 time dump non-empty collection rejection coverage
+## Priority 1 time dump non-empty collection rejection coverage
 
 - [x] Extended `/tests/p2/smoke_time.be` with non-empty list and map invalid-input checks for `time.dump()`, proving collection rejection is type-based rather than limited to empty containers. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 JSON trailing-token rejection coverage
+## Priority 1 JSON trailing-token rejection coverage
 
 - [x] Extended `/tests/p2/smoke_json.be` with trailing-token rejection checks for scalar and array JSON inputs, pinning that `json.load()` fails rather than silently accepting a valid prefix. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 global boolean helper rejection coverage
+## Priority 1 global boolean helper rejection coverage
 
 - [x] Extended `/tests/p2/smoke_global.be` with boolean-input rejection checks for `global.contains(true)` and `global.undef(false)`, pinning non-string helper behavior alongside existing integer and nil edge cases. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 solidify nocompact string invalid-input coverage
+## Priority 1 solidify nocompact string invalid-input coverage
 
 - [x] Extended `/tests/p2/smoke_solidify.be` with optional `solidify.nocompact("not a function")` invalid-input coverage when the helper is present, pairing the existing integer rejection and valid-function behavior. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 debug caller zero-depth coverage
+## Priority 1 debug caller zero-depth coverage
 
 - [x] Extended `/tests/p2/smoke_debug.be` with a `debug.caller(0)` assertion inside the caller-chain helper, proving zero depth resolves to the current function before the smoke walks direct, wrapped, nested, and over-deep caller frames. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 sys.path_add nil/list invalid-input coverage
+## Priority 1 sys.path_add nil/list invalid-input coverage
 
 - [x] Extended `/tests/p2/smoke_sys.be` with `sys.path_add(nil)` and `sys.path_add([])` rejection checks, pinning non-string invalid-input behavior alongside the existing missing, integer, and empty-string path cases. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 strict conditional-expression global lookup coverage
+## Priority 1 strict conditional-expression global lookup coverage
 
 - [x] Extended `/tests/p2/smoke_strict.be` with strict compiler-mode coverage for known-global lookup inside a conditional expression, proving the ternary shape compiles while the global is defined and is rejected after cleanup through `global.undef()`. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 bytes bidirectional copy isolation coverage
+## Priority 1 bytes bidirectional copy isolation coverage
 
 - [x] Extended `/tests/p2/smoke_bytes.be` with source-after-copy mutation isolation coverage, proving mutating the original bytes buffer after `copy()` does not alter the copied buffer, complementing the existing copy-mutation-does-not-affect-source check. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 bytes setbytes source-preservation coverage
+## Priority 1 bytes setbytes source-preservation coverage
 
 - [x] Extended `/tests/p2/smoke_bytes_extra.be` with a `setbytes()` source-buffer preservation assertion, proving copying bytes into a target does not mutate the source buffer. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 bytes six-byte base64 round-trip coverage
+## Priority 1 bytes six-byte base64 round-trip coverage
 
 - [x] Extended `/tests/p2/smoke_bytes_b64_fixed.be` with six-byte base64 no-padding coverage, proving two complete base64 quanta encode as `"ESIzRFVm"` and decode back to `bytes("112233445566")`. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 math round half-boundary coverage
+## Priority 1 math round half-boundary coverage
 
 - [x] Extended `/tests/p2/smoke_math_parity.be` with `math.round(0.5) == 1` and `math.round(-0.5) == -1`, pinning half-away rounding behavior around zero alongside the existing positive and negative nonzero cases. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 p2compat summary snapshot isolation coverage
+## Priority 1 p2compat summary snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_p2compat.be` with `p2compat.summary()` snapshot mutation isolation coverage, proving caller-side mutation of the returned summary map does not alter fresh summary results from the module. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 configstore path validation coverage
+## Priority 1 configstore path validation coverage
 
 - [x] Extended `/tests/p2/smoke_configstore.be` with invalid `configstore.path()` checks for empty and slash-containing names, proving public path construction follows the same filename-only validation as `configstore.name()`. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 example helper missing-exists coverage
+## Priority 1 example helper missing-exists coverage
 
-- [x] Extended `/tests/p2/smoke_example_paths.be` with `libstore.example_exists("p1_no_such_example") == false`, pinning missing-example existence behavior alongside the existing missing `run_example()` nil result. Source-level coverage only; hardware execution remains pending in `TODO.md`.
+- [x] Extended `/tests/p2/smoke_example_paths.be` with `libstore.example_exists("no_such_example_probe") == false`, pinning missing-example existence behavior alongside the existing missing `run_example()` nil result. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 PASM helper missing-exists coverage
+## Priority 1 PASM helper missing-exists coverage
 
-- [x] Extended `/tests/p2/smoke_pasm_layout.be` with `libstore.pasm_exists("p1_no_such_pasm") == false`, pinning missing PASM blob existence behavior alongside the existing missing `pasm_info()` metadata. Source-level metadata coverage only; PASM execution remains deferred in `TODO.md`.
+- [x] Extended `/tests/p2/smoke_pasm_layout.be` with `libstore.pasm_exists("no_such_pasm_probe") == false`, pinning missing PASM blob existence behavior alongside the existing missing `pasm_info()` metadata. Source-level metadata coverage only; PASM execution remains deferred in `TODO.md`.
 
-## P1 missing-import compiled-status metadata coverage
+## Priority 1 missing-import compiled-status metadata coverage
 
 - [x] Extended `/tests/p2/smoke_import_missing.be` with `libstore.compiled_status(missing_name) == "missing"`, pinning helper-level missing metadata before the smoke stages, imports, mutates, and reimports the recovered module. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 missing-import recovery diagnostics coverage
+### Priority 1 missing-import recovery diagnostics coverage
 
 - [x] Extended `/tests/p2/smoke_import_missing.be` so the recovered module now pins `libstore.info()` selected kind, selected path, and nonzero source-size metadata after the previously missing `/berry/app` module is staged, imported, mutated, and reimported. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 import-alias info diagnostics coverage
+### Priority 1 import-alias info diagnostics coverage
 
 - [x] Extended `/tests/p2/smoke_import_alias.be` so the staged repeated-alias module now pins `libstore.info()` existence, selected path, and nonzero source-size metadata alongside the existing `source_path()` and alias-cache mutation checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 import-cache source metadata parity coverage
+### Priority 1 import-cache source metadata parity coverage
 
 - [x] Extended `/tests/p2/smoke_import_cache.be` so each current SD module now checks `libstore.info()` source size/hash metadata against `libstore.source_stats()` while preserving the existing repeated-import identity, metadata-anchor, and optional PSRAM source-cache checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 import-churn source metadata parity coverage
+### Priority 1 import-churn source metadata parity coverage
 
 - [x] Extended `/tests/p2/smoke_import_churn.be` so each current SD module now checks `libstore.info()` source size/hash metadata against `libstore.source_stats()` inside the bounded allocation/GC/import-churn smoke. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 import-cache SD-import metadata-anchor coverage
+## Priority 1 import-cache SD-import metadata-anchor coverage
 
 - [x] Extended `/tests/p2/smoke_import_cache.be` so the repeated-import/cache smoke also verifies each current SD module reports `/tests/p2/smoke_import_all_libs.be` as its SD-import smoke metadata anchor, alongside the existing repeated-import, cache, and low-memory anchors. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 import-churn cache metadata-anchor coverage
+## Priority 1 import-churn cache metadata-anchor coverage
 
 - [x] Extended `/tests/p2/smoke_import_churn.be` so the bounded allocation/GC/import-churn smoke verifies each current SD module reports `/tests/p2/smoke_import_cache.be` as its cache smoke metadata anchor, alongside low-memory, repeated-import, and SD-import anchors. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 module inventory compiled-summary snapshot isolation coverage
+## Priority 1 module inventory compiled-summary snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_module_inventory.be` with `libstore.compiled_summary()` snapshot mutation isolation coverage, proving caller-side mutation of the returned summary map does not alter fresh compiled-summary diagnostics. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 import-all behavior metadata coverage
+## Priority 1 import-all behavior metadata coverage
 
 - [x] Extended `/tests/p2/smoke_import_all_libs.be` so the safe import sweep verifies covered modules expose string-valued behavior-smoke metadata while `wifi` remains explicitly `hardware_deferred` with no behavior smoke claim. Source-level metadata coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 import-all source metadata parity coverage
+### Priority 1 import-all source metadata parity coverage
 
 - [x] Extended `/tests/p2/smoke_import_all_libs.be` so each current SD module now checks `libstore.info()` source size/hash metadata against `libstore.source_stats()` inside the safe import sweep. Source-level metadata coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 BEC execution-probe snapshot isolation coverage
+## Priority 1 BEC execution-probe snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_bec_fallback.be` with `libstore.compiled_execution_probe()` snapshot mutation isolation coverage, proving caller-side mutation of the returned bytecode execution-policy map does not alter fresh probe diagnostics. Source-level metadata coverage only; `.bec` execution remains deferred in `TODO.md`.
 
-## P1 import-order source-path diagnostics coverage
+## Priority 1 import-order source-path diagnostics coverage
 
 - [x] Extended `/tests/p2/smoke_import_order.be` with `libstore.source_path()` assertions for the `/modules` and `/berry/lib` winning roots, proving diagnostics mirror the same precedence as native imports. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-## P1 import-alias source-path diagnostics coverage
+## Priority 1 import-alias source-path diagnostics coverage
 
 - [x] Extended `/tests/p2/smoke_import_alias.be` with a `libstore.source_path("p2_alias_cache")` assertion for the staged alias-import module, proving diagnostics point at the same `/berry/app` source file used by repeated alias imports. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 app helper missing-exists fallback coverage
+### Priority 1 app helper missing-exists fallback coverage
 
-- [x] Extended `/tests/p2/smoke_app_paths.be` so the missing `/berry/app` helper path now checks both `libstore.app_exists("p1_no_such_app") == false` and `libstore.run_app("p1_no_such_app") == nil`. Source-level coverage only; hardware execution remains pending in `TODO.md`.
+- [x] Extended `/tests/p2/smoke_app_paths.be` so the missing `/berry/app` helper path now checks both `libstore.app_exists("no_such_app_probe") == false` and `libstore.run_app("no_such_app_probe") == nil`. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 example helper missing-path fallback coverage
+### Priority 1 example helper missing-path fallback coverage
 
-- [x] Extended `/tests/p2/smoke_example_paths.be` so the missing `/berry/examples` helper path now checks `libstore.example_path("p1_no_such_example") == nil` before the existing missing existence/run fallback assertions. Source-level coverage only; hardware execution remains pending in `TODO.md`.
+- [x] Extended `/tests/p2/smoke_example_paths.be` so the missing `/berry/examples` helper path now checks `libstore.example_path("no_such_example_probe") == nil` before the existing missing existence/run fallback assertions. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 PASM helper missing-path fallback coverage
+### Priority 1 PASM helper missing-path fallback coverage
 
-- [x] Extended `/tests/p2/smoke_pasm_layout.be` so the missing `/berry/pasm` helper path now checks `libstore.pasm_path("p1_no_such_pasm") == nil` before the existing missing existence/info fallback assertions. Source-level metadata coverage only; PASM execution remains deferred in `TODO.md`.
+- [x] Extended `/tests/p2/smoke_pasm_layout.be` so the missing `/berry/pasm` helper path now checks `libstore.pasm_path("no_such_pasm_probe") == nil` before the existing missing existence/info fallback assertions. Source-level metadata coverage only; PASM execution remains deferred in `TODO.md`.
 
-### P1 app helper missing-path fallback coverage
+### Priority 1 app helper missing-path fallback coverage
 
-- [x] Extended `/tests/p2/smoke_app_paths.be` so the missing `/berry/app` helper path now checks `libstore.app_path("p1_no_such_app") == nil` before the existing missing existence/run fallback assertions. Source-level coverage only; hardware execution remains pending in `TODO.md`.
+- [x] Extended `/tests/p2/smoke_app_paths.be` so the missing `/berry/app` helper path now checks `libstore.app_path("no_such_app_probe") == nil` before the existing missing existence/run fallback assertions. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 configstore uppercase suffix normalization coverage
+### Priority 1 configstore uppercase suffix normalization coverage
 
 - [x] Extended `/tests/p2/smoke_configstore.be` so `configstore.name("Caps.JSON")` and `configstore.path("Caps.JSON")` preserve an existing uppercase `.JSON` suffix instead of appending a second suffix. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 os.path local no-extension splitext coverage
+### Priority 1 os.path local no-extension splitext coverage
 
 - [x] Extended `/tests/p2/smoke_sd.be` with `os.path.splitext("LOCAL") == ["LOCAL", ""]`, pinning the local relative no-extension helper shape without adding any new SD writes. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 `/berry/main.be` staged-file lifecycle coverage
+### Priority 1 `/berry/main.be` staged-file lifecycle coverage
 
 - [x] Extended `/tests/p2/smoke_sd_main.be` so the optional startup-path smoke verifies `/berry/main.be` exists after staging and is absent again after cleanup, while still refusing to overwrite a pre-existing file. Source-level path coverage only; hardware boot execution remains pending in `TODO.md`.
 
-### P1 dotted package companion diagnostics coverage
+### Priority 1 dotted package companion diagnostics coverage
 
 - [x] Extended `/tests/p2/smoke_package_paths.be` so the companion comma-import module `pkg.other` now has direct `libstore.module_file()`, `source_path()`, and `info()` diagnostics pinned to `/berry/app/pkg/other.be`, matching the existing `pkg.mod` diagnostics. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 native-first repeated import identity coverage
+### Priority 1 native-first repeated import identity coverage
 
 - [x] Extended `/tests/p2/smoke_import_native_first.be` so repeated native `json` imports under fake `/berry/lib/json.be` and `/berry/app/json.be` shadows now prove cached module identity with `introspect.toptr()`, in addition to proving the native module wins over both SD shadows. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 import-order info diagnostics coverage
+### Priority 1 import-order info diagnostics coverage
 
 - [x] Extended `/tests/p2/smoke_import_order.be` so the `/modules` and `/berry/lib` winning-root cases now pin `libstore.info()` existence, path, and nonzero source-size metadata alongside the existing native import and `source_path()` precedence checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 current-directory import identity coverage
+### Priority 1 current-directory import identity coverage
 
 - [x] Extended `/tests/p2/smoke_import_cwd.be` so the cached current-directory module reimport now proves object identity with `introspect.toptr()` after restoring the original working directory, alongside the existing mutation-visibility check. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 sys.path_add diagnostics coverage
+### Priority 1 sys.path_add diagnostics coverage
 
 - [x] Extended `/tests/p2/smoke_sys_path_add.be` so the module staged under the appended `/berry/sys_path` root now pins `libstore.info()` existence, path, and nonzero source-size metadata alongside duplicate-safe `path_add()`, `source_path()`, and native import coverage. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 scoped libstore path diagnostics coverage
+### Priority 1 scoped libstore path diagnostics coverage
 
-- [x] Extended `/tests/p2/smoke_libstore_paths.be` so the module staged under the scoped `/berry/app/p1paths` root now pins `libstore.info()` path and nonzero source-size metadata alongside duplicate-safe `path_add()`, `source_path()`, `load()`, and `path_remove()` coverage. Source-level coverage only; hardware execution remains pending in `TODO.md`.
+- [x] Extended `/tests/p2/smoke_libstore_paths.be` so the module staged under the scoped `/berry/app/p2paths` root now pins `libstore.info()` path and nonzero source-size metadata alongside duplicate-safe `path_add()`, `source_path()`, `load()`, and `path_remove()` coverage. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 import-layout info diagnostics coverage
+### Priority 1 import-layout info diagnostics coverage
 
 - [x] Extended `/tests/p2/smoke_import_layout.be` so the staged flat `/berry/lib`, flat `/berry/app`, and nested `/berry/lib` package modules now pin `libstore.info()` existence, path, and nonzero source-size metadata alongside the existing `source_path()` and import checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 module inventory source metadata parity coverage
+### Priority 1 module inventory source metadata parity coverage
 
 - [x] Extended `/tests/p2/smoke_module_inventory.be` so each existing inventory record now checks path, source-size, and source-hash metadata against `libstore.source_stats(rec["name"])`, preserving the existing inventory shape, coverage metadata, and mutation-isolation checks. Source-level metadata coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 BEC fallback source/compiled metadata parity coverage
+### Priority 1 BEC fallback source/compiled metadata parity coverage
 
 - [x] Extended `/tests/p2/smoke_bec_fallback.be` so the staged source and dummy `.bec` file now check `libstore.info()` source/compiled size and hash metadata against `libstore.source_stats()` and `libstore.compiled_stats()`. Source-level metadata coverage only; `.bec` execution remains deferred in `TODO.md`.
 
-### P1 p2compat report summary mutation-isolation coverage
+### Priority 1 p2compat report summary mutation-isolation coverage
 
 - [x] Extended `/tests/p2/smoke_p2compat.be` so caller-side mutation of the nested `p2compat.report()["summary"]` map does not alter fresh report summary counts, complementing the existing report list/item/status and summary snapshot isolation checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 p2mem modules snapshot isolation coverage
+### Priority 1 p2mem modules snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_libraries.be` so caller-side mutation of a returned `p2mem.modules()` record does not alter fresh module diagnostics snapshots, complementing the existing `p2mem.module(name)` and `libstore.inventory()` metadata checks. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 p2mem cache status snapshot isolation coverage
+### Priority 1 p2mem cache status snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_libraries.be` so caller-side mutation of the returned `p2mem.cache()["status"]` map does not alter fresh cache diagnostics snapshots. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 p2mem stats snapshot isolation coverage
+### Priority 1 p2mem stats snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_libraries.be` so caller-side mutation of the returned `p2mem.stats()` top-level fields and nested `libstore` diagnostics map does not alter fresh stats snapshots. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 p2mem evict snapshot isolation coverage
+### Priority 1 p2mem evict snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_libraries.be` so caller-side mutation of the returned `p2mem.evict()["after"]` diagnostics map does not alter fresh eviction diagnostics snapshots. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 p2mem GC snapshot isolation coverage
+### Priority 1 p2mem GC snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_libraries.be` so caller-side mutation of the returned `p2mem.gc()` diagnostics map does not poison fresh GC diagnostics snapshots. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 p2mem single-module snapshot isolation coverage
+### Priority 1 p2mem single-module snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_libraries.be` so caller-side mutation of the returned `p2mem.module("math")` diagnostics map does not alter fresh single-module diagnostics snapshots. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 libstore module-list snapshot isolation coverage
+### Priority 1 libstore module-list snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_libraries.be` so caller-side mutation of the returned `libstore.modules()` list does not alter fresh module-list diagnostics snapshots. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 libstore policy snapshot isolation coverage
+### Priority 1 libstore policy snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_libraries.be` so caller-side mutation of the returned `libstore.policy()` diagnostics map does not alter fresh lazy-loader policy snapshots. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 p2mem cache item-list snapshot isolation coverage
+### Priority 1 p2mem cache item-list snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_libraries.be` so caller-side mutation of the returned `p2mem.cache()["items"]` diagnostics list does not alter fresh cache diagnostics snapshots, complementing the existing cache-status mutation isolation check. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 p2mem cache item-list isolation repair
+### Priority 1 p2mem cache item-list isolation repair
 
 - [x] Repaired `/tests/p2/smoke_libraries.be` so cache item-shape assertions iterate over the fresh `p2mem.cache()` snapshot after the caller-side item-list mutation, avoiding the local mutation probe while preserving the snapshot-isolation coverage. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 libstore path-list snapshot isolation coverage
+### Priority 1 libstore path-list snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_libstore_paths.be` so caller-side mutation of the returned `libstore.path_list()` list does not alter fresh path-list diagnostics snapshots. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 libstore source-stats snapshot isolation coverage
+### Priority 1 libstore source-stats snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_libraries.be` so caller-side mutation of returned `libstore.source_stats("binary_heap")` diagnostics does not alter fresh source metadata snapshots. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 libstore compiled-stats snapshot isolation coverage
+### Priority 1 libstore compiled-stats snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_libraries.be` so caller-side mutation of returned `libstore.compiled_stats("binary_heap")` diagnostics does not alter fresh compiled metadata snapshots. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 libstore info snapshot isolation coverage
+### Priority 1 libstore info snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_libraries.be` so caller-side mutation of returned `libstore.info("binary_heap")` diagnostics does not alter fresh module metadata snapshots. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 libstore status snapshot isolation coverage
+### Priority 1 libstore status snapshot isolation coverage
 
 - [x] Extended `/tests/p2/smoke_libraries.be` so caller-side mutation of returned `libstore.status()` diagnostics does not alter fresh lazy-loader/cache status snapshots. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 libstore strategy module-path snapshot isolation coverage
+### Priority 1 libstore strategy module-path snapshot isolation coverage
 
 - [x] Updated `modules/libstore.be` so `libstore.strategy()["module_path"]` returns the copied path-list snapshot instead of the mutable loader path list, and extended `/tests/p2/smoke_libraries.be` so caller-side mutation of the returned strategy path list does not alter fresh strategy diagnostics. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 libstore strategy module-path element isolation coverage
+### Priority 1 libstore strategy module-path element isolation coverage
 
 - [x] Extended `/tests/p2/smoke_libraries.be` so caller-side replacement of an element inside returned `libstore.strategy()["module_path"]` diagnostics does not alter fresh strategy path-list contents, complementing the existing append-mutation isolation check. Source-level coverage only; hardware execution remains pending in `TODO.md`.
 
-### P1 P2 RAM parser feedback repair
+### Priority 1 P2 RAM parser feedback repair
 
 - [x] Reworked `modules/libstore.be` policy support checks to avoid parser-sensitive multiline boolean `return` continuation, and simplified `/tests/p2/smoke_libraries.be` strategy load assertions to avoid the on-target parser error seen during the P2 RAM smoke attempt. Source-level repair only; re-running the three RAM smokes remains pending.
 
-### P1 range `incr()` export repair
+### Priority 1 range `incr()` export repair
 
-- [x] Fixed `src/be_rangelib.c` so the non-precompiled/custom range registration table exports the existing native `incr()` method. The P2 RAM `smoke_range.be` run had reached the smoke and failed with `attribute_error: the 'range' object has no attribute 'incr'`; re-running that RAM smoke remains pending.
+- [x] Fixed `src/be_rangelib.c` so the non-precompiled/custom range registration table exports the existing native `incr()` method. The P2 RAM `smoke_range.be` run had reached the smoke and failed with `attribute_error: the 'range' object has no attribute 'incr'`; the focused range smoke has since been hardware-reverified on the current native-Catalina XMM image with `P2_SMOKE_PASS range`.
 
 ### XMM external-heap GC stress proof smoke
 
@@ -2607,3 +2613,1250 @@ Maintenance rule:
 - [x] Tightened the p38/p39 blinker fast path so `p2.cog.spawn(blinker, pin, rate_ms)` invokes the passed Berry closure once on the main REPL cog during setup and uses its positive integer return value as the native blink period.
 - [x] Extended `port/p2/docs/CLOSURE_COG_REPL_PROOF.md` with explicit pass criteria for the live board proof: build/REPL reachability, distinct handles, p38/p39 blink-rate difference, call counts, stop behavior, and final handle cleanup.
 - [x] Added `/tests/p2/smoke_cog_closure.be` as source-level proof scaffolding for handle creation/inspection/stop, including listing spawned handles through `p2.cog.info()` and checking stop wait metrics. The actual LED blink proof is intentionally interactive because the shared-VM safety model only calls closure callbacks while the REPL is idle at the prompt. Hardware execution remains pending.
+
+### Priority 2 P2 host regression gate
+
+- [x] Added `make test-p2-host` as a dedicated host-side P2 regression target so fake-PSRAM `libstore`, cooperative `task`, and `p2ipc` tests can run without being blocked by unrelated desktop test-suite assumptions.
+- [x] Made host readline support auto-detected through `USE_READLINE ?= auto`, preserving readline when headers are installed while allowing host regression builds in lean environments without `readline/readline.h`.
+- [x] Made the desktop `make test` path deterministic under `TZ=UTC` so `tests/time.be` does not depend on the developer machine's local timezone.
+- [x] Made `testall.be` skip lcov/genhtml report generation when those coverage tools are not installed, while still failing on test failures.
+- [x] Updated desktop-only tests with stale host assumptions so the rest of the runtime suite stays active: `tests/global.be` skips only when host `import global` does not bind the native module, `tests/walrus.be` and `tests/vm_coverage.be` skip only their global-module subchecks under that same host condition, and `tests/module.be` keeps module coverage while treating native-import monkey-patch replacement as optional when the runtime preserves native module imports.
+- [x] Repaired `modules/p2ipc.be` and `tests/p2/host_p2ipc.be` to access the `p2.lock` method named `try` through computed-member syntax, avoiding parser conflicts with the `try` keyword while keeping the public method name unchanged.
+- [x] Added `tests/p2/host_source_modules.be` to cover host-simulatable `binary_heap`, `p2compat`, and `configstore` source-module behavior, including fake P2 bytecode capability metadata, report snapshot isolation, configurable config roots, JSON save/load/list/remove behavior, and config-name validation.
+- [x] Repaired `modules/p2compat.be` parser-sensitive conditional forms so the capability metadata module can be loaded by the desktop host parser as well as the P2 smoke path.
+- [x] Repaired `modules/configstore.be` name validation so it treats `string.find()` no-match results as `-1` rather than `nil`, and made `configstore.ensure()` create the configured root path instead of hardcoding only `/berry/config`.
+- [x] Ran `make test-host` locally on 2026-06-23. It built the host binary, passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed `tests/p2/host_libstore_chunk.be`, `tests/p2/host_task.be`, `tests/p2/host_p2ipc.be`, and `tests/p2/host_source_modules.be`.
+
+### Priority 2 host configstore load-result diagnostics
+
+- [x] Added `configstore.load_result(name, fallback)` so callers can distinguish missing config files, successfully parsed config files, and malformed JSON/config-load failures without wrapping every `configstore.load()` call in a local `try`.
+- [x] Expanded `tests/p2/host_source_modules.be` to cover `load_result()` for missing configs, valid saved configs, malformed JSON fallback diagnostics, and invalid filename validation.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the configstore load-result regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the configstore load-result regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 2 host p2compat status-report diagnostics
+
+- [x] Added `p2compat.status_report(status)` so tooling can query whether a capability status is known, how many capabilities use it, and the matching capability names in one snapshot-safe result map.
+- [x] Expanded `tests/p2/host_source_modules.be` to cover known and unknown `status_report()` results plus returned-name-list mutation isolation.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the `p2compat` status-report regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the `p2compat` status-report regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 2 host `.bec` regression coverage
+
+- [x] Added `tests/p2/host_libstore_bec.be` and wired it into `make test-p2-host`.
+- [x] The host regression stages local `.be`, `.bec`, and `.bec.json` files under `tmp/`, then verifies manifest generation/parsing, freshness metadata, validation/load blockers, source fallback, compiled-only and missing-module negative cases, bulk compile-cache planning, provisioning helpers, candidate filters, and compiled-summary behavior without requiring P2 hardware.
+- [x] Fixed `libstore.compiled_manifest(name)` to accept the map-like `instance` returned by host `json.load()` as well as native maps, so sidecar manifests validate consistently in host tests.
+- [x] Renamed stale priority-style fixture module names in `/tests/p2/smoke_bec_fallback.be` to neutral `.bec` fixture names to avoid confusing priority shorthand with Propeller 2 naming.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the change; it passed `tests/p2/host_libstore_chunk.be`, `tests/p2/host_task.be`, `tests/p2/host_p2ipc.be`, `tests/p2/host_source_modules.be`, and `tests/p2/host_libstore_bec.be`.
+- [x] Ran `make test-host` locally on 2026-06-23 after the `.bec` host regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all five P2 host regressions.
+
+### Priority 2 host import-cache regression coverage
+
+- [x] Added `tests/p2/host_import_cache.be` and wired it into `make test-p2-host`.
+- [x] The host regression stages temporary file-backed module roots under `tmp/`, then verifies SD-style root ordering, `libstore.source_path()` / `info()` diagnostics, repeated import cache identity, dotted package import cache identity, `libstore.path_add()` duplicate handling, missing-import recovery after staging the file, and `libstore.modules()` scanning.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the import-cache host regression was added; it passed `tests/p2/host_libstore_chunk.be`, `tests/p2/host_task.be`, `tests/p2/host_p2ipc.be`, `tests/p2/host_source_modules.be`, `tests/p2/host_libstore_bec.be`, and `tests/p2/host_import_cache.be`.
+- [x] Ran `make test-host` locally on 2026-06-23 after the import-cache host regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all six P2 host regressions.
+
+### Priority 2 host source-cache error coverage
+
+- [x] Added `tests/p2/host_libstore_cache_errors.be` and wired it into `make test-p2-host`.
+- [x] The host regression covers `libstore.cache_source()` no-op/error paths for disabled cache policy, unavailable fake PSRAM, missing modules, invalid max-transfer size, over-capacity source text, failed PSRAM writes, short PSRAM writes, and successful cache/load recovery after errors.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the source-cache error regression was added; it passed `tests/p2/host_libstore_chunk.be`, `tests/p2/host_task.be`, `tests/p2/host_p2ipc.be`, `tests/p2/host_source_modules.be`, `tests/p2/host_libstore_bec.be`, `tests/p2/host_import_cache.be`, and `tests/p2/host_libstore_cache_errors.be`.
+- [x] Ran `make test-host` locally on 2026-06-23 after the source-cache error regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all seven P2 host regressions.
+
+### Priority 2 host p2mem native-cache facade coverage
+
+- [x] Added `tests/p2/host_p2mem_native_cache.be` and wired it into `make test-p2-host`.
+- [x] The host regression uses a fake `p2.psram_cache_*` implementation to verify Berry-level `p2mem` native-cache owner lookup/history, LIFO release blocking, owner-chain release, put/get/verify, replace and replace-blocked behavior, source-owner helpers, and module-source plan/warm/status/get/release helpers over `libstore.cached_source()`.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the `p2mem` native-cache facade regression was added; it passed `tests/p2/host_libstore_chunk.be`, `tests/p2/host_task.be`, `tests/p2/host_p2ipc.be`, `tests/p2/host_source_modules.be`, `tests/p2/host_libstore_bec.be`, `tests/p2/host_import_cache.be`, `tests/p2/host_libstore_cache_errors.be`, and `tests/p2/host_p2mem_native_cache.be`.
+- [x] Ran `make test-host` locally on 2026-06-23 after the `p2mem` native-cache facade regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 2 host p2ipc edge coverage
+
+- [x] Expanded `tests/p2/host_p2ipc.be` to cover default channel depth/free counts, buffer `aslist()` snapshot isolation, negative buffer writes/fills, blocked channel sends/receives while the mutex is held, hardware-lock allocation failure, and no-`p2.lock` fallback mutex behavior.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the `p2ipc` edge regression was expanded; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the `p2ipc` edge regression was expanded. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 2 host p2ipc invalid-input coverage
+
+- [x] Hardened `modules/p2ipc.be` so channels normalize nil, negative, and non-integer depths without throwing during send/free checks, and `p2.shared.Buffer` normalizes invalid sizes to empty buffers.
+- [x] Hardened `p2.shared.Buffer.read/write/fill` so invalid offsets and non-integer byte values return `nil` or `false` instead of raising comparison errors.
+- [x] Expanded `tests/p2/host_p2ipc.be` to cover zero/negative/non-integer channel depths, invalid buffer sizes, invalid offsets, non-integer write values, and non-integer fills.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the `p2ipc` invalid-input regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the `p2ipc` invalid-input regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority naming cleanup
+
+- [x] Renamed remaining priority-style smoke-test fixture modules, paths, and temporary variables to descriptive probe names so priority shorthand is not confused with the Propeller 2/P2 target name.
+- [x] Verified the cleanup with a targeted scan for old priority-style fixture prefixes under `tests/p2`; it returned no matches.
+- [x] Ran `make test-host` locally on 2026-06-23 after the fixture-name cleanup. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 4 host cooperative task edge coverage
+
+- [x] Expanded `tests/p2/host_task.be` to cover scheduler slot capacity, pause/resume/stop behavior, invalid stop/resume paths, task error state reporting, deterministic timeout wakeups through a fake `task.millis()`, and wait/wake behavior for `Semaphore`, `Mutex`, queue get/put, `EventFlags`, and `Timer`.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the cooperative task regression was expanded; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the cooperative task regression was expanded. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 4 host cooperative task primitive invalid-input coverage
+
+- [x] Hardened `modules/task.be` so invalid `Semaphore`, `Queue`, `EventFlags`, and `Timer` constructor or mask inputs clamp to inert zero/default behavior instead of producing negative capacities or bitwise/type comparison errors.
+- [x] Expanded `tests/p2/host_task.be` to cover invalid semaphore counts, queue depths, event-flag initial values and masks, and timer periods.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the cooperative task primitive invalid-input regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the cooperative task primitive invalid-input regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 4 child VM transfer boundary metadata
+
+- [x] Extended `modules/p2compat.be` with explicit child-VM transfer capabilities: primitive nil/bool/int/bounded-string copy support is partial, non-captured closure-name bridging is staged, and captured closures plus live object graph transfer are unsupported.
+- [x] Extended `tests/p2/host_source_modules.be` to pin those `p2compat` statuses, returned-record snapshot isolation, and unsupported capability listing behavior in the host regression gate.
+- [x] Updated `docs/cogs.md`, `docs/P2_MODULES.md`, `docs/coverage-matrix.md`, and `port/p2/TODO.md` so the current transfer boundary is explicit without claiming arbitrary closure serialization is complete.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the transfer-boundary metadata was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the transfer-boundary metadata was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 2 host fake-SD metadata and path-removal coverage
+
+- [x] Expanded `tests/p2/host_import_cache.be` to cover `libstore.source_stats()` size/hash metadata, `libstore.info()` snapshot isolation, `libstore.inventory()` snapshot isolation, and `libstore.path_remove()` removing a custom root from future `source_path()` / `modules()` discovery while preserving already-imported module cache identity.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the fake-SD metadata/path-removal regression was expanded; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the fake-SD metadata/path-removal regression was expanded. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 host source-cache reset and churn coverage
+
+- [x] Expanded `tests/p2/host_libstore_cache_errors.be` to cover cache-report snapshot isolation, source-file mutation while an old source is cached, `cache_reset()` clearing cached items/counters/cursor state, and recaching/loading the updated source text after reset.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the source-cache reset/churn regression was expanded; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the source-cache reset/churn regression was expanded. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 host p2mem diagnostics snapshot coverage
+
+- [x] Expanded `tests/p2/host_libstore_chunk.be` to cover `p2mem.stats()`, `p2mem.modules()`, `p2mem.module(name)`, `p2mem.cache()`, `p2mem.gc()`, and `p2mem.evict()` over the fake-PSRAM source-cache path, including caller-mutation isolation for returned stats, nested libstore/cache/strategy maps, module records, cache records, and eviction status maps.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the `p2mem` diagnostics regression was expanded; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the `p2mem` diagnostics regression was expanded. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 constrained bulk source-cache reporting
+
+- [x] Added `libstore.cache_all_report()` so bulk PSRAM source-cache preload attempts return cached items plus skipped-module records instead of aborting the whole pass when one discovered module is too large for the current cache window. `libstore.cache_all()` still returns the successfully cached item list for existing callers.
+- [x] Expanded `tests/p2/host_libstore_cache_errors.be` to prove constrained fake-PSRAM bulk caching records an oversized module as a skipped `memory_error`, keeps the successfully cached module and cache cursor consistent, and preserves loud `cache_source(name)` errors for direct single-module cache requests.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the constrained bulk-cache regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the constrained bulk-cache regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2mem native-cache failed-write cleanup
+
+- [x] Hardened `p2mem.native_cache_put(owner, data)` so it checks the native entry-write result, marks the put failed when the write reports failure or a short write, and releases the just-created reservation so a failed facade write does not leak native-cache space.
+- [x] Expanded `tests/p2/host_p2mem_native_cache.be` to simulate a failed fake native-cache entry write and verify `native_cache_put_verified()` returns `ok == false`, records `native cache write failed`, releases the failed reservation, and leaves the native-cache entry count at zero.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the failed-write cleanup regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the failed-write cleanup regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2mem batch native-cache rollback
+
+- [x] Hardened `p2mem.native_module_sources_warm_verified(names)` so a failed module-source warm rolls back previously warmed module-source reservations in reverse order and reports rollback status instead of leaving a partial batch in the native-cache facade.
+- [x] Expanded `tests/p2/host_p2mem_native_cache.be` to stage two module sources, force the second owner-tagged fake native write to fail, and verify the first warmed entry is released, rollback reports success, and the native-cache entry count returns to zero.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the batch rollback regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the batch rollback regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2mem non-destructive native-cache replacement
+
+- [x] Changed `p2mem.native_cache_replace(owner, data)` to write the replacement as a new latest owner entry and retain the previous owner entry for normal owner-chain cleanup, avoiding the earlier release-before-write behavior that could lose the old payload if the new write failed.
+- [x] Expanded `tests/p2/host_p2mem_native_cache.be` to verify normal replacement keeps owner history until `native_cache_release_owner_chain()`, replacement can create a new latest owner entry even when another owner is newer, and a failed replacement write preserves the old owner payload.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the non-destructive replacement regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the non-destructive replacement regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2mem native-cache verify-failure cleanup
+
+- [x] Hardened `p2mem.native_cache_put_verified(owner, data)` and `p2mem.native_cache_replace_verified(owner, data)` so a failed read-back verification marks the operation failed, records `native cache verify failed`, and releases only the just-created reservation.
+- [x] Expanded `tests/p2/host_p2mem_native_cache.be` to simulate fake native-cache verification failures for direct puts and replacements, verify the failed reservation is released, and confirm a failed replacement verification preserves the previous owner payload.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the verify-failure cleanup regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the verify-failure cleanup regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2mem native-cache result wrappers and invalid-operation coverage
+
+- [x] Added `p2mem.native_cache_read_result()`, `native_cache_write_result()`, `native_cache_verify_result()`, and `native_cache_release_result()` so callers can inspect native-cache invalid-index, invalid-range, and blocked-release failures as result maps instead of needing every diagnostic path to catch native exceptions itself.
+- [x] Added `p2mem.native_cache_reserve_result()` and hardened `native_cache_put()` so invalid reservation requests and invalid cache payload sizes return explicit diagnostic result maps with write/release status instead of leaking native or Berry exceptions to callers.
+- [x] Hardened owner-level `p2mem.native_cache_status(owner)` and `native_cache_get_verified(owner)` to use result-wrapper verify/read helpers so native verify/read exceptions are reported in diagnostic maps instead of escaping.
+- [x] Hardened verified-operation helpers `p2mem.native_cache_put_verified(owner, data)`, `native_cache_replace_verified(owner, data)`, and `native_cache_verify_owner(owner)` to use `native_cache_verify_result()` so native verify exceptions report as failed verification diagnostics and still trigger the existing cleanup/preservation behavior.
+- [x] Hardened owner-level release through `p2mem.native_cache_release_owner(owner)` so native release exceptions are reported through `native_cache_release_result()` and `native_cache_release_owner_chain(owner)` stops with a blocked diagnostic instead of leaking the exception.
+- [x] Added `p2mem.native_cache_find_result(owner)` and `native_cache_find_latest_result(owner)`, then routed owner-level status/get/verify/release/replace helpers through result-shaped owner lookup so native lookup exceptions become diagnostics instead of escaping.
+- [x] Added `p2mem.native_cache_reset_result()` and `native_cache_get_result(owner)` so callers can inspect native reset, owner lookup, missing-owner, and read failures without using exception control flow or verified reads.
+- [x] Tightened `p2mem.native_module_sources_plan(names)` so native-cache availability participates in `ok`, `will_fit`, and a new `blocker` reason, allowing `native_module_sources_warm_if_fits(names)` to report `native_cache_unavailable` distinctly from missing source or insufficient cache space.
+- [x] Added validation for bulk module-source name lists so `native_module_sources_plan()`, `native_module_sources_warm_verified()`, `native_module_sources_warm_if_fits()`, `native_module_sources_status()`, and `native_module_sources_release()` report `invalid_module_names` instead of leaking errors for non-list input, nil entries, or empty module names.
+- [x] Added validation for single module-source helpers so `native_module_source_put_verified()`, `native_module_source_status()`, `native_module_source_get_verified()`, and `native_module_source_release()` report `invalid_module_name` for nil or empty names instead of leaking owner/string-concatenation errors.
+- [x] Tightened `tests/p2/host_p2mem_native_cache.be` so the fake `p2.psram_cache_*` implementation raises `value_error` for invalid entry indexes and out-of-entry ranges like the native P2 C implementation does.
+- [x] Expanded `tests/p2/host_p2mem_native_cache.be` to verify successful reset/read/get/verify result wrappers, invalid reservation/payload/index/range result maps, owner lookup/history failures, owner-level status/get/verify/release failures, verified put/replace verify exceptions, single and bulk module-source invalid-name and native-cache-unavailable planning, invalid release result maps, and blocked LIFO release results while preserving cache cleanup.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the result-wrapper regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the result-wrapper regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+- [x] Re-ran `make test-host` locally on 2026-06-23 after the reservation/payload result-wrapper coverage was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+- [x] Re-ran `make test-host` locally on 2026-06-23 after owner-level status/get verify and read failure coverage was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+- [x] Re-ran `make test-host` locally on 2026-06-23 after verified put/replace/owner verification exception coverage was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+- [x] Re-ran `make test-host` locally on 2026-06-23 after owner-release exception coverage was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+- [x] Re-ran `make test-host` locally on 2026-06-23 after owner lookup/history failure coverage was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+- [x] Re-ran `make test-host` locally on 2026-06-23 after reset/get result-wrapper coverage was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+- [x] Re-ran `make test-host` locally on 2026-06-23 after module-source native-cache-unavailable planning coverage was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+- [x] Re-ran `make test-host` locally on 2026-06-23 after bulk module-source name validation coverage was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+- [x] Re-ran `make test-host` locally on 2026-06-23 after single module-source name validation coverage was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2mem invalid single-module diagnostics lookup
+
+- [x] Hardened `p2mem.module(name)` so invalid names such as `nil` or an empty string return `nil`, matching unknown-module diagnostics behavior instead of passing invalid input into lower-level `libstore.info()`.
+- [x] Expanded `tests/p2/host_libstore_chunk.be` to cover missing, empty, and nil `p2mem.module()` lookups while preserving the existing valid-module snapshot-isolation checks.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the invalid `p2mem.module()` lookup coverage was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the invalid `p2mem.module()` lookup coverage was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2mem native-cache status failure diagnostics
+
+- [x] Hardened `p2mem.native_cache()` so a failure while enumerating cache entries preserves the already-read native-cache status fields in the returned diagnostic map instead of discarding all status context.
+- [x] Expanded `tests/p2/host_p2mem_native_cache.be` to cover direct `p2mem.native_cache()` failure diagnostics for both native-cache info failures and native-cache entry-enumeration failures.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the native-cache status failure diagnostics regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the native-cache status failure diagnostics regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2mem native-cache cleanup-release diagnostics
+
+- [x] Routed failed-put and failed-verification cleanup through `p2mem.native_cache_release_result()` so cleanup release failures use the same `ok`, `released`, `index`, `error`, and `message` diagnostic shape as explicit release calls.
+- [x] Expanded `tests/p2/host_p2mem_native_cache.be` to force a native-cache write failure whose cleanup release also raises, verify the failed release is reported without throwing, and confirm the retained reservation can be explicitly cleaned up afterward.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the cleanup-release diagnostics regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the cleanup-release diagnostics regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2compat native-status failure fallback coverage
+
+- [x] Expanded `tests/p2/host_source_modules.be` to force `p2.status_info()` failure and verify `p2compat.bytecode()` keeps the safe default source-fallback policy with bytecode cache emission and execution disabled.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the p2compat native-status fallback regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the p2compat native-status fallback regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 configstore load-result invalid-name diagnostics
+
+- [x] Hardened `configstore.load_result(name, fallback)` so invalid config names return `ok == false`, `found == false`, the caller fallback value, and the validation error instead of escaping before the result wrapper can report diagnostics.
+- [x] Expanded `tests/p2/host_source_modules.be` to cover invalid filename diagnostics through `load_result()` while keeping direct `configstore.name()` validation loud.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the configstore invalid-name diagnostics regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the configstore invalid-name diagnostics regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 configstore save-result diagnostics
+
+- [x] Added `configstore.save_result(name, value)` so callers can inspect successful saves and save/path validation failures without wrapping `configstore.save()` in local exception handling. The existing `save()` helper remains loud for current callers.
+- [x] Expanded `tests/p2/host_source_modules.be` to cover successful `save_result()` paths and invalid filename diagnostics.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the configstore save-result diagnostics regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the configstore save-result diagnostics regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 configstore remove-result diagnostics
+
+- [x] Added `configstore.remove_result(name)` so callers can distinguish missing configs, successful removals, failed removals, and path validation errors without wrapping `configstore.remove()` in local exception handling. The existing `remove()` helper remains unchanged.
+- [x] Expanded `tests/p2/host_source_modules.be` to cover successful removal, missing-config removal, and invalid filename diagnostics through `remove_result()`.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the configstore remove-result diagnostics regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the configstore remove-result diagnostics regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 configstore list-result diagnostics
+
+- [x] Added `configstore.list_result()` so callers can distinguish a present config root from a missing root and inspect item counts without wrapping `configstore.list()` in local exception handling. The existing `list()` helper remains unchanged.
+- [x] Expanded `tests/p2/host_source_modules.be` to cover present-root list diagnostics and missing-root list diagnostics through `list_result()`.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the configstore list-result diagnostics regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the configstore list-result diagnostics regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 libstore invalid module-name diagnostics
+
+- [x] Added `libstore.valid_module_name(name)` and hardened the module-name-to-path boundary so dotted package names remain valid while nil, empty, slash-containing, and `..` names are rejected before SD/cache path probing.
+- [x] Kept `libstore.module_file(name, ext)` loud with `value_error` for invalid names, while public source/app/example/PASM/compiled path helpers return `nil` and `.bec` freshness, validation, load-plan, resolve, manifest, and emit-plan diagnostics report `invalid_module_name`.
+- [x] Hardened `libstore.compile_cache_emit(name)` so invalid names are rejected before the bytecode-emitter probe can mutate support state.
+- [x] Expanded `tests/p2/host_libstore_bec.be` to cover valid dotted names, invalid-name path helper behavior, `.bec` freshness/load/resolve/emit diagnostics, `compile_cache_plan_many()` blocker histograms, and JSON export of the invalid-name reason.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the invalid module-name diagnostics regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the invalid module-name diagnostics regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2mem module-source invalid-name alignment
+
+- [x] Routed `p2mem` native module-source name validation through `libstore.valid_module_name()` so module-source warming/status/get/release helpers reject slash-containing and dot-dot names the same way `libstore` SD/cache diagnostics do.
+- [x] Expanded `tests/p2/host_p2mem_native_cache.be` to cover escaped module names for single-module put/status/get/release helpers and bulk plan/warm/status/release helpers, while preserving the existing nil and empty-name diagnostics.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the module-source invalid-name alignment regression was added; it passed all eight P2 host regressions.
+
+### Priority 1 libstore source-cache invalid-name accounting
+
+- [x] Hardened `libstore.cache_source(name)` so invalid module names return `nil` before PSRAM/source-cache probing and do not increment cache miss or hit counters.
+- [x] Expanded `tests/p2/host_libstore_cache_errors.be` to verify slash-containing and dot-dot source-cache names stay uncached and leave hit/miss accounting at zero, while ordinary missing modules still count as misses.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the source-cache invalid-name accounting regression was added; it passed all eight P2 host regressions.
+
+### Priority 1 libstore source-cache readback validation
+
+- [x] Hardened `libstore.cached_source(name)` so PSRAM source-cache readback validates each chunk is a string of the expected size and raises `io_error` instead of concatenating malformed read data into source text.
+- [x] Expanded `tests/p2/host_libstore_cache_errors.be` to force nil and short fake-PSRAM reads after a successful cache write and verify both paths fail loudly before normal readback recovery.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the source-cache readback validation regression was added; it passed all eight P2 host regressions.
+
+### Priority 1 libstore cache-report cached-entry visibility
+
+- [x] Changed `libstore.cache_report()` to enumerate actual cached entries instead of re-scanning currently discoverable modules, so diagnostics keep reporting cached source entries even if the source file disappears or module roots change before cache reset.
+- [x] Expanded `tests/p2/host_libstore_cache_errors.be` to remove a source file after caching and verify `cache_report()` still reports the cached entry until reset/recache behavior takes over.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the cache-report cached-entry visibility regression was added; it passed all eight P2 host regressions.
+
+### Priority 1 p2mem eviction failure diagnostics
+
+- [x] Hardened `p2mem.evict()` so cache reset/report failures return `ok == false` with `error` and `message` diagnostics instead of escaping from the diagnostic facade.
+- [x] Expanded `tests/p2/host_libstore_chunk.be` to force a fake `p2.psram_info()` failure during eviction and verify the failure is reported without throwing, while preserving the existing successful eviction and snapshot-isolation checks.
+- [x] Tightened `/tests/p2/smoke_libraries.be` so the normal on-target `p2mem.evict()` path asserts `ok == true` before checking the post-eviction cache status snapshot.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the eviction failure diagnostics regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the eviction failure diagnostics regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+- [x] Re-ran `make test-host` locally on 2026-06-23 after the `/tests/p2/smoke_libraries.be` normal-path eviction `ok` assertion was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 libstore selected source-cache report diagnostics
+
+- [x] Added `libstore.cache_many_report(name, ...)` so selected PSRAM source-cache preloads can return `items`, `skipped`, `cached_count`, and `skipped_count` diagnostics without changing the older loud `cache_many()` helper.
+- [x] Hardened report-style source-cache preload helpers so returned cached-item records are snapshots instead of mutable handles into the live cache directory.
+- [x] Expanded `tests/p2/host_libstore_cache_errors.be` to cover selected-list preload diagnostics for cached, oversized, missing, and invalid module names, plus report-item mutation isolation.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the selected source-cache report regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the selected source-cache report regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2mem source-cache chunk-count diagnostics
+
+- [x] Added an explicit `chunk_count` field to `p2mem.cache()["items"]` source-cache records while preserving the existing compatibility `chunks` count field.
+- [x] Expanded `tests/p2/host_libstore_chunk.be` and `/tests/p2/smoke_libraries.be` to assert `chunk_count` shape and caller-mutation isolation for cache item diagnostics.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the p2mem cache-item chunk-count regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the p2mem cache-item chunk-count regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2mem stats-result diagnostics
+
+- [x] Added `p2mem.stats_result()` so memory/cache diagnostic tooling can receive `ok`, `stats`, `error`, and `message` fields instead of needing to catch lower-level `p2mem.stats()` failures itself.
+- [x] Expanded `tests/p2/host_libstore_chunk.be` to cover successful `stats_result()` output plus forced `p2.status_info()` failure diagnostics.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the p2mem stats-result regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the p2mem stats-result regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2mem cache-result diagnostics
+
+- [x] Added `p2mem.cache_result()` so memory/cache diagnostic tooling can receive `ok`, `cache`, `error`, and `message` fields instead of needing to catch lower-level `p2mem.cache()` failures itself.
+- [x] Expanded `tests/p2/host_libstore_chunk.be` to cover successful `cache_result()` output plus forced source-cache report failure diagnostics through the fake `p2.psram_info()` path.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the p2mem cache-result regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the p2mem cache-result regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2mem module-result diagnostics
+
+- [x] Added `p2mem.modules_result()` and `p2mem.module_result(name)` so memory/cache diagnostic tooling can inspect discovered-module metadata with result-shaped success, missing-module, invalid-name, and lower-level failure diagnostics.
+- [x] Expanded `tests/p2/host_libstore_chunk.be` to cover successful module-list and single-module results, missing and invalid single-module lookups, and forced source-cache report failure diagnostics through the fake `p2.psram_info()` path.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the p2mem module-result regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the p2mem module-result regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2mem module-result invalid-name diagnostics
+
+- [x] Tightened `p2mem.module_result(name)` so invalid names return `error == "invalid_module_name"` with a specific message, while ordinary missing modules still return `found == false` with no error.
+- [x] Expanded `tests/p2/host_libstore_chunk.be` to cover empty-string and nil module-result diagnostics separately.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the p2mem module-result invalid-name diagnostics regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the p2mem module-result invalid-name diagnostics regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2mem GC-result diagnostics
+
+- [x] Added `p2mem.gc_result()` so memory/cache diagnostic tooling can receive `ok`, `gc`, `error`, and `message` fields around Berry GC diagnostics.
+- [x] Expanded `tests/p2/host_libstore_chunk.be` to cover successful `gc_result()` output and its before/after/freed field shape.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the p2mem GC-result regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the p2mem GC-result regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2mem module-result path-escape diagnostics
+
+- [x] Routed public `p2mem.module(name)` and `p2mem.module_result(name)` validation through `libstore.valid_module_name()` so slash-containing and dot-dot names are rejected the same way as module-source cache helpers.
+- [x] Expanded `tests/p2/host_libstore_chunk.be` to cover slash-containing and dot-dot module lookup diagnostics, including `invalid_module_name` result maps.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the p2mem module-result path-escape diagnostics regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the p2mem module-result path-escape diagnostics regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 libstore diagnostic snapshot isolation
+
+- [x] Changed `libstore.status()` to return a copied path list instead of the live module-root list.
+- [x] Changed `libstore.info(name)` to return copied cache-entry and coverage records so diagnostic callers cannot mutate live source-cache metadata or the curated coverage table.
+- [x] Expanded `tests/p2/host_libstore_cache_errors.be` to mutate returned `cache_report()` / `status()` / `info()` diagnostics and verify the underlying libstore path list, cache entry, and coverage metadata stay unchanged.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the libstore diagnostic snapshot-isolation regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the libstore diagnostic snapshot-isolation regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 p2compat nested diagnostic snapshot isolation
+
+- [x] Expanded `tests/p2/host_source_modules.be` to mutate nested `p2compat.report()` summary/status-list/bytecode diagnostics and verify fresh reports stay unchanged.
+- [x] Expanded `tests/p2/host_source_modules.be` to mutate `p2compat.audit()` summary/count/duplicates/unknown-status diagnostics plus `audit_problems()` output and verify fresh audit results stay unchanged.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the p2compat nested diagnostic snapshot-isolation regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the p2compat nested diagnostic snapshot-isolation regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 2 p2ipc diagnostic snapshots
+
+- [x] Added compact `info()` diagnostics to `p2ipc` `Mutex`, `Channel`, `Mailbox`, and `Buffer` objects so tooling can inspect IPC state without reading implementation fields directly.
+- [x] Expanded `tests/p2/host_p2ipc.be` to cover hardware-lock and fallback-lock diagnostic shapes, channel/mailbox/buffer state reporting, and mutation isolation for returned diagnostic maps.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the p2ipc diagnostic snapshot regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the p2ipc diagnostic snapshot regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 4 task wait-descriptor error containment
+
+- [x] Hardened the cooperative task scheduler so malformed wait descriptors move only the owning task into `error` state instead of letting scheduler internals throw.
+- [x] Hardened waiting-task wake polling so exceptions raised by wait-object methods are captured in that task's `last_error` and do not abort the scheduler turn.
+- [x] Expanded `tests/p2/host_task.be` to cover unknown wait kinds, missing wait objects, and wait-object polling failures.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the task wait-descriptor containment regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the task wait-descriptor containment regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 configstore JSON null diagnostics
+
+- [x] Fixed `configstore.load_result(name, fallback)` so a stored JSON `null` is reported as a found, successful config value even when the caller supplied a non-nil fallback.
+- [x] Preserved malformed-JSON diagnostics by accepting `nil` parse results only when the config source text is the JSON `null` literal after whitespace trimming.
+- [x] Expanded `tests/p2/host_source_modules.be` and `/tests/p2/smoke_configstore.be` to cover valid JSON `null` result diagnostics.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the configstore JSON null diagnostics regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the configstore JSON null diagnostics regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 1 binary_heap sort exception preservation
+
+- [x] Changed `binary_heap.sort(array, cmp)` so it builds the sorted result from a heap copy and commits back to the caller array only after heap operations finish.
+- [x] Expanded `tests/p2/host_source_modules.be` and `/tests/p2/smoke_libraries.be` to cover empty and singleton sorts plus caller-array preservation when a comparator raises.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the binary heap regression was added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the binary heap regression was added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 2 p2ipc result diagnostics
+
+- [x] Added result-shaped diagnostics to `p2ipc` channels, mailboxes, and shared buffers: `send_result()`, `recv_result()`, `put_result()`, `get_result()`, `read_result()`, `write_result()`, and `fill_result()`.
+- [x] Preserved the old simple `send`/`recv`/`put`/`get`/buffer method contracts while making the result helpers distinguish valid `nil` payloads from empty/full/busy/error states.
+- [x] Expanded `tests/p2/host_p2ipc.be` and `/tests/p2/smoke_libraries.be` to cover nil channel/mailbox payloads, full/busy diagnostics, and invalid shared-buffer offset/value diagnostics.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the p2ipc result diagnostics were added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the p2ipc result diagnostics were added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 2 p2ipc lifecycle diagnostics
+
+- [x] Hardened `p2ipc` mutexes, channels, and mailboxes so `close()` is idempotent and marks the object closed instead of letting later operations silently reuse released lock state.
+- [x] Added `closed` fields to IPC `info()` diagnostics, kept legacy simple methods returning `false`/`nil` after close, and made result-shaped helpers return `error == "closed"`.
+- [x] Expanded `tests/p2/host_p2ipc.be` and `/tests/p2/smoke_libraries.be` to cover hardware-lock and fallback-lock close behavior plus channel/mailbox operations after close.
+- [x] Verified `/tests/p2/smoke_libraries.be` with `./berry -c tests/p2/smoke_libraries.be -o /tmp/berry-smoke-libraries.bec`.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the p2ipc lifecycle diagnostics were added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the p2ipc lifecycle diagnostics were added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 2 p2ipc mutex result diagnostics
+
+- [x] Added `lock_result()`, `unlock_result()`, and `close_result()` to `p2ipc` mutexes so callers can distinguish acquired, busy, not-locked, closed, and idempotent-close states without changing the legacy boolean methods.
+- [x] Tightened internal mutex state tracking so hardware-backed and fallback mutex result diagnostics report `not_locked` and `closed` consistently.
+- [x] Expanded `tests/p2/host_p2ipc.be` and `/tests/p2/smoke_libraries.be` to cover hardware-lock, allocation-fallback, and no-native-lock mutex result diagnostics.
+- [x] Verified `/tests/p2/smoke_libraries.be` with `./berry -c tests/p2/smoke_libraries.be -o /tmp/berry-smoke-libraries.bec`.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the p2ipc mutex result diagnostics were added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the p2ipc mutex result diagnostics were added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Priority 4 task lifecycle result diagnostics
+
+- [x] Added `task.start_result()`, `task.stop_result()`, `task.pause_result()`, and `task.resume_result()` so scheduler callers can distinguish invalid functions, over-wide startup argument lists, slot exhaustion, invalid handles, free handles, and state transitions without changing the existing simple return values.
+- [x] Expanded `tests/p2/host_task.be` and `/tests/p2/smoke_task.be` to cover the new lifecycle result diagnostics.
+- [x] Verified `modules/task.be` with `./berry -c modules/task.be -o /tmp/berry-task-module.bec`.
+- [x] Verified `/tests/p2/smoke_task.be` with `./berry -c tests/p2/smoke_task.be -o /tmp/berry-smoke-task.bec`.
+- [x] Ran `make test-p2-host` locally on 2026-06-23 after the task lifecycle result diagnostics were added; it passed all eight P2 host regressions.
+- [x] Ran `make test-host` locally on 2026-06-23 after the task lifecycle result diagnostics were added. It passed the 54-test desktop Berry suite, skipped lcov/genhtml report generation because those tools were absent, then passed all eight P2 host regressions.
+
+### Native sibling Catalina default
+
+- [x] Changed Berry's Catalina default to the sibling parent-directory install: `CATALINA_DIR=../Catalina`.
+- [x] Updated P2 build/test documentation and repository instructions to use native sibling Catalina only; the stale container/cache Catalina validation path was removed from active docs.
+- [x] Ran `make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` locally on 2026-06-24. Native Catalina 8.8.9 compiled the image, then the P2 Hub RAM guard rejected the full no-PSRAM image at `550496 / 524288` bytes, preserving the size safety gate.
+- [x] Ran `make p2-minimal TOOLCHAIN=catalina CATALINA_DIR=../Catalina` locally on 2026-06-24. Native Catalina 8.8.9 built the no-PSRAM minimal image successfully at `464416 / 524288` bytes.
+
+### Priority 2 smart-pin loopback smoke
+
+- [x] Added `/tests/p2/smoke_smartpins_loopback.be` for boards wired with jumpers between pins `0-1`, `2-3`, `4-5`, and `6-7`. The smoke resets those pins, verifies GPIO output/input loopback in both directions for each pair, exercises `p2.smart.wrpin`, `wxpin`, `wypin`, `akpin`, `rdpin`, `rqpin`, `start`, and `clear`, and checks invalid pin/value diagnostics.
+- [x] Added always-on default-build `p2.smart` runtime module aliases and lower-case Catalina `smartpin.h` constants, excluding bit-31 `P_INVERT_A` until unsigned raw values are represented safely.
+- [x] Extended `/tests/p2/smoke_smartpins_loopback.be` with PWM-output to rise-counter loopback coverage in both directions across each wired pair.
+- [x] Extended `/tests/p2/smoke_smartpins_loopback.be` with NCO-output to rise-counter loopback coverage in both directions across each wired pair, using Catalina's documented NCO mode sequence.
+- [x] Added `modules/p2smart.be`, a conservative source-level wrapper module for `p2smart.Counter`, `p2smart.PWM`, and `p2smart.NCO` over the raw `p2.smart` helpers, including bounded argument validation and compact `info()` diagnostics.
+- [x] Added `tests/p2/host_p2smart.be` to verify `p2smart` counter/PWM/NCO generated call sequences and invalid argument diagnostics against a fake `p2.smart`/`p2.pin` backend, and wired it into `make test-p2-host`.
+- [x] Extended `modules/p2smart.be` with `p2smart.Pulse` and `p2smart.Transition` wrappers for Catalina-documented pulse/cycle and transition smart-pin modes, including bounded X/Y setup validation, update helpers, and compact `info()` diagnostics.
+- [x] Extended `tests/p2/host_p2smart.be` to verify pulse/cycle and transition generated smart-pin call sequences plus invalid argument diagnostics against the fake backend.
+- [x] Added `p2smart` to `libstore.known`, coverage metadata, SD import, repeated import/cache, low-memory churn, and module inventory smokes.
+- [x] Updated `/tests/p2/smoke_smartpins_loopback.be` so PWM, NCO, pulse/cycle, and transition loopback setup goes through the new `p2smart` wrappers while raw helper coverage remains in place.
+- [x] Fixed parser-sensitive C-style conditionals in `/tests/p2/smoke_module_inventory.be` so the smoke bytecode-compiles under the current Berry parser.
+- [x] Ran `make test-host` locally on 2026-06-24 after adding `p2smart`; it passed the 54-test desktop suite, skipped lcov/genhtml because those tools were absent, and completed all nine P2 host regressions including `tests/p2/host_p2smart.be`.
+- [x] Re-ran focused bytecode/static checks after adding `p2smart`: `./berry -c modules/p2smart.be`, `smoke_smartpins_loopback.be`, `smoke_import_all_libs.be`, `smoke_import_cache.be`, `smoke_import_churn.be`, `smoke_module_inventory.be`, `python3 -m py_compile scripts/p2/repl_smoke.py`, and `git diff --check`; all passed.
+- [x] Re-ran `make test-host` locally on 2026-06-24 after extending `p2smart` with pulse/cycle and transition wrappers; it passed the 54-test desktop suite, skipped lcov/genhtml because those tools were absent, and completed all nine P2 host regressions including the expanded `tests/p2/host_p2smart.be`.
+- [x] Re-ran focused bytecode/static checks after extending `p2smart`: `./berry -c modules/p2smart.be`, `smoke_smartpins_loopback.be`, `smoke_import_all_libs.be`, `smoke_import_cache.be`, `smoke_import_churn.be`, `python3 -m py_compile scripts/p2/repl_smoke.py`, and `git diff --check`; all passed.
+- [x] Ran `make p2-minimal TOOLCHAIN=catalina CATALINA_DIR=../Catalina` locally on 2026-06-24 after adding `p2smart`; the target completed the normal Catalina tool/prebuild path and did not need to relink because this change only added SD/host-side Berry modules and tests.
+- [x] Added a `smartpins-loopback` suite to `scripts/p2/repl_smoke.py` and documented the wiring/command in `docs/testing.md`.
+- [x] Verified the new smoke compiles with `./berry -c tests/p2/smoke_smartpins_loopback.be -o /tmp/berry-smoke-smartpins-loopback.bec`.
+- [x] Ran `make p2-xmm TOOLCHAIN=catalina CATALINA_DIR=../Catalina` locally on 2026-06-24 after the default-build `p2.smart` runtime module and constants were added. Native Catalina 8.8.9 built the XMM image successfully at `948128 / 16777216` bytes.
+- [x] Forced a fresh `make p2-minimal TOOLCHAIN=catalina CATALINA_DIR=../Catalina` rebuild locally on 2026-06-24 after the smart-pin updates; the no-PSRAM minimal image still passed the Hub RAM guard at `464416 / 524288` bytes.
+- [x] Ran `make test-host` locally on 2026-06-24 after the smart-pin updates; it passed the 54-test desktop suite, skipped lcov/genhtml because those tools were absent, and completed all eight P2 host regressions.
+- [x] Re-ran `./berry -c tests/p2/smoke_p2_api.be -o /tmp/berry-smoke-p2-api.bec`, `./berry -c tests/p2/smoke_smartpins_loopback.be -o /tmp/berry-smoke-smartpins-loopback.bec`, `python3 -m py_compile scripts/p2/repl_smoke.py`, and `git diff --check` after the smart-pin updates; all passed.
+- [x] Checked for attached serial devices locally before running the hardware suite; none of `/dev/cu.*`, `/dev/ttyUSB*`, or `/dev/ttyACM*` was present, so on-board smart-pin execution remains pending.
+- [x] Extended `modules/p2smart.be` with `p2smart.Repository` and `p2smart.AsyncSerialPair` wrappers. Repository mode stages X-register read/write checks; async serial pair stages adjacent-pin TX/RX byte setup using Catalina's smart-pin serial mode pattern.
+- [x] Extended `tests/p2/host_p2smart.be` to verify repository and async serial generated call sequences, byte extraction from `rdpin`, neighbor-input mode selection for both jumper directions, and invalid argument diagnostics against the fake backend.
+- [x] Extended `/tests/p2/smoke_smartpins_loopback.be` to cover repository mode on every jumper pin and async serial byte loopback in both directions across each wired pair.
+- [x] Re-ran focused checks after repository/async-serial smart-pin coverage: `./berry tests/p2/host_p2smart.be`, bytecode compiles for `modules/p2smart.be`, `smoke_smartpins_loopback.be`, `smoke_import_all_libs.be`, `smoke_import_cache.be`, `smoke_import_churn.be`, `smoke_module_inventory.be`, `python3 -m py_compile scripts/p2/repl_smoke.py`, `make test-p2-host`, `make test-host`, `git diff --check`, stale legacy-reference scans, and `make p2-minimal TOOLCHAIN=catalina CATALINA_DIR=../Catalina`; all passed or completed, with hardware execution still blocked by no visible serial device.
+- [x] Expanded `/tests/p2/smoke_p2_api.be` grouped GPIO coverage so `p2.pin` now stages `dir_low`, `dir_high`, `write`, `low`, `high`, `toggle`, `float`, and `read`, including bool/int writes, both toggle edges, invalid write values, invalid write pins, and reserved-pin write rejection when applicable.
+- [x] Expanded `/tests/p2/smoke_p2_api.be` grouped clock coverage with `p2.clock.set` / `p2.clock.hubset` function-shape checks and non-destructive negative-argument diagnostics, while avoiding valid clock-changing calls in the smoke.
+- [x] Expanded `/tests/p2/smoke_p2_api.be` grouped cog coverage with `stop`, `attention`, and `wait_attention` function-shape checks, no-op `attention(0)`, `poll_attention()` type coverage, and invalid `check`, `stop`, and `attention` diagnostics while avoiding blocking `wait_attention()` and valid cog-stop calls.
+- [x] Re-ran focused validation after the grouped P2 API smoke expansion: `./berry -c tests/p2/smoke_p2_api.be`, `./berry tests/p2/host_p2smart.be`, `python3 -m py_compile scripts/p2/repl_smoke.py`, `git diff --check`, `make test-p2-host`, and `make p2-minimal TOOLCHAIN=catalina CATALINA_DIR=../Catalina`; all passed or completed through the native sibling Catalina path.
+- [x] Expanded `/tests/p2/smoke_p2_api.be` grouped lock coverage with function-shape checks for `new`, `ret`, `try`, `release`, and `check`, allocated-lock exercise when a hardware lock is available, and invalid-range diagnostics for `try`, `release`, `ret`, and `check`.
+- [x] Re-ran focused validation after the grouped lock smoke expansion: `./berry -c tests/p2/smoke_p2_api.be`, `python3 -m py_compile scripts/p2/repl_smoke.py`, `git diff --check`, `make test-p2-host`, and `make p2-minimal TOOLCHAIN=catalina CATALINA_DIR=../Catalina`; all passed or completed through the native sibling Catalina path.
+- [x] Expanded `/tests/p2/smoke_p2_api.be` grouped CORDIC/math/RNG coverage with result-shape checks for `rotxy`, `polxy`, and `xypol`, deterministic checks for `isqrt`, `muldiv64`, `rev`, and `encod`, RNG return-type coverage, and negative diagnostics for unsigned math/CORDIC arguments.
+- [x] Re-ran focused validation after the grouped CORDIC/math/RNG smoke expansion: `./berry -c tests/p2/smoke_p2_api.be`, `./berry tests/p2/host_p2smart.be`, `python3 -m py_compile scripts/p2/repl_smoke.py`, `git diff --check`, `make test-p2-host`, and `make p2-minimal TOOLCHAIN=catalina CATALINA_DIR=../Catalina`; all passed or completed through the native sibling Catalina path.
+- [x] Restored and expanded `/tests/p2/smoke_p2_api.be` safe `p2.asm` and backed `p2.debug` facade coverage with safe intrinsic reads/waits, debug snapshot/heap/GC/cog/memory-map/pin/smart-pin/register diagnostics, and negative diagnostics for invalid `asm`/`debug` arguments.
+- [x] Re-ran focused validation after restoring `p2.asm`/`p2.debug` API smoke coverage: `./berry -c tests/p2/smoke_p2_api.be`, `./berry tests/p2/host_p2smart.be`, `python3 -m py_compile scripts/p2/repl_smoke.py`, `git diff --check`, `make test-p2-host`, and `make p2-minimal TOOLCHAIN=catalina CATALINA_DIR=../Catalina`; all passed or completed through the native sibling Catalina path.
+- [x] Expanded `/tests/p2/smoke_p2_api.be` backed `p2.debug` coverage with `pins()` 64-entry snapshot checks and explicit current-cog `registers(cog)` field checks.
+- [x] Re-ran focused validation after expanding `p2.debug.pins()` / explicit-register smoke coverage: `./berry -c tests/p2/smoke_p2_api.be`, `./berry tests/p2/host_p2smart.be`, `python3 -m py_compile scripts/p2/repl_smoke.py`, `git diff --check`, `make test-p2-host`, and `make p2-minimal TOOLCHAIN=catalina CATALINA_DIR=../Catalina`; all passed or completed through the native sibling Catalina path.
+- [x] Added explicit `soak` and `soak-smartpins` suites to `scripts/p2/repl_smoke.py`. The default soak suite repeats import/cache, bounded import churn plus GC, library behavior, cooperative task coverage, closure-based cog spawn/stop, and grouped P2 API coverage. The smart-pin variant adds the jumper-dependent smart-pin loopback coverage for pairs `0-1`, `2-3`, `4-5`, and `6-7`.
+- [x] Changed `make soak-p2` to default to `SOAK_P2_SUITE=soak` instead of reusing the normal `TEST_P2_SUITE`, and documented `SOAK_P2_SUITE=soak-smartpins` for wired boards.
+- [x] Hardware-probed `/dev/ttyUSB0` with the user-provided jumper wiring. Verified the board responds to the P2 REPL, uploaded revised `modules/p2smart.be` and `/tests/p2/smoke_smartpins_loopback.be` to SD, and loaded the current Catalina XMM image interactively with the sibling `../Catalina` payload path. The smartpin smoke currently reaches `P2_SMOKE_BEGIN smartpins_loopback` and then fails before pin exercise because native `p2.smartpin_*` attributes are not visible from the SD-loaded `p2smart` source module on that image.
+- [x] Fixed native `p2` visibility for SD-loaded source modules by registering the cached native `p2` module as a global, so `import p2` / `import p2 as ...` returns the module object on the XMM image.
+- [x] Fixed `p2smart` smart-pin wrappers so `start()` does not call GPIO `dir_high()` after `_pinstart()`. The GPIO helper intentionally clears smart-pin mode, so the old wrapper disabled PWM/NCO/pulse/transition immediately after setup.
+- [x] Fixed `p2smart.Pulse.start()` and `p2smart.Transition.start()` to issue an explicit `wypin()` trigger after setup, which made pulse/cycle and transition events countable in the jumper smoke.
+- [x] Adjusted `p2smart.AsyncSerialPair` default RX mode to local `async_rx` for physically wired TX/RX pins instead of forcing adjacent-pin selector bits.
+- [x] Rebuilt and flashed the current Catalina XMM image with native sibling Catalina: `make p2-xmm TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2` produced `948192 / 16777216` bytes, and `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0` installed it.
+- [x] Hardware-verified `/tests/p2/smoke_smartpins_loopback.be` on `/dev/ttyUSB0` with jumpers `0-1`, `2-3`, `4-5`, and `6-7`: `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite smartpins-loopback --timeout 240` passed on the flashed XMM image. Coverage includes GPIO both directions, raw smart-pin helpers, repository mode calls, PWM/NCO/pulse/transition-to-rise-counter checks, async TX/RX setup/send/query/ack in both directions, and negative raw-helper diagnostics. Blocking async RX byte `rdpin` readback remains open.
+- [x] Re-ran local validation after the smart-pin hardware fixes: `./berry -c modules/p2smart.be`, `./berry -c tests/p2/smoke_smartpins_loopback.be`, `./berry tests/p2/host_p2smart.be`, `python3 -m py_compile scripts/p2/repl_smoke.py scripts/p2/repl_upload.py`, `git diff --check`, and `make test-p2-host`; all passed, with only the existing `baselib_trace` unused warning during the host rebuild.
+- [x] Enabled the grouped low-level P2 facade module builders in the default Catalina P2 image by setting `BE_P2_ENABLE_ROADMAP_NATIVE_FACADES=1`. Rebuilt and flashed with the native sibling Catalina path: `make p2-xmm TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2` and `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0`. This was the intermediate grouped-facade XMM image before the later public-container fixes and reflash.
+- [x] Fixed absolute counter waits so `waitcnt` accepts Berry's signed representation of 32-bit P2 counter values instead of rejecting high-bit counter ticks as negative values. The smoke now avoids executing a valid absolute `waitcnt` target because missed targets can block until counter wrap; relative wait helpers remain exercised.
+- [x] Hardware-probed grouped P2 module exposure on `/dev/ttyUSB0`; `p2.clock`, `p2.cog`, `p2.lock`, `p2.pin`, `p2.cordic`, `p2.math`, `p2.rng`, `p2.smart`, `p2.asm`, and `p2.debug` all reported as modules on the flashed XMM image.
+- [x] Ran focused `/dev/ttyUSB0` grouped API probes after enabling the facades: clock relative waits, cog `id/check/attention/poll_attention`, lock `new/check/ret`, LED pin write/read/float, deterministic math/RNG/asm reads, and debug map/register probes all returned. The first full grouped smoke exposed additional public-container/test-shape issues, which are fixed and recorded in the later passing hardware entry below.
+- [x] Re-ran `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite smartpins-loopback --timeout 240` after enabling grouped facades; the smart-pin hardware loopback suite still passed across jumper pairs `0-1`, `2-3`, `4-5`, and `6-7`.
+- [x] Fixed grouped P2 API hardware smoke blockers on `/dev/ttyUSB0`: `p2.status_info()["cogs"]`, `p2.debug.cogs()`, and `p2.debug.pins()` now return public Berry list instances containing public map instances rather than raw backing containers; `p2.clock.waitcnt` accepts signed Berry representations of 32-bit counter targets; the API smoke avoids executing valid absolute `waitcnt` targets; lock smoke uses `p2.lock.("try")` for the reserved method name; CORDIC result-shape checks expect public map instances; and heap diagnostics check the existing `current` key.
+- [x] Rebuilt and flashed with native sibling Catalina only: `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0`. The flashed Catalina XMM image is `959808 / 16777216` bytes.
+- [x] Hardware-verified grouped P2 API smoke on `/dev/ttyUSB0`: uploaded `/tests/p2/smoke_p2_api.be` and ran `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/tests/p2/smoke_p2_api.be")' --expect 'P2_SMOKE_PASS p2_api' --timeout 180`; it passed through status, clock, cog/lock, GPIO, math/ASM, debug, negative, and smart stages.
+- [x] Re-ran smart-pin hardware loopback on `/dev/ttyUSB0` with jumpers `0-1`, `2-3`, `4-5`, and `6-7`: `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite smartpins-loopback --timeout 240` passed across all four pairs in both directions, including GPIO, raw helpers, repository, PWM, NCO, pulse, transition, async setup/send/query/ack, and negative diagnostics.
+- [x] Re-ran local validation after the grouped API hardware fixes: `./berry -c tests/p2/smoke_p2_api.be`, `./berry tests/p2/host_p2smart.be`, `python3 -m py_compile scripts/p2/repl_smoke.py scripts/p2/repl_upload.py`, `git diff --check`, and `make test-p2-host`; all passed, with only the existing `baselib_trace` unused warning during the host rebuild.
+- [x] Extended `modules/p2smart.be` with conservative `p2smart.ADC` / `p2smart.adc(...)` and `p2smart.DAC` / `p2smart.dac(...)` wrappers. ADC validates sample ticks and exposes `start()`, `read()`, `query()`, `ack()`, `clear()`, and `info()`; DAC validates byte output/frame values and exposes `start()`, `set(value)`, `clear()`, and `info()`.
+- [x] Extended `tests/p2/host_p2smart.be` and the import/cache/churn smokes so ADC/DAC wrapper classes, factory functions, generated raw smart-pin call sequences, and invalid argument diagnostics are covered on the host.
+- [x] Extended `/tests/p2/smoke_smartpins_loopback.be` with DAC-output to ADC-input setup/readback coverage in both directions across jumper pairs `0-1`, `2-3`, `4-5`, and `6-7`. The smoke prints `P2_SMOKE_ADC_VALUES` samples and asserts integer readback; calibrated low/high analog deltas are intentionally still open because the observed values vary by pair and suite context.
+- [x] Uploaded the updated `/modules/p2smart.be` and `/tests/p2/smoke_smartpins_loopback.be`, then re-ran `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite smartpins-loopback --timeout 300`; it passed with `P2_SMOKE_PASS smartpins_loopback` on the flashed Catalina XMM image.
+- [x] Re-ran grouped P2 API hardware smoke after the ADC/DAC smart-pin changes: `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/tests/p2/smoke_p2_api.be")' --expect 'P2_SMOKE_PASS p2_api' --timeout 180`; it still passed.
+- [x] Re-ran local validation after the ADC/DAC wrapper work: `./berry -c modules/p2smart.be`, `./berry tests/p2/host_p2smart.be`, `./berry -c tests/p2/smoke_smartpins_loopback.be`, `./berry -c tests/p2/smoke_import_all_libs.be`, `./berry -c tests/p2/smoke_import_cache.be`, `./berry -c tests/p2/smoke_import_churn.be`, `python3 -m py_compile scripts/p2/repl_smoke.py scripts/p2/repl_upload.py`, `git diff --check`, and `make test-p2-host`; all passed, with only the existing `baselib_trace` unused warning during the host rebuild.
+- [x] Added `count_highs` fallback metadata to `modules/p2smart.be` and extended `/tests/p2/smoke_smartpins_loopback.be` with GPIO-driven high-counter loopback in both directions across every jumper pair.
+- [x] Re-uploaded the updated `p2smart` module and smartpin loopback smoke to `/dev/ttyUSB0`, then re-ran `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite smartpins-loopback --timeout 300`; it passed with `P2_SMOKE_CASE high_counter_ab`, `P2_SMOKE_CASE high_counter_ba`, and `P2_SMOKE_PASS smartpins_loopback`.
+- [x] Extended `modules/p2smart.be` with conservative `p2smart.GPIOInput` / `p2smart.gpio_input(...)` and `p2smart.GPIOOutput` / `p2smart.gpio_output(...)` wrappers over the grouped `p2.pin` facade. The wrappers validate pins and output values, expose `start()`, `read()`, `high()`, `low()`, `write()`, `toggle()`, `clear()`, and `info()` as appropriate, and do not hide the underlying GPIO operations.
+- [x] Extended `tests/p2/host_p2smart.be` and the import/cache/churn smokes so GPIO wrapper classes, factories, generated `p2.pin` call sequences, and invalid argument diagnostics are covered on the host.
+- [x] Updated `/tests/p2/smoke_smartpins_loopback.be` so the existing GPIO loopback cases now exercise `p2smart.GPIOInput` and `p2smart.GPIOOutput` in both directions across jumper pairs `0-1`, `2-3`, `4-5`, and `6-7`, while raw pin reset coverage remains in place.
+- [x] Re-uploaded the updated `p2smart` module and smartpin loopback smoke to `/dev/ttyUSB0`, then re-ran `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite smartpins-loopback --timeout 300`; it passed with GPIO wrapper loopback, high-counter loopback, DAC/ADC setup/readback samples, and `P2_SMOKE_PASS smartpins_loopback`.
+- [x] Implemented native `map.values()` and changed native `map.keys()` to return public list snapshots, matching the P2 collection/map smokes' expected `.size()`, `.find()`, iteration, and mutation-isolation behavior while preserving `map.iter()` as the value iterator.
+- [x] Updated stale P2 smoke assumptions for `list.remove()` / `map.remove()` return values and iterator exhaustion: remove calls now verify post-state instead of removed values, and list/range iterator exhaustion now expects `stop_iteration`.
+- [x] Rebuilt and flashed the XMM image with native sibling Catalina only: `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0`; the stable flashed image is `960320 / 16777216` bytes.
+- [x] Hardware-verified the map/list/range fixes on `/dev/ttyUSB0`: `/tests/p2/smoke_map_core.be`, `/tests/p2/smoke_collections.be`, `/tests/p2/smoke_range.be`, and `/tests/p2/smoke_list_core.be` all passed on the flashed Catalina XMM image.
+- [x] Re-ran smart-pin hardware loopback on `/dev/ttyUSB0` after the runtime/test fixes with jumpers `0-1`, `2-3`, `4-5`, and `6-7`; `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite smartpins-loopback --timeout 360` passed across GPIO wrappers, raw helpers, repository mode, PWM, high-counter, NCO, pulse, transition, async serial setup, DAC/ADC setup/readback samples, and negative diagnostics.
+- [x] Tried enabling XMM extended native modules to unblock the full compatibility/stdlib smoke. The image built at `966848 / 16777216`, but both `import global` and `import global as g` hung on hardware, so the extended-module gate was reverted and the board was reflashed to the stable `960320` byte image. The native `global` module remains a real runtime blocker for full `smoke_all`/stdlib verification.
+- [x] Fixed a latent C syntax error in the non-precompiled `sys` native module registration table by adding the missing comma between `path` and `path_add`; this was exposed while compiling the extended-module XMM experiment.
+- [x] Narrowed the native `global` blocker on `/dev/ttyUSB0`: skipping import-time auto-call for the native `global` module lets `import global` return on the XMM image, and host `tests/global.be`, `/tests/p2/smoke_global.be`, and `make test-p2-host` still pass. Hardware still hangs at `global()`, so the XMM extended-module gate remains disabled before claiming full stdlib/compat coverage.
+- [x] Hardened the native `global()` table-view implementation on the host side so it returns a public `map` snapshot through low-level map insertion and bounded descriptor iteration. This is not yet hardware-verified because `global()` still hangs on P2 XMM and remains tracked in `TODO.md`.
+- [x] Rebuilt and flashed the stable XMM image after re-disabling extended modules and native `time`: `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0` installed a `960416 / 16777216` byte image.
+- [x] Hardware-verified the final stable flashed image on `/dev/ttyUSB0`: grouped P2 API passed, and `scripts/p2/repl_smoke.py --suite smartpins-loopback --timeout 300` passed across jumpers `0-1`, `2-3`, `4-5`, and `6-7`, including GPIO wrappers, raw helpers, repository mode, PWM, high-counter, NCO, pulse, transition, async serial setup/send/query/ack, DAC/ADC setup/readback samples, and negative diagnostics.
+- [x] Re-ran grouped P2 API plus smartpin loopback as a two-iteration hardware repeat on the final `960416` byte XMM image: both iterations passed `P2_SMOKE_PASS p2_api` and `P2_SMOKE_PASS smartpins_loopback` on `/dev/ttyUSB0`.
+- [x] Fixed the native P2 cooperative task backend return handling and timeout bookkeeping: task calls now pop arguments after `be_call()`, sleep/event timeouts use relative millisecond requests with wrap-safe comparisons, and timeout wakeups are reported correctly. Hardware-verified on `/dev/ttyUSB0` with `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite task --timeout 180 --startup-timeout 120`, which passed `P2_SMOKE_PASS task` on the Catalina XMM image.
+- [x] Hardened `libstore` and `p2mem` for P2 SD/XMM import-cache stress: `libstore.info()` now uses a shallow source-safe snapshot instead of deep compiled/cache probes, `compile_cache_plan()` no longer calls back into full resolve, `libstore.status()` avoids a full module directory scan for `library_count`, and `p2mem` no longer imports the generic `gc` module on P2, using the working `p2.gc()` path instead.
+- [x] Added hardware-safe short import/cache/churn smoke aliases `/tests/p2/impcache.be` and `/tests/p2/impchurn.be`. They keep repeated-import and metadata coverage for `binary_heap`, `configstore`, `libstore`, `math`, `p2compat`, `p2ipc`, `p2mem`, `p2smart`, `task`, and `wifi`, avoid the P2-hostile `introspect` pointer checks and repeated full `libstore.info()` scans, and keep the PSRAM source-cache round trip to a representative module with explicit cleanup before the next smoke.
+- [x] Hardware-verified the repaired import/cache/churn path on `/dev/ttyUSB0`: `run_file("/tests/p2/impcache.be")` passed `P2_SMOKE_PASS import_cache`, `run_file("/tests/p2/impchurn.be")` passed `P2_SMOKE_PASS import_churn`, and `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite soak-smartpins --repeat 1 --timeout 700 --startup-timeout 120` passed end to end through import cache, import churn, task, grouped P2 API, smartpin loopback on jumper pairs `0-1`, `2-3`, `4-5`, `6-7`, and final `p2.gc()`.
+- [x] Re-audited active P2 build documentation and tooling for stale Catalina paths after switching to the sibling install. No `CATALINA_USE_DOCKER` or Docker-Catalina path remains in active docs/tooling, and current user-facing P2 docs now show `CATALINA_DIR=../Catalina` instead of the old absolute `catalina-speccy88` checkout. Re-verified the native sibling Catalina path with `make p2-minimal TOOLCHAIN=catalina CATALINA_DIR=../Catalina`; Catalina 8.8.9 built successfully and the image passed the Hub RAM guard at `464832 / 524288` bytes.
+- [x] Repaired the default hardware `soak` path on `/dev/ttyUSB0`. `/tests/p2/smoke_libraries.be` now avoids P2-hostile deep `libstore`/`p2mem` diagnostics while preserving library, cache, policy, p2mem stats/cache/gc, and IPC checks; `/tests/p2/smoke_cog_closure.be` now treats native list/map containers as public instance-backed containers and checks closure-cog `calls` as a non-negative native loop counter instead of a deterministic immediate tick count. Verified with `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite soak --repeat 1 --timeout 700 --startup-timeout 120`, which passed import cache, import churn, libraries, task, closure-cog, grouped P2 API, and final `p2.gc()` on the Catalina XMM image.
+- [x] Made dormant P2 GC trace switches overrideable from the native Catalina command line by guarding `BE_P2_TRACE_GC_COLLECT` and `BE_P2_TRACE_GC_MODULE` in `port/p2/include/berry_conf_p2.h`; default builds still leave both traces off.
+- [x] Rebuilt and flashed an opt-in extended-module diagnostic XMM image with native sibling Catalina: `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0 CATALINA_EXTRA_CFLAGS='-DBE_P2_ENABLE_EXTENDED_MODULES=1 -DBE_P2_TRACE_GC_MODULE=1'`. The image built at `967040 / 16777216` bytes before the dynamic-module experiment and `966816 / 16777216` bytes during it.
+- [x] Narrowed the extended-module call-path blocker on `/dev/ttyUSB0`: `import string; string.format("%i", 7)` and `import json; json.load("{\"a\":1}")["a"]` still call successfully, and `import gc; print(type(gc.collect))` reports `function`, but `import gc; print(type(gc.collect), gc.collect())` hangs before the `[gcmod] collect start` trace. This proves the failing `gc.collect()` call is not entering `m_collect()`.
+- [x] Tested and backed out a P2-only dynamic-module initializer experiment for `global`, `gc`, and `sys`: the image built, but lookup-only `import gc; print(type(gc), type(gc.collect), type(gc.allocated))` hung earlier than the prior static attr-table shape, so the experiment was not kept as a fix.
+- [x] Rebuilt and reflashed the stable non-extended XMM image with native sibling Catalina only: `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0` installed a `960608 / 16777216` byte image.
+- [x] Hardware-verified the restored stable `960608` byte XMM image on `/dev/ttyUSB0`: `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite soak-smartpins --repeat 1 --timeout 700 --startup-timeout 120` passed end to end through import cache, import churn, task, grouped P2 API, smartpin loopback on jumper pairs `0-1`, `2-3`, `4-5`, `6-7`, and final `p2.gc()`.
+- [x] Fixed the P2 XMM extended native-module zero-function-pointer blocker for `gc`, `sys`, `global`, and `introspect` by adding P2 cached-module constructors that push native function values at runtime instead of relying on static attr-table function fields. The cached `global` module is explicitly named and P2 routes its assignments through the native `setmember` hook so `global.foo = value`, `global.contains()`, `global()`, and `global.undef()` agree.
+- [x] Fixed `sys.path()` to return a fresh public list instance backed by a copy of the VM module path list, so caller mutation no longer changes future `sys.path()` results. Updated `/tests/p2/smoke_sys.be` to avoid P2-hostile raw-pointer identity checks through `introspect.toptr()` and to assert the public list contract with `isinstance(..., list)`.
+- [x] Hardware-verified the extended-module diagnostic XMM image with native sibling Catalina only: `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0 CATALINA_EXTRA_CFLAGS='-DBE_P2_ENABLE_EXTENDED_MODULES=1 -DBE_P2_TRACE_GC_MODULE=1 -DBE_P2_TRACE_NATIVE_CALL=1'` built and flashed a `980416 / 16777216` byte image. On `/dev/ttyUSB0`, focused probes verified `gc.collect()` reaches `[gcmod] collect start`, `sys.path()` returns a function-backed fresh list, and `global.p2_probe=42` is visible through direct member read, `global.contains()`, and `global().find()` before `global.undef()`.
+- [x] Hardware-verified the repaired extended `global` and `sys` smokes on `/dev/ttyUSB0`: `/tests/p2/smoke_global.be` passed with `P2_SMOKE_PASS global`, and after uploading the refreshed SD copy, `/tests/p2/smoke_sys.be` passed with `P2_SMOKE_PASS sys` on the diagnostic extended-module XMM image.
+- [x] Restored the board to a normal non-diagnostic XMM image with native sibling Catalina only: `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0` installed a `967520 / 16777216` byte image with no extended trace flags. Final verification passed with `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite soak-smartpins --repeat 1 --timeout 700 --startup-timeout 120`, covering import cache, import churn, task, grouped P2 API, smart-pin loopback over jumpers `0-1`, `2-3`, `4-5`, `6-7`, and final `p2.gc()`.
+
+### Priority 1 extended stdlib module verification
+
+- [x] Fixed the P2 XMM extended native `time` module by adding a cached-module constructor and routing `BE_P2_ENABLE_TIME_MODULE` through the opt-in `BE_P2_ENABLE_EXTENDED_MODULES` gate. Hardware-verified `/tests/p2/smoke_time.be` on `/dev/ttyUSB0`.
+- [x] Fixed the P2 XMM extended native `strict` module by adding a cached-module constructor that installs the native import hook and enables compiler strict mode on the P2 cached import path. Hardware-verified `/tests/p2/smoke_strict.be` on `/dev/ttyUSB0`, including missing-global rejection, known-global visibility, branch/loop/conditional-expression checks, and cleanup-after-undef rejection.
+- [x] Expanded and corrected `/tests/p2/smoke_stdlib.be` for P2 hardware: `time.dump()` checks are timezone-neutral, `strict` accepts either host-style `nil` or P2 cached-module return shape while still proving strict compile behavior, and `solidify` is explicitly reported as skipped because the current P2 XMM profile does not ship it. Hardware-verified `/tests/p2/smoke_stdlib.be` on the extended diagnostic XMM image with `P2_SMOKE_PASS stdlib`.
+- [x] Fixed compact P2 native `string` compatibility used by the stdlib smoke: `escape()`, `tr()`, case-insensitive `startswith()` / `endswith()`, and `format == string.format` now match the expected compact behavior. Hardware probe coverage passed before the full `smoke_stdlib` run, and host execution/bytecode compile passed for `smoke_stdlib`.
+- [x] Corrected P2 introspect smoke expectations for `introspect.get()` unbound methods, unsupported scalar `toptr()` inputs, and pointer resurrection behavior; hardware-verified the focused introspect and `ismethod` smokes on the extended diagnostic XMM image. The SD long-filename alias/collision observed while alternating `smoke_introspect.be` and `smoke_introspect_ismethod.be` remains tracked as follow-up.
+- [x] Fixed the P2 XMM extended native `debug` module by adding a cached-module constructor that pushes native function values at runtime. Updated `/tests/p2/smoke_debug.be` for the observed `debug.caller()` depth semantics, then hardware-verified it on `/dev/ttyUSB0` with `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/tests/p2/smoke_debug.be")' --expect 'P2_SMOKE_PASS debug' --timeout 240 --startup-timeout 120` on the opt-in extended diagnostic XMM image.
+- [x] Rebuilt and flashed the normal non-diagnostic XMM image with native sibling Catalina only after the extended-module diagnostics: `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0` installed a `968352 / 16777216` byte image. Final hardware regression passed with `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite soak-smartpins --repeat 1 --timeout 700 --startup-timeout 120`, covering import cache, import churn, task, grouped P2 API, smart-pin loopback over jumpers `0-1`, `2-3`, `4-5`, `6-7`, and final `p2.gc()`.
+
+### Priority 1 solidify XMM hardware verification
+
+- [x] Enabled the native `solidify` module on the normal P2 XMM profile while leaving smaller non-XMM profiles gated off. The P2 cached constructor provides `dump`, `compact`, and `nocompact`; the P2 build avoids unsupported instance-constant emission paths for list/map/bytes constants and keeps class/function compaction available.
+- [x] Fixed the P2/Catalina solidify build path by making `be_print_inst()` available when either the debug module or solidify module is enabled, and by avoiding the empty generated native-module table entry for cached P2 `solidify`.
+- [x] Corrected `/tests/p2/smoke_solidify.be` to use the established Berry `super(self)` pattern for inherited method calls, then verified the smoke on the host and as bytecode.
+- [x] Rebuilt the normal XMM image with native sibling Catalina only: `make p2-xmm TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2` passed at `1015648 / 16777216` bytes, then `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0` installed it.
+- [x] Hardware-verified native `solidify` on `/dev/ttyUSB0` with `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/tests/p2/smoke_solidify.be")' --expect 'P2_SMOKE_PASS solidify' --timeout 240 --startup-timeout 120`; it passed on the normal XMM image with `P2_SMOKE_PASS solidify`.
+- [x] Re-ran the normal-image regression after enabling `solidify`: `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite soak-smartpins --repeat 1 --timeout 700 --startup-timeout 120` passed on the `1015648` byte XMM image, covering import cache, import churn, task, grouped P2 API, smart-pin loopback on jumper pairs `0-1`, `2-3`, `4-5`, `6-7`, and final `p2.gc()`.
+
+### Priority 1 native math and module smoke verification
+
+- [x] Hardened native P2 `math` behavior on the normal XMM image: `math.accel_info()` returns a public map describing the CORDIC backend, `math.nan` / `math.inf` use IEEE single-float non-finite values, non-finite string conversion and VM comparisons handle NaN/Inf explicitly, CORDIC angle conversion handles the `math.pi` half-turn boundary, and integer `sqrt()` returns exact integers for perfect squares while non-perfect squares return real approximations.
+- [x] Fixed public container return/type behavior needed by the module smoke: builtin map/list instances report as `map`/`list` through `type()`, `p2.cog_states()` now returns a public list instance instead of a raw backing list or the native function value, and grouped CORDIC result tests now expect public maps.
+- [x] Rebuilt and flashed the normal XMM image with native sibling Catalina only: `make p2-xmm TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2` built a `1023392 / 16777216` byte image, and `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0` installed it.
+- [x] Hardware-verified the repaired module path on `/dev/ttyUSB0`: `p2.cog_states()` focused probe returned `list 8`, `/tests/p2/smoke_p2_api.be` passed through status, clock, cog/lock, GPIO, math/ASM, debug, negative, and smart stages, `/tests/p2/smoke_modules.be` passed with nested P2 API coverage, and `/tests/p2/smoke_math_parity.be` passed on the same flashed image.
+- [x] Re-ran the jumper-dependent regression after the math/module fixes: `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite soak-smartpins --repeat 1 --timeout 700 --startup-timeout 120` passed end to end through import cache, import churn, task, grouped P2 API, smart-pin loopback on jumper pairs `0-1`, `2-3`, `4-5`, `6-7`, and final `p2.gc()`.
+
+### Priority 1 normal-XMM introspect and compat verification
+
+- [x] Added 8.3-safe hardware smoke aliases `/tests/p2/intro.be` and `/tests/p2/ismeth.be` for the existing `smoke_introspect.be` and `smoke_introspect_ismethod.be` content, and updated `/tests/p2/smoke_all.be` to call the aliases. This avoids the observed FAT long-filename collision where `/tests/p2/smoke_introspect.be` could execute the `smoke_introspect_ismethod` file content on the P2 SD card.
+- [x] Fixed cached module diagnostics by making `be_cache_module()` assign the cache key as the module name when caching an unnamed module. Hardware probe on `/dev/ttyUSB0` now reports `introspect.name(introspect.module("json")) == "json"` and likewise for `math` and `string`.
+- [x] Fixed P2 interactive `input()` by making `be_readstring()` append a newline to lines returned through the P2 serial line editor, matching the `fgets()`-style contract expected by Berry's base `input()` implementation while leaving REPL line handling unchanged.
+- [x] Updated `/tests/p2/smoke_compat.be` so `global`, `time`, `solidify`, and `strict` are exercised when present and skipped cleanly on the normal non-extended XMM profile. The normal profile still verifies the core, collections, bytes, closures/loops, `call()`, varargs, and `introspect` portions.
+- [x] Rebuilt and flashed the normal XMM image with native sibling Catalina only: `make p2-xmm TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2` built a `1023776 / 16777216` byte image, and `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0` installed it.
+- [x] Hardware-verified on `/dev/ttyUSB0`: `/tests/p2/intro.be` passed `P2_SMOKE_PASS introspect`, `/tests/p2/ismeth.be` passed `P2_SMOKE_PASS introspect_ismethod`, `scripts/p2/repl_smoke.py --suite compat --timeout 420 --startup-timeout 120` passed including `print(input("P2_INPUT_PROMPT"))`, grouped P2 API still passed, and `soak-smartpins` still passed across jumper pairs `0-1`, `2-3`, `4-5`, and `6-7`.
+
+### Priority 1 SD import/root verification and cache fallback
+
+- [x] Fixed current-directory imports on the P2/Catalina build by letting `load_cwd()` fall back to a relative module filename when source-file debug paths are unavailable. This makes `import name` honor `os.chdir()` through the P2 SD path resolver instead of forcing `/<name>.be`.
+- [x] Made the SD import/root smokes more hardware-safe: added stage markers, bounded metadata visibility waits after SD writes, and 8.3-safe staged module names where FAT aliases caused long-name collisions.
+- [x] Corrected `/tests/p2/smoke_import_native_first.be` to check native module members through `introspect.contains()` instead of assuming native modules implement `contains()`.
+- [x] Hardened `libstore.cached_source()` so reconstructed PSRAM source-cache text is checked against the recorded source hash; mismatches evict the cached item and return `nil` so callers can fall back to direct SD source instead of compiling corrupt cache bytes.
+- [x] Hardware-verified the focused normal-XMM SD import/root path on `/dev/ttyUSB0` with short SD runners: `/tests/p2/ilayout.be`, `/tests/p2/infirst.be`, `/tests/p2/icwd.be`, `/tests/p2/iorder.be`, `/tests/p2/lpaths.be`, `/tests/p2/syspath.be` with expected normal-profile `sys` skip, `/tests/p2/pkgpath.be`, and `/tests/p2/sdmain.be` all passed.
+- [x] Hardware-verified `/tests/p2/impcache.be` on `/dev/ttyUSB0` after the cache fallback change. The run reported `P2_SMOKE_STEP import_cache cache_rejected binary_heap`, evicted the bad PSRAM cache entry, cleaned up, and passed `P2_SMOKE_PASS import_cache`.
+- [x] Focused local validation passed after these changes: `git diff --check`, bytecode compiles for the touched import/cache smokes and `modules/libstore.be`, `make test-p2-host`, and a native sibling Catalina XMM build/flash using `CATALINA_DIR=../Catalina`.
+
+### Priority 1 configstore P2 FAT listing verification
+
+- [x] Fixed `configstore.list()` to recognize P2/Catalina FAT directory entries that list `.json` files with the truncated `.JSO` extension, while preserving normal `.json` filtering.
+- [x] Updated `/tests/p2/smoke_configstore.be` to use 8.3-safe temporary names, cover valid JSON `null`, and accept the observed P2 FAT `P2CFG.JSO` list entry without depending on long filename behavior.
+- [x] Focused validation passed: `./berry -c modules/configstore.be -o /tmp/configstore.bec`, `./berry -c tests/p2/smoke_configstore.be -o /tmp/smoke_configstore.bec`, upload of `modules/configstore.be` and `/tests/p2/cfgstore.be`, cleanup of stale `p2cfg`, and `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/tests/p2/cfgstore.be")' --expect 'P2_SMOKE_PASS configstore' --timeout 240 --startup-timeout 120` on the normal XMM image.
+
+### Priority 2 p2smart hardware examples
+
+- [x] Added `examples/pwm_fade.be`, `examples/dac_write.be`, `examples/adc_read.be`, and `examples/uart_loopback.be` as small user-facing examples for the implemented `p2smart` PWM, DAC, ADC, and async serial wrappers. The examples default to the documented `0-1` jumper pair where a loopback/input is useful and clear/float their pins before exit.
+- [x] Focused validation passed: `./berry -c examples/pwm_fade.be -o /tmp/pwm_fade.bec`, `./berry -c examples/dac_write.be -o /tmp/dac_write.bec`, `./berry -c examples/adc_read.be -o /tmp/adc_read.bec`, and `./berry -c examples/uart_loopback.be -o /tmp/uart_loopback.bec`.
+- [x] Uploaded the four examples to `/berry/examples` and hardware-ran each once on `/dev/ttyUSB0` at `230400` baud with the normal XMM image: `/berry/examples/pwm_fade.be` reached `pwm fade done`, `/berry/examples/dac_write.be` reached `dac done`, `/berry/examples/adc_read.be` printed integer samples and reached `adc done`, and `/berry/examples/uart_loopback.be` printed raw loopback words for bytes 65, 66, and 67 before `uart loopback done`.
+- [x] Added `examples/gpio_loopback.be` for the high-level `p2smart.GPIOOutput` / `GPIOInput` wrappers on the documented `0-1` jumper pair. It writes low/high patterns, reads the input side, exercises `toggle()`, and clears/floats both pins before exit.
+- [x] Added `examples/nco_counter_loopback.be` for the high-level `p2smart.NCO` and `p2smart.Counter` wrappers on the documented `0-1` jumper pair. It starts an NCO output, samples rise counts, changes the NCO increment, and clears/floats both pins before exit.
+- [x] Added `examples/cog_closure.be` under the expected top-level example name. It uses the currently supported `p2.cog.spawn(closure, pin, rate_ms)` native-blink shape on pins `38` and `39`, prints handle diagnostics, stops both handles, and floats both pins before exit.
+- [x] Added `examples/cog_channel.be` using the current `p2ipc` channel API instead of the old `rtos.channel` wording. It demonstrates `send_result()`, full-channel diagnostics, `recv_result()`, empty-channel diagnostics, `close_result()`, and send-after-close diagnostics.
+- [x] Added explicit unsupported VGA/USB capability records to `p2compat`: `video_output`, `vga_demo`, `usb_hid`, and `usb_demo`.
+- [x] Added `examples/vga_test_pattern.be` and `examples/usb_keyboard_mouse.be` as honest unsupported examples that query `p2compat` and report the current no-backed-demo status instead of faking video or USB behavior.
+- [x] Updated legacy `examples/p2/` blink and cog examples to compile against the current grouped APIs: `examples/p2/blink.be`, `examples/p2/pin_helpers.be`, and `examples/p2/closure_blinker.be` now use `p2.pin` / `p2.clock`, while `examples/p2/cog_spawn_source_blinker.be` checks `p2.cog.capabilities()["spawn_source"]` before attempting the experimental source-backed path.
+- [x] Updated `docs/P2_SYSTEM_ROADMAP.md` and `docs/architecture-current.md` so their examples/current-state sections describe the active grouped APIs, `p2ipc` channels, cooperative `task` primitives, explicit unsupported VGA/USB examples, and the supported native-blink closure-cog shape instead of stale `p2.toggle`, `p2.cog.blinker`, `rtos`, or `taskspin` wording.
+- [x] Updated `docs/P2_MODULES.md` task and `p2.cog` examples to use grouped `p2.pin` helpers and the supported `p2.cog.spawn(closure, pin, rate_ms)` native-blink shape instead of the removed `p2.cog.blinker` descriptor wording.
+
+### Priority 2 p2smart quadrature wrapper
+
+- [x] Added `p2smart.Quadrature` / `p2smart.quadrature(pin_a, pin_b, mode)` as a conservative quadrature smart-pin wrapper. It defaults to adjacent B-input selectors for `pin_b == pin_a +/- 1`, accepts an explicit selector override, exposes `start()`, `read()`, `position()`, `query()`, `ack()`, `clear()`, and `info()`, and clears/floats both pins on close.
+- [x] Added `Quadrature.sample_after(wait_us)` result diagnostics with before/after position, signed delta, moved flag, direction, and wait interval. This improves static jumper and encoder probes without claiming real motion/direction validation is complete.
+- [x] Expanded `tests/p2/host_p2smart.be` to verify quadrature class/factory shape, forward and reverse adjacent selectors, custom selector setup, generated raw smart-pin call sequences, read/query/ack/clear behavior, and invalid pin/mode diagnostics.
+- [x] Added `examples/quadrature_counter.be`, a small example that opens quadrature mode on pins `0-1`, prints raw position samples, acknowledges samples, and clears the pins before exit.
+- [x] Focused validation passed: `./berry -c modules/p2smart.be -o /tmp/p2smart.bec`, `./berry tests/p2/host_p2smart.be`, bytecode compiles for the updated import/cache shape smokes, and `./berry -c examples/quadrature_counter.be -o /tmp/quadrature_counter.bec`.
+- [x] Uploaded `modules/p2smart.be` and `examples/quadrature_counter.be` to `/dev/ttyUSB0`, then hardware-ran `run_file("/berry/examples/quadrature_counter.be")`; it reported stable integer positions on the static `0-1` jumper and reached `quadrature counter done`.
+
+### Priority 2 p2smart smart-pin constants
+
+- [x] Expanded the `p2smart` fallback smart-pin constant table to preserve positive-valued Catalina `smartpin.h` names across selector bits, A/B filters, input/output drive options, DAC variants, NCO duty, PWM sawtooth/SMPS, register/counter/timer families, ADC external/scope variants, USB pair, and sync/async serial modes.
+- [x] Extended `tests/p2/host_p2smart.be` to pin representative constant values through the `p2smart.smart` surface so host/fallback refactors cannot silently drop those names.
+- [x] Focused validation passed: `./berry -c modules/p2smart.be -o /tmp/p2smart.bec`, `./berry tests/p2/host_p2smart.be`, and scoped `git diff --check`.
+
+### Priority 2 p2smart NCO duty wrapper
+
+- [x] Added setup-only `p2smart.NCODuty` / `p2smart.nco_duty(pin, bit_period, duty, mode)` for the Catalina `nco_duty` smart-pin mode. It validates pin/period/duty bounds, starts with `oe + nco_duty`, updates duty through `set_duty()`, exposes `info()`, and clears/floats the pin on close.
+- [x] Extended `tests/p2/host_p2smart.be` to verify `NCODuty` class/factory shape, capability status, generated raw smart-pin setup/update/clear calls, status-report grouping, and invalid duty bounds. Hardware waveform validation remains open in `TODO.md`.
+- [x] Focused validation passed: `./berry -c modules/p2smart.be -o /tmp/p2smart.bec`, `./berry tests/p2/host_p2smart.be`, and scoped `git diff --check`.
+
+### Priority 2 p2smart DAC variant helpers
+
+- [x] Added setup-only `p2smart.dac_mode(resistor, dither)` and `p2smart.dac_variant(pin, value, frame, resistor, dither)` helpers for named DAC mode setup. Supported names are `990r_3v`, `600r_2v`, `124r_3v`, `75r_2v`, `dither_pwm`, `dither_rnd`, `noise`, and `plain`.
+- [x] Extended `tests/p2/host_p2smart.be` to verify named DAC mode words, generated `DAC` setup/clear calls for a non-default variant, capability/status-report grouping, and invalid resistor/dither diagnostics. Hardware variant calibration remains open in `TODO.md`.
+- [x] Focused validation passed: `./berry -c modules/p2smart.be -o /tmp/p2smart.bec`, `./berry tests/p2/host_p2smart.be`, and scoped `git diff --check`.
+
+### Priority 2 p2smart PWM mode helpers
+
+- [x] Added setup-only `p2smart.pwm_mode(name)` and `p2smart.pwm_variant(pin, frame, duty, divisor, mode_name)` helpers for named PWM mode setup. Supported names are `triangle`, `sawtooth`, and `smps`; the existing `p2smart.pwm(...)` default remains triangle PWM.
+- [x] Extended `tests/p2/host_p2smart.be` to verify named PWM mode words, generated `PWM` setup/clear calls for a non-default variant, capability/status-report grouping, and invalid mode diagnostics. Sawtooth/SMPS hardware waveform validation remains open in `TODO.md`.
+- [x] Focused validation passed: `./berry -c modules/p2smart.be -o /tmp/p2smart.bec`, `./berry tests/p2/host_p2smart.be`, and scoped `git diff --check`.
+
+### Priority 2 p2smart counter/timer mode helpers
+
+- [x] Added setup-only `p2smart.counter_mode(name)` and `p2smart.counter_variant(pin, mode_name)` helpers for named counter/timer mode setup. Supported names cover register counters, rise/high counters, state/high/event timers, period timers, and counter timer modes.
+- [x] Extended `tests/p2/host_p2smart.be` to verify named counter/timer mode words, generated `Counter` setup/ack/clear calls for a non-default variant, capability/status-report grouping, and invalid mode diagnostics. Broad timer/counter timing validation remains open in `TODO.md`.
+- [x] Focused validation passed: `./berry -c modules/p2smart.be -o /tmp/p2smart.bec`, `./berry tests/p2/host_p2smart.be`, and scoped `git diff --check`.
+
+### Priority 2 p2smart ADC mode helpers
+
+- [x] Added setup-only `p2smart.adc_mode(source, family)` and `p2smart.adc_variant(pin, source, family, sample_ticks)` helpers for named ADC source/gain and family setup. Supported source/gain names are `1x`, `gio`, `vio`, `float`, `3x`, `10x`, `30x`, and `100x`; supported family names are `adc`, `adc_ext`, and `adc_scope`.
+- [x] Extended `tests/p2/host_p2smart.be` to verify named ADC mode words, generated `ADC` setup/ack/clear calls for a non-default variant, capability/status-report grouping, and invalid source/family diagnostics. ADC variant calibration and filtering validation remain open in `TODO.md`.
+- [x] Focused validation passed: `./berry -c modules/p2smart.be -o /tmp/p2smart.bec`, `./berry tests/p2/host_p2smart.be`, and scoped `git diff --check`.
+
+### Priority 2 p2smart normal-pin wrapper
+
+- [x] Added setup-only `p2smart.NormalPin` / `p2smart.normal_pin(pin, mode, value)` for explicit smart-pin normal-mode setup. It starts `smart.normal` by default, then uses the normal GPIO read/write/high/low/toggle helpers, and clears/floats the pin on close.
+- [x] Extended `tests/p2/host_p2smart.be` to verify normal-mode setup, input-style floating start, output-style initial value, read/write/toggle/clear behavior, capability/status-report grouping, and invalid input diagnostics. Hardware loopback coverage remains with the existing verified GPIO wrapper smoke.
+- [x] Focused validation passed: `./berry -c modules/p2smart.be -o /tmp/p2smart.bec`, `./berry tests/p2/host_p2smart.be`, and scoped `git diff --check`.
+
+### Priority 2 p2smart synchronous serial wrapper
+
+- [x] Added `p2smart.SyncSerialPair` / `p2smart.sync_serial_pair(tx_pin, rx_pin, baud, bits, tx_mode, rx_mode)` as a conservative wrapper for `sync_tx`/`sync_rx` smart-pin setup. It exposes `start()`, `send()`, `available()`, `read_raw()`, `ack()`, `clear()`, and `info()`, with clear/floating cleanup for both pins.
+- [x] Added staged `transfer_result(value, wait_us, clock=nil)` and `transfer_results(values, wait_us, clock=nil)` diagnostics. They ack, send, optionally trigger a supplied `p2smart.Pulse` clock, wait/read through the existing result-shaped receive path, and report `sent`, `matched`, and `clocked` fields without claiming sync receive is hardware-validated.
+
+### Priority 2 p2smart counter diagnostics
+
+- [x] Added `p2smart.Counter.sample_after(wait_us)` for before/after counter sampling with `delta`, `advanced`, and `wait_us` result fields. This keeps NCO/PWM/pulse-to-counter probes result-shaped without claiming broader timer/counter timing validation.
+- [x] Updated `examples/nco_counter_loopback.be` to print the new counter sample diagnostics instead of raw ad hoc reads, and pinned the capability as `counter_sample_diagnostics: diagnostic`.
+
+### Priority 2 p2smart NCO diagnostics
+
+- [x] Added `p2smart.NCO.set_increment_result(increment, settle_us=nil)` diagnostics. It updates the NCO increment, optionally waits for settling, and reports pin/bit-period/increment/mode plus settle metadata without claiming NCO-duty waveform validation.
+- [x] Updated `examples/nco_counter_loopback.be` to print the NCO update result map and pinned the capability as `nco_increment_diagnostics: diagnostic`.
+- [x] Added `p2smart.NCODuty.set_duty_result(duty, settle_us=nil)` diagnostics. It updates duty, optionally waits for settling, and reports pin/bit-period/duty/mode plus settle metadata while leaving waveform validation open.
+
+### Priority 2 p2smart ADC diagnostics
+
+- [x] Added `p2smart.ADC.read_result()` and `sample_after(wait_us)` diagnostics. They report ready/event state, raw/value sample, pin/mode/sample ticks, and delay metadata while keeping calibrated ADC scaling/filtering open.
+- [x] Updated `examples/adc_read.be` to print the ADC sample result map instead of raw numbers, and pinned the capability as `adc_sample_diagnostics: diagnostic`.
+
+### Priority 2 p2smart DAC diagnostics
+
+- [x] Added `p2smart.DAC.set_result(value, settle_us=nil)` diagnostics. It writes the byte output, optionally waits for analog settling, and reports pin/mode/frame/value plus settle metadata without claiming DAC calibration.
+- [x] Updated `examples/dac_write.be` to print DAC write result maps and pinned the capability as `dac_set_diagnostics: diagnostic`.
+
+### Priority 2 p2smart PWM diagnostics
+
+- [x] Added `p2smart.PWM.set_duty_result(duty, settle_us=nil)` diagnostics. It updates duty, optionally waits for settling, and reports pin/frame/duty/divisor/mode plus settle metadata without claiming sawtooth/SMPS validation.
+- [x] Updated `examples/pwm_fade.be` to print PWM duty result maps and pinned the capability as `pwm_duty_diagnostics: diagnostic`.
+- [x] Added `p2smart.Pulse.trigger_result(count, settle_us=nil)` and `p2smart.Transition.trigger_result(count, settle_us=nil)` diagnostics. They trigger the output, optionally wait, and report wrapper-specific timing/count metadata while keeping broader waveform validation open.
+
+### Priority 2 p2smart repository diagnostics
+
+- [x] Added `p2smart.Repository.write_result(value, settle_us=nil)` diagnostics. It writes the repository X register, optionally waits for settling, and reports pin/mode/value plus settle metadata.
+
+### Priority 2 p2smart normal-pin diagnostics
+
+- [x] Added `p2smart.NormalPin.read_result()` and `write_result(value)` diagnostics so explicit normal-mode smart-pin probes can report pin/mode/value maps while keeping the existing read/write/high/low/toggle helpers intact.
+- [x] Expanded `tests/p2/host_p2smart.be` to verify synchronous serial class/factory shape, generated raw smart-pin setup/send/read/query/ack/clear behavior, and invalid pin/bit/send diagnostics. Updated the import/cache shape smokes to include `SyncSerialPair`.
+- [x] Added `examples/spi_loopback.be`, a small synchronous-serial probe. It now uses `0-1` as data plus `2-3` as clock, sends three bytes, prints `available`/`raw` receive status, and clears all pins before exit.
+- [x] Focused validation passed: `./berry -c modules/p2smart.be -o /tmp/p2smart.bec`, `./berry tests/p2/host_p2smart.be`, bytecode compiles for the updated import/cache shape smokes, and `./berry -c examples/spi_loopback.be -o /tmp/spi_loopback.bec`.
+- [x] Uploaded `modules/p2smart.be` and the earlier `examples/spi_loopback.be` to `/dev/ttyUSB0`, then hardware-ran `run_file("/berry/examples/spi_loopback.be")`; it reached `spi loopback done`. The static `2-3` jumper run reported `available 0 raw 0` for the sent bytes, so this is setup/send/read surface verification, not received-data loopback validation. A later data/clock probe also failed before ready RX data.
+
+### Priority 3 PASM SD blob loading
+
+- [x] Added read-only PASM blob helpers to `libstore`: `pasm_load(name)` returns bytes from `/berry/pasm/*.bin`, `pasm_load_result(name)` returns found/path/data/size/hash/reason diagnostics, and `pasm_info(name)` now includes size/hash metadata while keeping `executable: false` and `reason: "pasm_execution_deferred"` for found blobs.
+- [x] Hardened module-style path handling for PASM/app/example/source/compiled lookups so invalid names such as `bad/name`, leading/trailing dot names, and parent traversal do not resolve to arbitrary filesystem paths.
+- [x] Focused validation passed: `./berry -c modules/libstore.be -o /tmp/libstore.bec`, `./berry -c tests/p2/smoke_pasm_layout.be -o /tmp/smoke_pasm_layout.bec`, refreshed `/modules/libstore.be` on SD with the native `/dev/ttyUSB0` uploader after an interrupted earlier upload, uploaded the short `/tests/p2/pasmly.be` smoke alias, and hardware-ran `run_file("/tests/p2/pasmly.be")` to `P2_SMOKE_PASS pasm_layout` on the normal XMM image.
+
+### Priority 3 native `p2.asm.load()` facade
+
+- [x] Added native `p2.asm.load(path)` to read a non-empty 4-byte-aligned PASM blob file into a Berry `bytes` object, with clear errors for missing, empty, unaligned, oversized, or short-read blobs.
+- [x] Exposed the existing PASM cog primitive through the grouped facade as `p2.asm.cognew(blob, arg=nil, cog=nil)`, plus `p2.asm.cogstop(cog)` and `p2.asm.cogcheck(cog)`. This is API exposure over the existing native `_cogstart_PASM` path; arbitrary SD blob launch remains tracked in `TODO.md` until a public ABI contract and broader safe fixture coverage are verified.
+- [x] Focused validation passed with native sibling Catalina only: `./berry -c tests/p2/smoke_pasm_layout.be -o /tmp/smoke_pasm_layout.bec`, `./berry -c modules/libstore.be -o /tmp/libstore.bec`, `make p2-xmm TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2`, and `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0`, producing/flashing image `1025120 / 16777216` bytes.
+- [x] Hardware-verified the updated PASM layout smoke on `/dev/ttyUSB0`: after uploading `/tests/p2/pasmly.be`, `run_file("/tests/p2/pasmly.be")` passed `P2_SMOKE_PASS pasm_layout` on the rebuilt XMM image and proved `p2.asm.load("/berry/pasm/pasm_probe.bin").asstring() == "PASM"` plus grouped PASM cog API shape.
+
+### Priority 3 safe PASM launch probe
+
+- [x] Added `p2.asm.launch_probe(target_cog=nil)`, a safe known-good PASM launch fixture that starts the existing mailbox-marker PASM program with `_cogstart_PASM`, waits for the marker and child cog id, stops the cog, and returns an `ok`/`marker_seen`/`cog_seen_matches`/`stopped` diagnostics map.
+- [x] Extended `/tests/p2/smoke_pasm_layout.be` to verify `p2.asm.launch_probe()` succeeds, sees the marker, reports the child cog id consistently, stops the child cog, and leaves `p2.asm.cogcheck(cog) == 0`.
+- [x] Focused validation passed with native sibling Catalina only: `./berry -c tests/p2/smoke_pasm_layout.be -o /tmp/smoke_pasm_layout.bec`, `./berry -c modules/libstore.be -o /tmp/libstore.bec`, `make p2-xmm TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2`, and `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0`, producing/flashing image `1026336 / 16777216` bytes.
+- [x] Hardware-verified the safe PASM launch probe on `/dev/ttyUSB0`: after uploading `/tests/p2/pasmly.be`, `run_file("/tests/p2/pasmly.be")` passed `P2_SMOKE_PASS pasm_layout` on the rebuilt XMM image. This proves the known-good launch/marker/stop path, not arbitrary SD blob launch.
+
+### Priority 3 SD-loaded PASM marker fixture
+
+- [x] Added `p2.asm.marker_blob()` to expose the known-good mailbox-marker PASM fixture as a Berry `bytes` object, and `p2.asm.launch_loaded_probe(blob, target_cog=nil)` to launch only that exact fixture bytes, wait for the marker/cog id, stop the cog, and report diagnostics. Non-matching blobs raise `value_error` instead of becoming an arbitrary runner.
+- [x] Extended `/tests/p2/smoke_pasm_layout.be` to write `p2.asm.marker_blob()` to `/berry/pasm/pasm_marker.bin`, reload it through `p2.asm.load()`, and verify `p2.asm.launch_loaded_probe(loaded_blob)` reports `ok`, marker seen, cog id match, stopped, and `p2.asm.cogcheck(cog) == 0`.
+- [x] Focused validation passed with native sibling Catalina only: `./berry -c tests/p2/smoke_pasm_layout.be -o /tmp/smoke_pasm_layout.bec`, `./berry -c modules/libstore.be -o /tmp/libstore.bec`, `make p2-xmm TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2`, and `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0`, producing/flashing image `1028224 / 16777216` bytes.
+- [x] Hardware-verified the SD-loaded PASM marker fixture on `/dev/ttyUSB0`: after uploading `/tests/p2/pasmly.be`, `run_file("/tests/p2/pasmly.be")` passed `P2_SMOKE_PASS pasm_layout` on the rebuilt XMM image. This proves write-to-SD, `p2.asm.load()`, exact-fixture launch, mailbox marker, and stop cleanup for the documented fixture.
+
+### Priority 3 PASM ABI and capability diagnostics
+
+- [x] Added `p2.asm.capabilities()` and `p2.asm.abi()` so Berry code can query the current PASM contract directly: safe intrinsics, SD blob loading, raw cog controls, marker probe, and exact SD-staged marker probe are available; arbitrary SD blob launch, function bridges, inline assembler, and unsafe assembly are reported unsupported.
+- [x] Expanded `docs/pasm.md` and `docs/p2-api.md` so the documented PASM surface matches the current native facade, including `p2.asm.load()`, marker fixture launch probes, `capabilities()`, `abi()`, and the marker-fixture-only ABI fields. The docs keep arbitrary SD blob launch and PASM function bridges explicitly unsupported.
+
+### Priority 4 cooperative task event diagnostics
+
+- [x] Added `task.events()` for an isolated list of currently signaled event names and `task.clear_all()` for clearing scheduler event state.
+- [x] Extended `tests/p2/host_task.be` to verify event snapshot isolation, per-event clear behavior, and clear-all cleanup without touching hardware scheduler paths.
+- [x] Extended `/tests/p2/smoke_task.be` with the same event diagnostics and hardware-verified it on `/dev/ttyUSB0`: after uploading `modules/task.be` and `/tests/p2/smoke_task.be`, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite task --timeout 180 --startup-timeout 120` passed `P2_SMOKE_PASS task` on the existing native-Catalina XMM image.
+
+### Priority 4 cooperative task capability diagnostics
+
+- [x] Added `task.capabilities()` so tooling can query the current cooperative/current-VM task contract without inferring from docs. The map reports cooperative scheduling, no preemption, no independent stacks, event diagnostics, lifecycle result diagnostics, wait descriptors, primitive families, and current P2 counter/attention availability.
+- [x] Extended host, import-all, and P2 task smokes to assert the capability map and verify returned-map mutation does not affect later calls.
+- [x] Hardware-verified the capability diagnostics on `/dev/ttyUSB0`: after uploading the updated `modules/task.be` and `/tests/p2/smoke_task.be`, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite task --timeout 180 --startup-timeout 120` passed `P2_SMOKE_PASS task` on the existing native-Catalina XMM image.
+
+### Priority 4 cooperative task lifecycle compatibility
+
+- [x] Added `task.spin(id, fn, *args)` to the source-level cooperative scheduler. `id == -1` selects the first free slot; explicit `0..31` IDs start only when that fixed slot is free.
+- [x] Added cooperative compatibility lifecycle names over the existing scheduler: `task.halt(handle)`, `task.hlt(handle)`, `task.cont(handle)`, `task.chk(handle)`, `task.id()`, and `task.tasks()`.
+- [x] Extended `task.capabilities()` with `spin` and `spin2_lifecycle_names`, while keeping the contract explicit that this is cooperative/current-VM and not preemptive or stackful.
+- [x] Focused validation passed: `./berry tests/p2/host_task.be`, `./berry -c modules/task.be -o /tmp/task.bec`, `./berry -c tests/p2/smoke_task.be -o /tmp/smoke_task.bec`, and `./berry -c tests/p2/smoke_import_all_libs.be -o /tmp/smoke_import_all_libs.bec`.
+- [x] Hardware-verified the lifecycle compatibility names on `/dev/ttyUSB0`: after uploading updated `modules/task.be` and `/tests/p2/smoke_task.be`, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite task --timeout 180 --startup-timeout 120` passed `P2_SMOKE_PASS task` on the existing native-Catalina XMM image.
+
+### Priority 4 cooperative task attention wakeup
+
+- [x] Extended `tests/p2/host_task.be` to verify that `task.signal("attention")` wakes a cooperative task waiting on `task.wait("attention")`.
+- [x] Extended `/tests/p2/smoke_task.be` to verify the P2 hardware path: a task waits on `attention`, the smoke calls `p2.cog.attention(1 << p2.cog.id())`, and the scheduler wakes the task through `_poll_attention()` / `task.woke_by_event("attention")`.
+- [x] Extended both host and P2 task smokes to repeat the attention wake path three times, proving the cooperative event/attention path can be reused rather than only triggered once.
+- [x] Focused validation passed: `./berry tests/p2/host_task.be`, `./berry -c modules/task.be -o /tmp/task.bec`, and `./berry -c tests/p2/smoke_task.be -o /tmp/smoke_task.bec`.
+- [x] Hardware-verified the attention wakeup path on `/dev/ttyUSB0`: after uploading updated `/tests/p2/smoke_task.be`, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite task --timeout 180 --startup-timeout 120` passed `P2_SMOKE_PASS task`.
+- [x] Extended `/tests/p2/smoke_pasm_layout.be` to assert the new diagnostic functions and key marker-fixture-only ABI fields.
+- [x] Focused validation passed with native sibling Catalina only: `./berry -c tests/p2/smoke_pasm_layout.be -o /tmp/smoke_pasm_layout.bec`, `./berry -c modules/libstore.be -o /tmp/libstore.bec`, `make p2-xmm TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2`, and `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/usr/local/bin/loadp2 PORT=/dev/ttyUSB0`, producing/flashing image `1030368 / 16777216` bytes.
+- [x] Hardware-verified `/tests/p2/pasmly.be` on `/dev/ttyUSB0` with `run_file("/tests/p2/pasmly.be")`; it passed `P2_SMOKE_PASS pasm_layout` on the rebuilt XMM image.
+
+### Priority 2 async smart-pin RX readback
+
+- [x] Added `/tests/p2/smoke_smartpins_async_rx.be`, a focused hardware smoke for `p2smart.AsyncSerialPair.read_byte()` on the physically jumped `0-1`, `2-3`, `4-5`, and `6-7` pairs in both directions.
+- [x] Adjusted `p2smart.AsyncSerialPair.clear()` to detach TX/RX smart-pin mode with direct `wrpin`/`wxpin`/`wypin` register clears instead of the shared GPIO reset path that can hang after async receive reads.
+- [x] Updated `tests/p2/host_p2smart.be` so the fake `p2.smart` backend exposes grouped `wrpin` and asserts `AsyncSerialPair.clear()` uses the direct-register cleanup sequence.
+- [x] Added `p2smart.AsyncSerialPair.read_byte_after(wait_us)` for bounded delayed reads; host fake coverage asserts it calls `waitus` before `rdpin`.
+- [x] The smoke proves byte receive plus wrapper cleanup for `0x00`, `0x55`, `0xa5`, and `0xff` on all four jumper pairs in both directions. The broader setup/query/ack coverage remains in `/tests/p2/smoke_smartpins_loopback.be`; `0x00` readiness/event semantics remain intentionally separate because `available()` returns an ambiguous zero event value for a zero byte.
+- [x] Focused validation passed: `./berry -c modules/p2smart.be -o /tmp/p2smart.bec`, `./berry -c tests/p2/smoke_smartpins_loopback.be -o /tmp/smoke_smartpins_loopback.bec`, and `./berry -c tests/p2/smoke_smartpins_async_rx.be -o /tmp/smoke_smartpins_async_rx.bec`.
+- [x] Hardware-verified `/tests/p2/smoke_smartpins_async_rx.be` on `/dev/ttyUSB0` with `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite smartpins-async-rx --timeout 260 --startup-timeout 120`; it passed `P2_SMOKE_PASS smartpins_async_rx` on the existing native-Catalina XMM image and printed readback for `0->1`, `1->0`, `2->3`, `3->2`, `4->5`, `5->4`, `6->7`, and `7->6` across `0x00`, `0x55`, `0xa5`, and `0xff`.
+
+### Priority 2 async smart-pin RX result semantics
+
+- [x] Added `p2smart.AsyncSerialPair.read_result()` for readiness-query reads. It returns an isolated result map with `ready`, `event`, `raw`, and decoded byte `value`, preserving `nil` for `value` when no event is reported.
+- [x] Added `p2smart.AsyncSerialPair.read_result_after(wait_us)` for timed async RX samples. It waits, reads `rdpin` directly without querying `rqpin` first, and returns `ready=true`, `event=nil`, `raw`, decoded `value`, and `delayed`, which avoids the valid-zero-byte ambiguity in `available()`.
+- [x] Extended `tests/p2/host_p2smart.be` to cover not-ready result maps, ready byte-zero result maps, delayed nonzero reads, and delayed zero-byte reads.
+- [x] Extended `/tests/p2/smoke_smartpins_async_rx.be` to verify result-shaped reads on jumper pairs `0-1`, `2-3`, `4-5`, and `6-7` in both directions. Hardware output showed forward zero-byte raw words of `0` and reverse zero-byte raw words of `4194304`, while decoded `value` remained `0`; the documented byte contract is therefore `value`, not raw-word equality.
+- [x] Focused validation passed: `./berry tests/p2/host_p2smart.be`, `./berry -c modules/p2smart.be -o /tmp/p2smart.bec`, `./berry -c tests/p2/smoke_smartpins_async_rx.be -o /tmp/smoke_smartpins_async_rx.bec`, and `./berry -c tests/p2/smoke_import_all_libs.be -o /tmp/smoke_import_all_libs.bec`.
+- [x] Hardware-verified the result-shaped async RX semantics on `/dev/ttyUSB0`: after uploading updated `modules/p2smart.be` and `/tests/p2/smoke_smartpins_async_rx.be`, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite smartpins-async-rx --timeout 260 --startup-timeout 120` passed `P2_SMOKE_PASS smartpins_async_rx` on the existing native-Catalina XMM image.
+
+### Priority 2 async smart-pin paced byte-list helpers
+
+- [x] Added `p2smart.AsyncSerialPair.send_bytes(values, inter_byte_us)` to validate and send byte lists with an optional inter-byte delay.
+- [x] Added `p2smart.AsyncSerialPair.exchange_bytes_after(values, wait_us)` and `exchange_results_after(values, wait_us)` for paced one-byte-at-a-time loopback/protocol checks on top of the verified timed result path. These helpers are not a claim of a receive FIFO.
+- [x] Extended `tests/p2/host_p2smart.be` to verify generated send/wait/read call sequences, invalid byte diagnostics, zero-byte result preservation, and returned byte/result lists.
+- [x] Extended `/tests/p2/smoke_smartpins_async_rx.be` to hardware-verify `exchange_bytes_after([0x00, 0x55, 0xa5, 0xff], 2000)` on `0->1` and `exchange_results_after(...)` on `1->0`, while retaining the all-pair/all-direction single-byte coverage.
+- [x] Focused validation passed: `./berry tests/p2/host_p2smart.be`, `./berry -c modules/p2smart.be -o /tmp/p2smart.bec`, and `./berry -c tests/p2/smoke_smartpins_async_rx.be -o /tmp/smoke_smartpins_async_rx.bec`.
+- [x] Hardware-verified the paced byte-list helpers on `/dev/ttyUSB0`: after uploading updated `modules/p2smart.be` and `/tests/p2/smoke_smartpins_async_rx.be`, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite smartpins-async-rx --timeout 260 --startup-timeout 120` passed `P2_SMOKE_PASS smartpins_async_rx`.
+
+### P2 Catalina documentation cleanup
+
+- [x] Re-audited active P2 build instructions for stale Catalina examples. `AGENTS.md`, `mk/toolchain-catalina.mk`, `docs/building.md`, `docs/P2_BUILD.md`, and `README.md` now point normal P2 builds at the sibling native Catalina checkout with `CATALINA_DIR=../Catalina`.
+- [x] Removed active README guidance that listed a managed Catalina cache or `/opt/catalina` as the normal P2 Catalina path; `.third_party_cache` is now described only for loader tooling such as FlexProp/loadp2.
+- [x] Focused validation for this docs-only cleanup passed with `rg` scans for `CATALINA_USE_DOCKER`, Docker-Catalina paths, `.third_party_cache/catalina`, and `/opt/catalina` across active build docs/tooling, plus `git diff --check`.
+
+### Priority 2 p2smart capability diagnostics
+
+- [x] Added `p2smart.capabilities()` so smart-pin wrapper support status is queryable instead of inferred from docs. The map marks backed wrapper families as `verified`, ADC/DAC and quadrature as setup/readback or setup-only, synchronous serial receive and ADC/DAC delta as `unverified`, and true async buffering plus USB pair support as `unsupported`.
+- [x] Added `p2smart.status_report()` to group the same support facts into `verified`, `staged`, `open`, and `capabilities` fields for diagnostic use.
+- [x] Extended `tests/p2/host_p2smart.be` and `/tests/p2/smoke_import_all_libs.be` to assert the diagnostic map, unsupported/unverified statuses, and returned-map mutation isolation.
+- [x] Focused validation passed: `./berry tests/p2/host_p2smart.be`, `./berry -c modules/p2smart.be -o /tmp/p2smart.bec`, and `./berry -c tests/p2/smoke_import_all_libs.be -o /tmp/smoke_import_all_libs.bec`.
+
+### Priority 2 ADC/DAC jumper diagnostic probe
+
+- [x] Added `p2smart.dac_adc_probe(out_pin, in_pin, low_value, high_value, settle_us, threshold)` as a result-shaped DAC-to-ADC diagnostic helper. It starts an `ADC` and `DAC`, samples low/high raw ADC values, reports signed `delta`, `abs_delta`, threshold, `ok`, and `reason`, then clears both pins.
+- [x] The helper intentionally uses absolute delta for `ok` because observed DAC-to-ADC direction can be negative under the current mode/board setup; calibrated voltage polarity remains open.
+- [x] Extended `tests/p2/host_p2smart.be` to cover successful and below-threshold probe maps, generated call sequence, cleanup, and invalid argument diagnostics. `/tests/p2/smoke_import_all_libs.be` now checks the helper is exported.
+- [x] Focused validation passed: `./berry tests/p2/host_p2smart.be`, `./berry -c modules/p2smart.be -o /tmp/p2smart.bec`, and `./berry -c tests/p2/smoke_import_all_libs.be -o /tmp/smoke_import_all_libs.bec`.
+- [x] Hardware-probed `p2smart.dac_adc_probe(0, 1, 0, 255, 5000, 1)` on `/dev/ttyUSB0` with the existing `0-1` jumper. It returned `ADCPROBE true 2 0 -2 nil`, proving the diagnostic helper reports a measurable absolute delta while preserving signed raw direction.
+- [x] Added repeatable `/tests/p2/smoke_smartpins_loopback.be` coverage for `p2smart.dac_adc_probe(0, 1, 0, 255, 5000, 1)` and hardware-verified the focused `smartpins-loopback` suite on `/dev/ttyUSB0`. In the full loopback smoke context it reported `P2_SMOKE_ADC_PROBE true 0 2 2 2` before passing `P2_SMOKE_PASS smartpins_loopback`.
+
+### Priority 2 sync serial probe
+
+- [x] Updated `p2smart.SyncSerialPair` defaults to include the ROM-documented `sync_io` smart-pin mode bit for both sync TX and sync RX; host fake coverage now asserts the generated raw setup modes include `sync_io`.
+- [x] Hardware-probed sync receive on `/dev/ttyUSB0` without broad regression reruns. A two-pin jumper path still reported no data, and a four-pin data/clock probe using `0-1` for data plus `2-3` for clock also failed before ready RX data. This is recorded as an honest staged gap, not claimed support.
+
+### Priority 4 cooperative Queue result diagnostics
+
+- [x] Added `task.Queue.put_result(value)` and `task.Queue.get_result()` so callers can distinguish full queues, empty queues, and queued `nil` payloads without changing the existing `put`/`get` contracts.
+- [x] Extended focused host and P2 task smoke coverage for full result maps, nil-payload retrieval, and empty result maps.
+
+### Priority 2 sync serial result diagnostics
+
+- [x] Added `p2smart.SyncSerialPair.read_result()` and `read_result_after(wait_us)` so staged sync serial receive probes report ready/not-ready state, raw value, error name, and message in a stable result map.
+- [x] Added `sync_serial_result_diagnostics` to `p2smart.capabilities()` / `status_report()` as staged support while keeping `sync_serial_receive` unverified.
+- [x] Added a focused `/tests/p2/smoke_smartpins_sync_diag.be` hardware smoke and `smartpins-sync-diag` runner suite for this diagnostic helper without running the full smart-pin matrix.
+
+### Priority 2 direct cog attention validation
+
+- [x] Extended `/tests/p2/smoke_p2_api.be` to clear pending attention, signal the current cog with `p2.cog.attention(1 << p2.cog.id())`, and verify `p2.cog.poll_attention()` reports the expected bit. This proves direct nonblocking attention delivery without exercising blocking `wait_attention()`.
+
+### Priority 2 p2smart status-report consistency
+
+- [x] Added `p2smart.items_by_status(status)` so callers can query capability names by status without hand-filtering the full map.
+- [x] Reworked `p2smart.status_report()` so `verified`, `staged`, and `open` lists are derived from `capabilities()` rather than maintained as a second drift-prone status table.
+- [x] Extended focused host/import coverage for status-name queries, report list membership, and returned-list mutation isolation.
+
+### Priority 2 p2smart status vocabulary diagnostics
+
+- [x] Added `p2smart.statuses()` and `p2smart.status_known(status)` so tooling can discover and validate the capability-status vocabulary.
+- [x] Tightened `p2smart.items_by_status(status)` to reject unknown status names instead of silently returning an empty list for typos.
+- [x] Extended focused host/import coverage for status vocabulary discovery, unknown-status rejection, and returned status-list mutation isolation.
+
+### Priority 2 p2smart capability name diagnostics
+
+- [x] Added `p2smart.names()` and `p2smart.names_by_status(status)` so tooling can enumerate all smart-pin capability names or filter them by validated status without parsing map keys directly.
+- [x] Extended focused host/import coverage for all-name lists, filtered-name lists, unknown-status rejection, and returned-list mutation isolation.
+
+### Priority 2 p2smart capability metadata audit
+
+- [x] Added `p2smart.audit()`, `p2smart.audit_problems()`, and `p2smart.audit_ok()` so tooling and smokes can verify capability metadata consistency without duplicating checks.
+- [x] The audit reports duplicate capability names, unknown capability statuses, per-status counts, and total count consistency.
+- [x] Extended focused host/import coverage for clean audit results, count consistency, and returned problem-list mutation isolation.
+
+### Priority 4 cooperative task 32-slot limit
+
+- [x] Raised the source-level cooperative scheduler from 16 to 32 fixed slots by setting `task.MAX_TASKS = 32`.
+- [x] Added `max_tasks` to `task.capabilities()` and updated host/P2 smoke assertions so both `task.info()` and `task.capabilities()` report `32`.
+- [x] The existing host capacity regression now fills all 32 slots, verifies first-free handle ordering, verifies slot exhaustion diagnostics, and frees every slot.
+- [x] Hardware-probed the uploaded SD source module directly on `/dev/ttyUSB0`: `t=run_file("/modules/task.be"); print(t.info()["max_tasks"], t.capabilities()["max_tasks"])` returned `32 32`. The default native `import task` compatibility path still reports its native 16-slot limit and remains covered by `/tests/p2/smoke_task.be`.
+
+### Priority 4 cooperative primitive result diagnostics
+
+- [x] Added `task.Semaphore.take_result()` / `give_result()` so callers can distinguish successful takes/gives from unavailable zero-count semaphores without changing the legacy boolean helpers.
+- [x] Added `task.Mutex.lock_result()` / `unlock_result()` so callers can distinguish acquired, busy, unlocked, and not-locked states without changing the legacy boolean helpers.
+- [x] Extended focused host and source task smoke coverage for Semaphore unavailable/give diagnostics and Mutex busy/not-locked diagnostics.
+- [x] Hardware-probed the uploaded SD source module directly on `/dev/ttyUSB0`: a one-line `run_file("/modules/task.be")` check returned `true unavailable true true` for Semaphore take/unavailable and Mutex lock/unlock result helpers.
+
+### Priority 4 EventFlags and Timer result diagnostics
+
+- [x] Added `task.EventFlags.set_result(mask)` and `clear_result(mask)` so callers can distinguish successful flag updates from invalid-mask no-ops without changing `set()` / `clear()`. A direct `/dev/ttyUSB0` source-module probe returned `true 6 invalid_mask 2 invalid_mask` for set/set-invalid/clear/clear-invalid result paths.
+- [x] Added `task.EventFlags.ready_result(mask, mode)` so callers can distinguish ready, not-ready, and invalid-mask states without changing `ready()` / `wait()`.
+- [x] Added `task.Timer.expired_result()`, `cancel_result()`, and `restart_result()` so callers can inspect not-expired, fired, rearmed/deactivated, cancelled, and restarted states without changing the legacy boolean helpers.
+- [x] Extended focused host and source task smoke coverage for EventFlags set/clear/ready/not-ready/invalid-mask diagnostics and Timer not-expired/cancel/restart/zero-period-expired diagnostics.
+- [x] Hardware-probed the uploaded SD source module directly on `/dev/ttyUSB0`: a one-line `run_file("/modules/task.be")` check returned `true not_ready invalid_mask true false` for EventFlags ready/not-ready/invalid-mask and Timer zero-period expired/deactivated result helpers.
+
+### Priority 4 primitive capability diagnostics
+
+- [x] Added `task.primitive_capabilities()` so tooling can query the supported cooperative primitive families and result-shaped helper methods without scraping docs or instantiating each primitive.
+- [x] Extended focused host and source task smoke coverage for primitive capability flags and returned-map mutation isolation.
+- [x] Hardware-probed the uploaded SD source module directly on `/dev/ttyUSB0`: `task.primitive_capabilities()` returned `true true true` for Semaphore take-result, EventFlags set-result, and Timer restart-result flags.
+
+### Priority 4 task execution-model diagnostics
+
+- [x] Added `task.execution_model()` so tooling can query that the current scheduler is cooperative, current-VM, callback-step based, not preemptive, not stackful, and not true Spin2 task switching.
+- [x] Extended focused host and source task smoke coverage for execution-model fields and returned-map mutation isolation.
+- [x] Hardware-probed the uploaded SD source module directly on `/dev/ttyUSB0`: `task.execution_model()` returned `cooperative_step true false false false` for model/callback-step/preemptive/stackful/true-Spin2 flags.
+
+### Priority 3 PASM fixture rejection guard
+
+- [x] Extended `/tests/p2/smoke_pasm_layout.be` so `p2.asm.launch_loaded_probe(blob)` must reject a staged non-marker PASM blob instead of treating any SD-loaded bytes as launchable.
+- [x] Updated `docs/pasm.md`, `docs/coverage-matrix.md`, and `port/p2/TODO.md` to keep the supported PASM launch policy explicit: only the exact marker fixture is supported; arbitrary SD PASM launch remains open.
+
+### Priority 2 p2smart direct status lookup
+
+- [x] Added `p2smart.status(name)` so tooling can query one smart-pin capability name directly and receive its exact status string, or `nil` for unknown/non-string names.
+- [x] Extended `tests/p2/host_p2smart.be` to pin direct lookup for verified, setup-only, unverified, unsupported, unknown, and non-string capability names.
+- [x] Extended `/tests/p2/smoke_import_all_libs.be` to assert the direct status lookup export and representative verified/unverified/unsupported values during SD import coverage.
+- [x] Updated smart-pin docs and coverage/TODO notes while keeping unsupported and unverified wrapper areas explicit.
+
+### Priority 4 task direct capability lookup
+
+- [x] Added `task.capability(name)` and `task.primitive_capability(name)` so tooling can query one cooperative scheduler or primitive capability value without copying and filtering the full diagnostic maps.
+- [x] Extended `tests/p2/host_task.be` and `/tests/p2/smoke_task.be` to cover true, false, numeric, unknown, and non-string direct lookup cases.
+- [x] Extended `/tests/p2/smoke_import_all_libs.be` to assert the direct lookup exports and representative native task capability values during SD import coverage.
+- [x] Updated task docs, coverage matrix, and TODO notes while keeping the independent-stack/real-VM task work explicitly open.
+- [x] Corrected the task documentation example to use the active grouped GPIO API (`p2.pin.dir_high()` / `p2.pin.toggle()`) instead of the stale flat `p2.toggle()` call.
+- [x] Added `examples/task_primitives.be` as a small cooperative primitive example for Queue result diagnostics including nil payloads, EventFlags set/ready/clear diagnostics, and Timer expired/restart/cancel diagnostics.
+
+### Priority 4 p2ipc capability diagnostics
+
+- [x] Added `p2ipc.capabilities()` and `p2ipc.capability(name)` so tooling can query the current IPC contract directly: current-VM channel/mailbox/mutex/shared-buffer helpers, result diagnostics, nil-payload result handling, close diagnostics, optional hardware-lock backend, fallback mutexes, and no cross-VM support.
+- [x] Extended `tests/p2/host_p2ipc.be` to pin capability-map isolation, direct lookup behavior, hardware-lock-backend detection, fallback mutex reporting, unknown names, and non-string lookup.
+- [x] Extended `/tests/p2/smoke_import_all_libs.be` to assert the new p2ipc diagnostic functions and key current-VM/cross-VM capability values during import coverage.
+
+### Priority 4 p2ipc close-result hardware diagnostics
+
+- [x] Fixed `p2ipc.Mutex.close_result()` so it preserves the pre-close hardware-lock flag and previous lock id in the returned diagnostic map instead of always reporting `hardware: false` after `close()` releases the lock.
+- [x] Extended `tests/p2/host_p2ipc.be` to cover hardware-backed and fallback mutex close-result diagnostics.
+
+### Priority 4 p2ipc channel/mailbox close diagnostics
+
+- [x] Added `close_result()` to `p2.channel` and `p2.mailbox` objects so all closable p2ipc primitives now have result-shaped close diagnostics.
+- [x] Channel close diagnostics report `ok`, `closed`, `was_closed`, `depth`, `size`, `free`, previous `lock_id`, and previous `hardware_lock`; mailbox close diagnostics report `ok`, `closed`, `was_closed`, `ready`, previous `lock_id`, and previous `hardware_lock`.
+- [x] Extended `tests/p2/host_p2ipc.be` to cover first-close and repeated-close result maps for both channel and mailbox objects.
+- [x] Extended `/tests/p2/smoke_import_all_libs.be` to assert the close-result capability flag and method shape for fresh channel/mailbox objects during safe import coverage.
+- [x] Extended `/tests/p2/smoke_libraries.be` to use channel/mailbox `close_result()` and assert first-close plus repeated-close result semantics.
+
+### Priority 1 configstore capability diagnostics
+
+- [x] Added `configstore.capabilities()` and `configstore.capability(name)` so tooling can query JSON config-file support, filename-only validation, root creation, result-helper availability, JSON-null detection, FAT `.JSO` listing support, and the active config root.
+- [x] Extended `tests/p2/host_source_modules.be` to cover capability-map isolation, direct lookup, unknown/non-string lookup, and root reflection after changing `configstore.root`.
+- [x] Extended `/tests/p2/smoke_configstore.be` to assert capability-map isolation and direct lookup during the dedicated configstore smoke.
+- [x] Extended `/tests/p2/smoke_import_all_libs.be` to assert the new configstore diagnostic functions and representative capability values during safe import coverage.
+- [x] Extended `/tests/p2/smoke_libraries.be` with metadata-only configstore capability checks, avoiding config file writes in the broader libraries smoke.
+
+### Priority 2 p2smart GPIO diagnostics
+
+- [x] Added `GPIOInput.read_result()`, `GPIOOutput.write_result(value)`, and `GPIOOutput.toggle_result()` so GPIO wrapper probes can return result-shaped maps without parsing side effects.
+- [x] Added `p2smart.gpio_loopback_probe(out_pin, in_pin, values, settle_us)` for output-to-input jumper diagnostics with validated bit patterns, optional settle delay, per-sample result maps, and cleanup of both pins.
+- [x] Added `gpio_diagnostics` and `gpio_loopback_probe` to `p2smart.capabilities()` and extended focused host/import smoke coverage plus smart-pin status docs.
+- [x] Updated `/tests/p2/smoke_smartpins_loopback.be` so the existing GPIO jumper cases exercise `p2smart.gpio_loopback_probe(...)` while preserving explicit toggle-result readback coverage.
+
+### Priority 2 p2smart PWM counter diagnostics
+
+- [x] Added `p2smart.pwm_counter_probe(out_pin, in_pin, frame, duty, divisor, settle_us)` for PWM-output to rise-counter jumper diagnostics using the existing `PWM` and `Counter.sample_after()` wrappers.
+- [x] Added `pwm_counter_probe` to `p2smart.capabilities()` and updated focused host/import coverage, smart-pin docs, and the smartpins loopback smoke's PWM cases to exercise the helper.
+
+### Priority 2 p2smart NCO counter diagnostics
+
+- [x] Added `p2smart.nco_counter_probe(out_pin, in_pin, bit_period, increment, settle_us)` for NCO-output to rise-counter jumper diagnostics using the existing `NCO` and `Counter.sample_after()` wrappers.
+- [x] Added `nco_counter_probe` to `p2smart.capabilities()` and updated focused host/import coverage, smart-pin docs, and the smartpins loopback smoke's NCO cases to exercise the helper.
+
+### Priority 2 p2smart pulse and transition counter diagnostics
+
+- [x] Added `p2smart.pulse_counter_probe(out_pin, in_pin, high_ticks, low_ticks, count, settle_us)` and `p2smart.transition_counter_probe(out_pin, in_pin, width, count, settle_us)` for output-to-rise-counter jumper diagnostics using the existing pulse/transition wrappers and `Counter.sample_after()`.
+- [x] Added `pulse_counter_probe` and `transition_counter_probe` to `p2smart.capabilities()` and updated focused host/import coverage, smart-pin docs, and the smartpins loopback smoke's pulse/transition cases to exercise the helpers.
+
+### Priority 2 p2smart high-counter diagnostics
+
+- [x] Added `p2smart.high_counter_probe(out_pin, in_pin, high_us, settle_us)` for GPIO-high to count-highs jumper diagnostics with output write result maps, before/after counter data, and cleanup of both pins.
+- [x] Added `high_counter_probe` to `p2smart.capabilities()` and updated focused host/import coverage, smart-pin docs, and the smartpins loopback smoke's high-counter cases to exercise the helper.
+
+### Priority 2 p2smart repository diagnostics
+
+- [x] Added `Repository.read_result()` and `p2smart.repository_probe(pin, first_value, second_value, settle_us)` for result-shaped repository-mode start/read/write/read/clear diagnostics.
+- [x] Added `repository_read_diagnostics` and `repository_probe` to `p2smart.capabilities()` and updated focused host/import coverage, smart-pin docs, and the smartpins loopback smoke's repository cases to exercise the helper.
+
+### Priority 2 p2smart async serial probe diagnostics
+
+- [x] Added `p2smart.async_serial_probe(tx_pin, rx_pin, values, wait_us, baud, bits)` for conservative async serial send/query/ack/clear jumper diagnostics without claiming buffered receive semantics.
+- [x] Added `async_serial_probe` to `p2smart.capabilities()` and updated focused host/import coverage, smart-pin docs, and the smartpins loopback smoke's async serial cases to exercise the helper.
+- [x] Tightened `p2smart.AsyncSerialPair.clear()` so async TX/RX cleanup now matches the raw/sync cleanup pattern: clear both smart pins and float both pins, with focused host call-sequence coverage updated.
+- [x] Added staged `p2smart.sync_serial_probe(tx_pin, rx_pin, values, wait_us, baud, bits)` for sync-serial start/transfer/clear diagnostics without promoting sync receive to verified.
+- [x] Added staged `p2smart.sync_serial_clocked_probe(data_tx_pin, data_rx_pin, clock_tx_pin, clock_rx_pin, values, wait_us, baud, bits)` for data/clock jumper diagnostics such as data `0-1` plus clock `2-3`, and updated the SPI/sync example to use it directly.
+- [x] Tightened serial probe validation so async, sync, and clocked sync probes reject empty value lists instead of returning zero-transfer success diagnostics.
+- [x] Tightened `p2smart.sync_serial_clocked_probe(...)` setup so the clock receive pin is floated before the clock output starts, not only during cleanup.
+- [x] Added summary counters to serial probe diagnostics: async probes now report `ready_count`, and sync probes report `ready_count` plus `matched_count`.
+
+### Priority 2 p2smart DAC/ADC smoke consolidation
+
+- [x] Updated `/tests/p2/smoke_smartpins_loopback.be` so the per-pair DAC/ADC setup/readback cases use `p2smart.dac_adc_probe(..., threshold=0)` instead of duplicating ADC/DAC start/read/set/clear logic, while preserving the separate measurable-delta assertion for the dedicated `0-1` probe.
+
+### Priority 2 p2smart raw helper diagnostics
+
+- [x] Added `p2smart.raw_smartpin_probe(pin)` for result-shaped raw smart-pin helper diagnostics over zeroed `wrpin`/`wxpin`/`wypin`, `akpin`, `rdpin`, `rqpin`, normal-mode `start`, and `clear`.
+- [x] Added `raw_smartpin_probe` to `p2smart.capabilities()` and updated focused host/import coverage, smart-pin docs, and the smartpins loopback smoke's raw helper cases to exercise the helper.
+- [x] Tightened `p2smart.raw_smartpin_probe(pin)` cleanup so it explicitly floats the pin after clearing smart-pin mode.
+
+### Priority 2 p2smart NCO example alignment
+
+- [x] Updated `examples/nco_counter_loopback.be` to demonstrate `p2smart.nco_counter_probe(...)` directly for fast and slower NCO settings instead of manually wiring an `NCO` and `Counter`.
+- [x] Updated `examples/uart_loopback.be` to demonstrate `p2smart.async_serial_probe(...)` directly instead of manually starting, sending, querying, acknowledging, and clearing an async serial pair.
+- [x] Removed stale direct `p2` imports from smartpin examples that now only use `p2smart`: `adc_read.be`, `dac_write.be`, `pwm_fade.be`, `quadrature_counter.be`, and `spi_loopback.be`.
+
+### Priority 2 p2smart diagnostics example
+
+- [x] Added `examples/smartpin_diagnostics.be` as a compact `0-1` jumper example for `raw_smartpin_probe`, `repository_probe`, `high_counter_probe`, `pulse_counter_probe`, and `transition_counter_probe`.
+- [x] Updated `docs/coverage-matrix.md` so current top-level example coverage includes `smartpin_diagnostics.be` and the raw/repository/high-counter/pulse-counter/transition-counter probe helpers it demonstrates.
+- [x] Updated `docs/architecture-current.md` so its current examples summary includes the smart-pin diagnostics example.
+- [x] Updated the high-level hardware wrapper row in `docs/coverage-matrix.md` so it records the current result-shaped `p2smart` probe helpers instead of only the base wrapper families.
+- [x] Updated `docs/sd-layout.md` so the `/berry/examples` helper documentation names `run_example("smartpin_diagnostics")` as a concrete staged-example target.
+- [x] Updated `docs/P2_LAYOUT.md` so the examples layout note covers top-level P2 hardware examples such as `examples/smartpin_diagnostics.be`, not only module subdirectories.
+- [x] Updated `docs/P2_BUILD.md` so the smoke-suite coverage list includes smart-pin loopback diagnostics for the documented jumper pairs.
+
+### Priority 2 p2smart jumper-pair diagnostics
+
+- [x] Added `p2smart.jumper_pair_probe(out_pin, in_pin)` as a compact diagnostic bundle for one physically jumped pair, composing raw helper probes on both pins plus GPIO loopback, high-counter, pulse-counter, transition-counter, and async serial setup/query diagnostics.
+- [x] Added `jumper_pair_probe` to `p2smart.capabilities()` and updated focused host coverage, smart-pin docs, and `examples/smartpin_diagnostics.be`.
+- [x] Extended `p2smart.jumper_pair_probe(out_pin, in_pin)` summaries with `failed_count` and `failed_checks` so hardware output identifies which sub-check failed.
+- [x] Hardened `p2smart.jumper_pair_probe(out_pin, in_pin)` so a raised sub-check returns an error result for that check and the remaining sub-checks continue to run.
+- [x] Tightened the resilient `jumper_pair_probe(...)` path so after any raised sub-check it clears and floats both jumper pins before continuing with the next diagnostic.
+- [x] Added `cleanup_attempted` to resilient `jumper_pair_probe(...)` sub-check error maps so hardware diagnostics show recovery was attempted before continuing.
+- [x] Added `p2smart.jumper_pairs_probe(pairs)` to aggregate jumped-pair diagnostics across lists such as `[[0, 1], [2, 3], [4, 5], [6, 7]]`, with summary `count` and `ok_count` fields.
+- [x] Tightened `p2smart.jumper_pairs_probe(pairs)` validation so it normalizes returned pair records, rejects invalid pins, and rejects same-pin pairs before dispatching the per-pair probe.
+- [x] Extended `p2smart.jumper_pairs_probe(pairs)` summaries with `failed_count` and `failed_pairs` so hardware output identifies which jumped pair failed.
+- [x] Extended `p2smart.jumper_pairs_probe(pairs)` summaries with per-pair `failures` records containing the failed pair and that pair's failed sub-check names.
+- [x] Extended aggregate jumper `failures` records with the failed pair's `ok_count` and `failed_count` so serial summaries show how much of that pair passed.
+- [x] Hardened aggregate jumper `failures` records so missing pair-level `ok_count`, `failed_count`, or `failed_checks` fields are normalized to stable defaults instead of propagating `nil`.
+- [x] Added `p2smart.default_jumper_pairs()` so examples and REPL diagnostics can use the documented `0-1`, `2-3`, `4-5`, and `6-7` jumper set without hard-coding it; the helper returns a fresh copy for mutation isolation.
+- [x] Updated `/tests/p2/smoke_smartpins_loopback.be` to use `p2smart.default_jumper_pairs()` for the documented jumper set while preserving the existing detailed per-case loopback checks.
+- [x] Added `p2smart.default_jumper_directions()` to expose the documented jumper set expanded into both directions without running hardware probes.
+- [x] Added `default_jumper_pairs` and `default_jumper_directions` to `p2smart.capabilities()` so tooling can discover the public default jumper-list helpers.
+- [x] Added `p2smart.default_jumper_pairs_probe()` as the one-way aggregate convenience entry point for the documented jumper set, and updated `examples/smartpin_diagnostics.be` to use it.
+- [x] Added `p2smart.jumper_pairs_bidirectional_probe(pairs)` and `default_jumper_pairs_bidirectional_probe()` to expand jumped pairs into both output/input directions before running aggregate diagnostics.
+- [x] Updated `examples/smartpin_diagnostics.be` to print `default_jumper_pairs_bidirectional_probe()` output for the documented `0-1`, `2-3`, `4-5`, and `6-7` jumper set.
+- [x] Tightened `examples/smartpin_diagnostics.be` output so aggregate jumper diagnostics print concise `ok`/`count`/`failed` summaries instead of dumping full nested maps over serial.
+- [x] Updated `examples/smartpin_diagnostics.be` aggregate summaries to print the new `failures` records so failed pairs include failed sub-check names.
+- [x] Updated `docs/coverage-matrix.md` so high-level wrapper and top-level example coverage mention the default one-way and bidirectional jumper aggregate diagnostics.
+- [x] Updated `docs/p2-api.md`, `docs/architecture-current.md`, and `docs/P2_BUILD.md` so smart-pin sections mention default jumper lists and one-way/bidirectional aggregate diagnostics.
+- [x] Added `p2smart.nco_duty_counter_probe(out_pin, in_pin, bit_period, duty, settle_us)` as a result-shaped NCO-duty output to rise-counter jumper diagnostic, with focused host call-sequence/result coverage and capability/import-smoke visibility.
+- [x] Added `p2smart.pwm_variant_counter_probe(out_pin, in_pin, frame, duty, divisor, mode_name, settle_us)` as a result-shaped named PWM mode output to rise-counter jumper diagnostic, with focused host coverage for sawtooth mode selection, cleanup, result fields, and capability/import-smoke visibility.
+- [x] Added `p2smart.dac_variant_adc_probe(out_pin, in_pin, low_value, high_value, frame, resistor, dither, settle_us, threshold)` as a result-shaped named DAC mode to ADC jumper diagnostic, with focused host coverage for mode selection, delta fields, cleanup, and capability/import-smoke visibility.
+- [x] Added `p2smart.adc_variant_sample_probe(pin, source, family, sample_ticks, wait_us)` as a result-shaped named ADC mode sample diagnostic, with focused host coverage for mode selection, sample fields, cleanup, and capability/import-smoke visibility.
+- [x] Added `p2smart.counter_variant_sample_probe(pin, mode_name, wait_us)` as a result-shaped named counter/timer mode sample diagnostic, with focused host coverage for mode selection, before/after delta fields, cleanup, and capability/import-smoke visibility.
+- [x] Added `p2smart.quadrature_sample_probe(pin_a, pin_b, mode, wait_us)` as a result-shaped quadrature setup/sample/cleanup diagnostic, with focused host coverage for movement/direction fields, cleanup, and capability/import-smoke visibility.
+- [x] Added explicit default-off unsafe assembly gate metadata to `p2.asm.capabilities()` and `p2.asm.abi()` (`unsafe_gate`, `unsafe_default`, and `unsafe_module`), with focused PASM layout smoke assertions and docs updates.
+- [x] Added explicit PASM function-bridge unsupported-contract metadata to `p2.asm.capabilities()` and `p2.asm.abi()` (`function_bridge_policy`, reason, and required-contract fields), with focused PASM layout smoke assertions and docs/TODO updates.
+- [x] Added explicit arbitrary PASM blob unsupported-contract metadata to `p2.asm.capabilities()` and `p2.asm.abi()` (`arbitrary_blob_policy`, reason, and required-contract fields), with focused PASM layout smoke assertions and docs/TODO updates.
+- [x] Added explicit inline-assembler unsupported-contract metadata to `p2.asm.capabilities()` and `p2.asm.abi()` (`inline_assembler_policy`, reason, and required-contract fields), with focused PASM layout smoke assertions and docs/TODO updates.
+- [x] Added explicit raw `p2.asm.cognew(...)` policy metadata (`raw_cognew_policy` and reason) so tooling can distinguish the low-level existing PASM cog path from a supported arbitrary-blob ABI, with focused PASM layout smoke assertions and docs/TODO updates.
+- [x] Added `p2.asm.audit()`, `audit_problems()`, and `audit_ok()` so PASM smoke tooling can verify that capability and ABI policy metadata remain consistent for raw cog launch, arbitrary blobs, function bridges, inline assembler, and the unsafe-ASM gate.
+- [x] Updated `examples/pasm_direct.be` so the user-facing PASM example covers guarded intrinsics, queryable marker-fixture launch policy, unsupported arbitrary-blob/function-bridge/inline-assembler policy metadata, and the safe `p2.asm.launch_probe()` path instead of only printing raw intrinsic values.
+- [x] Hardened `/tests/p2/smoke_pasm_layout.be` metadata substring assertions to use module-level `string.find(text, needle)` instead of unsupported string instance `.find(...)`, avoiding runtime assertion failures while preserving the same PASM contract checks.
+- [x] Added explicit cooperative task scheduler policy metadata to `task.capabilities()` and `task.execution_model()` (`scheduler_policy` and `unsupported_reason`), with focused host/P2 smoke assertions and docs/TODO updates.
+- [x] Added `task.Timer.remaining()` and `remaining_result()` so cooperative timer users can query active/inactive remaining time without duplicating timer internals, with primitive capability metadata, focused host/P2 smoke assertions, and docs/TODO updates.
+- [x] Added `task.audit()`, `audit_problems()`, and `audit_ok()` so host/P2 source-module smokes can verify that scheduler capability metadata, execution-model metadata, and primitive capability metadata remain consistent.
+- [x] Updated `examples/task_scheduler.be` and `examples/task_primitives.be` so task examples expose the current scheduler policy/unsupported reason and timer remaining-result diagnostics alongside the existing cooperative scheduler and primitive demonstrations.
+- [x] Added explicit `p2.cog.capabilities()` metadata for the current `native_blink_info_stop_only` handle model and backed non-blocking `id(handle)`, `status(handle)`, `join(handle)`, `result(handle)`, and `error(handle)` wrappers over the existing handle diagnostics plus `kill(handle)` as an explicit force-stop cleanup alias, while keeping blocking result waits and cross-cog exception propagation explicitly unsupported; updated the focused closure-cog smoke, examples, docs, and TODO wording to match.
+- [x] Extended non-blocking `p2.cog.join(handle)` snapshots with explicit `result`, `result_type_name`, and `error` fields so child setup return values and recorded errors are visible through the join API without scraping `last_result_*` diagnostics.
+- [x] Extended native closure-cog `stop(handle)` / `kill(handle)` return maps with explicit cleanup diagnostics: cleanup policy, stack/mailbox/source release indicators, slot release, and post-stop handle invalidation.
+- [x] Added `p2compat.child_vm_transfer_policy()` as a structured child-VM transfer contract for tooling, exposing copyable primitive types, staged closure-name selector behavior, unsupported captured/live-object transfer, rejected native/resource categories, and explicit no-ownership/no-shared-mutable-state flags, with focused host/import/p2compat smoke coverage and audit consistency checks.
+- [x] Added direct child-VM transfer policy helpers `p2compat.child_vm_copyable_type(name)` and `p2compat.child_vm_rejected_type(name)` so tooling can query allowed primitive type names and rejected live-object categories without parsing policy lists.
+- [x] Added `p2ipc.contract()` plus IPC capability metadata for the current-VM-only boundary, explicitly reporting no cross-cog wakeups, no cross-VM serialization, and no ownership transfer, with focused host/import-smoke assertions and docs/TODO updates.
+- [x] Added payload-contract fields to `p2ipc` channel/mailbox `send_result`/`recv_result`/`put_result`/`get_result` maps so each operation reports current-VM-reference payload handling, no serialization, no ownership transfer, payload type, and ownership/serialization policy strings.
+- [x] Added `p2ipc.audit()`, `audit_problems()`, and `audit_ok()` so host/import smokes can verify that capability and contract metadata stay consistent for current-VM IPC, no cross-VM support, no serialization, no ownership transfer, cleanup flags, payload-contract results, hardware-lock reporting, and fallback mutex support.
+- [x] Added `p2ipc.self_test_result(iterations)` as a bounded current-VM IPC cleanup diagnostic over channel send/receive/clear/close, mailbox put/get/clear/close, shared-buffer write/fill/clear, and mutex lock/unlock/close paths, with capability/contract metadata plus focused host/import coverage.
+- [x] Tightened `p2ipc` channel/mailbox cleanup so `close()` releases queued/stored payload references, `close_result()` reports previous payload state and released payload counts, and capability/contract metadata exposes `close_releases_payloads`, with focused host/import-smoke assertions and docs/TODO updates.
+- [x] Added reusable `p2.channel.clear()` / `clear_result()` and `p2.mailbox.clear()` / `clear_result()` cleanup helpers so retained payloads can be released without closing the IPC object, with blocked-lock/closed-state diagnostics, capability/contract metadata, focused host/import-smoke assertions, and docs/TODO updates.
+- [x] Added `p2.shared.Buffer.clear()` and `clear_result()` so shared-buffer contents can be explicitly zeroed with result-shaped diagnostics, plus IPC capability/contract metadata, focused host/import-smoke assertions, and docs/TODO updates.
+- [x] Updated `examples/cog_channel.be` so the user-facing IPC example now prints `p2ipc.contract()`, channel clear/close cleanup diagnostics, mailbox clear/close diagnostics, and shared-buffer clear diagnostics instead of only basic channel send/receive behavior.
+- [x] Updated `examples/import_all_libs.be` so the import sweep reports current `p2ipc` contract/cleanup capabilities and `task` scheduler/timer metadata instead of only module type and max-task count.
+- [x] Added `configstore.audit()`, `audit_problems()`, and `audit_ok()` so host/import/configstore smokes can verify root, result-helper, JSON-null, FAT `.JSO`, and capability lookup metadata consistency without touching hardware.
+- [x] Added `binary_heap.capabilities()`, `capability(name)`, `audit()`, `audit_problems()`, and `audit_ok()` so host/import smokes can query and self-check the small in-memory heap/sort contract, including exception-preserved caller arrays.
+- [x] Added metadata-only WiFi diagnostics: `wifi.capabilities()`, `capability(name)`, `default_config()`, `audit()`, `audit_problems()`, and `audit_ok()` now expose the AirLift/SPI hardware-deferred boundary, request-init rule, import no-op, default pins, and status names without starting SPI transactions.
+- [x] Added source-level `math.capabilities()`, `capability(name)`, `audit()`, `audit_problems()`, and `audit_ok()` so host/import smokes can self-check the finite fallback, invalid-domain, non-number fallback, constants, rounding, min/max, angle conversion, and CORDIC backend metadata without rerunning hardware math parity.
+- [x] Added metadata-only `p2mem.capabilities()`, `capability(name)`, `audit()`, `audit_problems()`, and `audit_ok()` so host/import smokes can query result-wrapper coverage, native-cache helper categories, invalid module-name diagnostics, and snapshot-diagnostic expectations without mutating cache state.
+- [x] Added metadata-only `libstore.capabilities()`, `capability(name)`, `audit()`, `audit_problems()`, and `audit_ok()` so host/import smokes can self-check curated module coverage metadata, policy constants, default path roots, `.bec` fallback metadata, and module-name rules without scanning SD or mutating cache state.
+- [x] Updated `examples/import_all_libs.be` so the user-facing import sweep prints audit status for `binary_heap`, `configstore`, `libstore`, `math`, `p2compat`, `p2ipc`, `p2mem`, `task`, and metadata-only `wifi` without starting hardware transactions.
+- [x] Updated `examples/debug_report.be` and `examples/psram_cache_stats.be` so p2mem/libstore-facing diagnostic examples print audit status before dumping module/cache diagnostics or attempting cache operations.
+- [x] Extended `/tests/p2/smoke_sd.be` so the scripted SD regression path starts with read-only `p2.fs_info("/")` mount evidence for `mount_result_name == "ok"`, FAT start sector `2048`, `volinfo_result_name == "ok"`, `sd_response == 0` when reported, and FAT32 filesystem type when reported. Source-level compile coverage only; hardware execution remains pending in `TODO.md`.
+- [x] Added `make p2-catalina-build-log-guard-selftest`, backed by `scripts/p2/check_catalina_build_log_guard.sh`, so the Catalina build-log pipefail guard can be verified with an intentionally failing logged pipeline without running a firmware build.
+- [x] Made the P2 Edge32/XMM Catalina wrapper targets pass `CATALINA_DIR="$(CATALINA_DIR)"` explicitly through their recursive make calls so the sibling `../Catalina` default is visible in dry-run expansion for `p2-edge32-ram`, `p2-edge32-flash`, and `p2-xmm-flash`.
+- [x] Confirmed the upstream-facing Catalina SD note documents the `target/p2/cogsd.t` P2 Edge shared flash/SD pin ordering and deep-power-down sequence, while the P2 Edge32 SD/XMM handoff note documents the standalone XMM flash-loader path and verified boot shape.
+- [x] Added `make p2-profile-invariants-selftest`, backed by `scripts/p2/check_profile_invariants.sh`, so the recovery Edge32 profile is checked as COMPACT/Hub-image-limited/PSRAM-block-access and kept distinct from the LARGE/XMM profile without running a firmware build.
+- [x] Added `make p2-catalina-xmm-cx-sync-selftest`, backed by `scripts/p2/check_catalina_xmm_cx_sync.py`, so the sibling Catalina fork can be checked for regenerated P2/XMM `cx` SD/DOSFS objects and `catalina.idx` entries after SD source changes.
+- [x] Added `make p2-catalina-warning-audit`, backed by `scripts/p2/audit_catalina_warnings.py`, so existing Catalina/Cake warnings remain visible by class while new target-width or pointer/integer ABI warning lines fail the audit.
+- [x] Added `make p2-sd-write-smoke-audit`, backed by `scripts/p2/audit_sd_write_smokes.py`, and marked the active SD/file/layout/import/config/example/PASM smokes with bounded write-open budgets so future SD-write coverage stays small, preflighted, and cleanup-oriented without touching hardware.
+- [x] Added aggregate `make p2-baseline-guards TOOLCHAIN=catalina CATALINA_DIR=../Catalina` and documented it in `docs/testing.md`; it runs the non-hardware build-log, profile, Catalina XMM `cx`, warning, and SD-write-smoke guards as one focused Priority 0 check.
+- [x] Updated `docs/roadmap.md` so Phase 1 reflects the existing `docs/source-research.md` document and now tracks ongoing refinement instead of stale creation work.
+- [x] Updated `docs/architecture-current.md` so its repeatable P2 entrypoint list includes `make p2-baseline-guards TOOLCHAIN=catalina CATALINA_DIR=../Catalina` alongside host, hardware, soak, provisioning, and smoke commands.
+- [x] Updated `docs/coverage-matrix.md`, `docs/roadmap.md`, and `port/p2/TODO.md` so they reflect the existing `docs/performance.md` performance-plan document and keep the remaining work focused on measurement hooks/results instead of stale document creation.
+- [x] Added `make p2-docs-audit`, backed by `scripts/p2/audit_p2_docs.py`, so the tracked P2 documentation set, including `docs/hardware-tests.md`, is checked for presence and non-empty content without running builds or hardware.
+- [x] Folded `p2-docs-audit` into `make p2-baseline-guards` and updated the testing, architecture, roadmap, coverage, and TODO notes so the aggregate guard is the single non-hardware pre-change check for baseline/tooling/docs drift.
+- [x] Added `make p2-catalina-path-audit`, backed by `scripts/p2/audit_catalina_paths.py`, to keep active P2 docs/tooling on the sibling `../Catalina` path and fail if Docker Catalina, `.third_party_cache/catalina`, `/opt/catalina`, or `catalina-speccy88` references return outside the historical done log.
+- [x] Added aggregate staged sync-serial clocked diagnostics to `p2smart`: `default_clocked_jumper_groups()`, `sync_serial_clocked_jumper_probes(...)`, and `sync_serial_default_clocked_probe(...)` now cover the documented four-pin jumper groups without claiming received-data validation.
+- [x] Extended `/tests/p2/smoke_smartpins_sync_diag.be` so the focused `smartpins-sync-diag` suite also exercises the default four-pin clocked sync-serial diagnostic result shape while leaving received-data validation open.
+- [x] Folded the focused `smoke_smartpins_sync_diag.be` command into the `soak-smartpins` suite so wired-board soak runs exercise the staged sync-serial diagnostic shape after the main smart-pin loopback smoke.
+- [x] Folded the focused `smoke_smartpins_async_rx.be` command into the `soak-smartpins` suite so wired-board soak runs also exercise the async RX byte/read-result proof across the documented jumper pairs.
+- [x] Added explicit `SOAK_P2_TIMEOUT` and `SOAK_P2_STARTUP_TIMEOUT` make variables, defaulting to `700` and `120`, so `make soak-p2` uses the same conservative timeout shape as the documented hardware-safe runner commands.
+- [x] Added focused make wrappers `p2-smoke-smartpins-loopback`, `p2-smoke-smartpins-async-rx`, and `p2-smoke-smartpins-sync-diag` with conservative `P2_SMARTPINS_TIMEOUT` / `P2_SMARTPINS_STARTUP_TIMEOUT` defaults so jumper-dependent smart-pin suites are easier to run repeatably.
+- [x] Added aggregate `make p2-smoke-smartpins PORT=...`, which runs the focused loopback, async RX, and sync diagnostic smart-pin targets in order using the same timeout variables.
+- [x] Strengthened `/tests/p2/smoke_pasm_layout.be` so the existing staged PASM files also verify `p2.asm.marker_blob()` returns stable 4-byte-aligned bytes and `p2.asm.load()` rejects empty, missing, and unaligned blob inputs without adding more SD write operations.
+- [x] Added focused `make p2-smoke-pasm-layout PORT=...` to upload only `modules/libstore.be` plus `/tests/p2/smoke_pasm_layout.be`, then run the PASM layout smoke directly through the serial smoke runner with conservative timeout defaults.
+- [x] Added focused `make p2-smoke-task PORT=...` to upload only `modules/task.be` plus `/tests/p2/smoke_task.be`, then run the cooperative task smoke through the existing `task` serial suite with the focused smoke timeout defaults.
+- [x] Added non-consuming IPC diagnostics: `p2.channel.snapshot_result()` and `p2.mailbox.peek_result()` report current queued/stored payload state without removing it, expose the same current-VM/no-serialization/no-ownership-transfer policy fields as the existing result helpers, and are covered by focused host/import checks plus the current-VM IPC example.
+- [x] Hardened import/cache/churn smokes so task slot-count checks accept either known backend limit (`16` for the native P2 compatibility module or `32` for the source module) while requiring `task.capability("max_tasks")` to match `task.info()["max_tasks"]`.
+- [x] Removed the remaining Catalina bootstrap helpers from `tools/p2/bootstrap/`, changed `p2-tools-catalina` into an external-install check for `CATALINA_DIR`, updated tool/build docs to stop advertising Catalina cache/bootstrap workflows, and expanded `p2-catalina-path-audit` to cover `tools/p2`.
+- [x] Tightened `p2-tools-catalina` so it verifies the external Catalina checkout has the expected `bin/catalina`, `bin/lcc`, `include`, `target`, and `lib` components before a P2 build starts.
+- [x] Clarified task documentation and tracking so the 32-slot claim applies to the source-level `modules/task.be` backend, while the native P2 compatibility `import task` path is allowed to keep its current 16-slot limit as long as `task.info()` and `task.capability("max_tasks")` agree.
+- [x] Added focused current-VM IPC hardware-smoke plumbing: `/tests/p2/smoke_p2ipc.be`, `scripts/p2/repl_smoke.py --suite p2ipc`, and `make p2-smoke-ipc PORT=...` upload only `modules/p2ipc.be` plus the smoke file before running channel/mailbox/buffer/mutex contract diagnostics.
+- [x] Hardware-verified the focused current-VM IPC smoke on `/dev/ttyUSB0`: `make p2-smoke-ipc PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` uploaded `modules/p2ipc.be` plus `/tests/p2/smoke_p2ipc.be` and passed `P2_SMOKE_PASS p2ipc`.
+- [x] Added focused closure-cog make plumbing: `make p2-smoke-cog-closure PORT=...` uploads only `/tests/p2/smoke_cog_closure.be` before running the existing `cog-closure` suite.
+- [x] Added aggregate `make p2-smoke-priority4 PORT=...`, which runs the focused closure-cog, task, and IPC smoke targets in order using the same focused timeout defaults.
+- [x] Added `scripts/p2/repl_smoke.py --suite priority4` for direct already-staged execution of the same focused closure-cog, task, and IPC smoke sequence.
+- [x] Added focused grouped P2 API smoke plumbing: `scripts/p2/repl_smoke.py --suite p2-api` and `make p2-smoke-p2-api PORT=...`, which uploads only `/tests/p2/smoke_p2_api.be` before running the grouped low-level API smoke.
+- [x] Added focused already-staged Priority 1 import/library smoke suites: `scripts/p2/repl_smoke.py --suite import-cache`, `--suite import-churn`, `--suite libraries`, and aggregate `--suite priority1`, avoiding a broad soak run when only the existing import/cache/library checks need to be exercised.
+- [x] Added `make p2-smoke-priority1-staged PORT=...` as a no-upload wrapper around the already-staged Priority 1 import/cache/churn/library aggregate, using the focused smoke timeout defaults and making the SD precondition explicit in the target name.
+- [x] Added `p2smart.async_serial_buffer_policy()` so the current async-serial no-FIFO/no-buffer limitation is queryable as structured metadata, with host/import assertions and smart-pin docs updated instead of implying buffered UART receive support exists.
+- [x] Added `libstore.pasm_policy()` so the `/berry/pasm/*.bin` storage/readback contract is queryable separately from native PASM execution, with import and PASM-layout smoke assertions preserving `execution_supported == false` / `pasm_execution_deferred`.
+- [x] Added `task.contract()` so the cooperative task scheduler's current-VM/no-preemption/no-independent-stack/no-cross-VM boundary is queryable as one structured map, with audit consistency checks and focused host/P2/import-smoke assertions.
+- [x] Added `p2smart.adc_dac_delta_policy()` so the current DAC-to-ADC setup/readback path is queryable separately from unverified calibrated voltage, polarity, and threshold assertions, with focused host/import assertions and docs/TODO updates.
+- [x] Added already-staged Priority 2 smoke plumbing: `scripts/p2/repl_smoke.py --suite priority2` groups the low-level P2 API smoke with the focused smart-pin loopback, async RX, and sync diagnostic suites, and `make p2-smoke-priority2-staged PORT=...` wraps it without doing an SD upload.
+- [x] Added already-staged Priority 3 smoke plumbing: `scripts/p2/repl_smoke.py --suite priority3` runs the PASM layout/marker-fixture contract smoke, and `make p2-smoke-priority3-staged PORT=...` wraps it without doing an SD upload.
+- [x] Added already-staged first-four priority smoke plumbing: `scripts/p2/repl_smoke.py --suite priority1-4` and `make p2-smoke-priority1-4-staged PORT=...` run the existing Priority 1 through Priority 4 staged suites in order without doing a make upload.
+- [x] Added bounded async UART drain helpers to `p2smart.AsyncSerialPair`: `read_available_results(max_count=nil)` returns result-shaped currently-ready RX events and acknowledges each consumed byte, while `read_available(max_count=nil)` returns just the byte values without claiming a background FIFO.
+- [x] Extended `/tests/p2/smoke_smartpins_async_rx.be` so the focused async RX hardware smoke now includes a bounded drain/ack check for `read_available_results()` and `read_available()` on the documented `0-1` jumper path.
+- [x] Added `p2smart.async_serial_drain_probe(...)`, a top-level setup/send/wait/drain/clear diagnostic helper for the bounded async UART drain path, with capability metadata and focused host/import coverage.
+- [x] Updated `examples/uart_loopback.be` to demonstrate the bounded async UART drain probe alongside the existing async send/query diagnostic.
+- [x] Updated `examples/smartpin_diagnostics.be` to include the bounded async UART drain probe in the broader jumper diagnostics bundle.
+- [x] Folded `p2smart.async_serial_drain_probe(...)` into `p2smart.jumper_pair_probe(...)` so the compact one-pair diagnostic bundle now includes bounded async UART drain/ack coverage in addition to setup/query.
+- [x] Added `p2smart.jumper_pair_checks()` so tests and users can inspect the ordered `jumper_pair_probe(...)` sub-check list without touching hardware; focused host/import/smart-pin smoke coverage now pins that `async_serial_drain` is part of the bundle.
+- [x] Changed `p2smart.jumper_pair_probe(...)` to use `jumper_pair_checks()` for its ordered sub-check names/counts and return a `checks` snapshot, reducing metadata drift as the bundle evolves.
+- [x] Extended `p2smart.audit()` / `audit_problems()` so smart-pin metadata self-checks now fail if `jumper_pair_checks()` loses a required unique sub-check such as `async_serial_drain`.
+- [x] Extended `p2ipc.audit()` with required capability/contract key lists so missing IPC metadata fields are reported explicitly, with focused host/import/P2-smoke assertions.
+- [x] Added `p2smart.required_capability_keys()` and extended `p2smart.audit()` so missing smart-pin capability metadata is reported explicitly, with focused host/import assertions.
+- [x] Added task required-key metadata helpers for scheduler capabilities, primitive capabilities, and the cooperative contract, and extended `task.audit()` to report missing metadata keys with focused host/P2/import-smoke assertions.
+- [x] Added `task.self_test_result(iterations)` as a bounded current-VM cooperative task cleanup diagnostic over a tiny task lifecycle, Queue, Semaphore, Mutex, EventFlags, Timer, and event cleanup path, with capability metadata plus focused host/P2/import-smoke assertions.
+- [x] Hardware-verified the task self-test diagnostic on `/dev/ttyUSB0`: `make p2-smoke-task PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` uploaded `modules/task.be` plus `/tests/p2/smoke_task.be` and passed `P2_SMOKE_PASS task`.
+- [x] Added `p2compat.required_capability_names()` and `required_child_vm_policy_keys()` so p2compat audit now reports missing bare-metal capability records or child-VM transfer-policy fields explicitly, with focused host/p2compat/import-smoke assertions.
+- [x] Added `p2mem.required_capability_keys()` and extended `p2mem.audit()` so missing memory/cache diagnostic capability metadata is reported explicitly, with focused host/import assertions.
+- [x] Added `libstore.required_capability_keys()` and extended `libstore.audit()` so missing module-coverage/cache-policy capability metadata is reported explicitly, with focused host/import assertions.
+- [x] Added `wifi.required_capability_keys()` and extended metadata-only `wifi.audit()` so missing AirLift/SPI capability metadata is reported explicitly without starting hardware transactions, with focused host/import assertions.
+- [x] Added `configstore.required_capability_keys()` and extended `configstore.audit()` so missing `/berry/config` JSON helper capability metadata is reported explicitly, with focused host/configstore/import assertions.
+- [x] Added `math.required_capability_keys()` and extended `math.audit()` so missing finite-fallback/CORDIC capability metadata is reported explicitly, with focused host/import assertions.
+- [x] Added `binary_heap.required_capability_keys()` and extended `binary_heap.audit()` so missing tiny in-memory heap capability metadata is reported explicitly, with focused host/import assertions.
+- [x] Added `make p2-source-module-metadata-audit`, backed by `scripts/p2/audit_source_module_metadata.py`, and folded it into `make p2-baseline-guards` so source-module capability maps must stay aligned with `required_capability_keys()` and `missing_capability_keys` audit reporting.
+- [x] Tightened `p2ipc.required_capability_keys()` to include the remaining basic channel/mailbox/mutex/shared-buffer/result diagnostic capability fields after the source-module metadata audit exposed the drift.
+- [x] Added native `p2.asm.required_capability_keys()` and `required_abi_keys()` plus `missing_capability_keys` / `missing_abi_keys` audit fields so the PASM marker-fixture contract metadata is explicitly queryable, with focused PASM-layout smoke assertions and docs/TODO updates.
+- [x] Added native `p2.cog.required_capability_keys()` plus metadata-only `p2.cog.audit()` / `audit_problems()` / `audit_ok()` so the interim native-blink handle contract reports missing capability metadata without spawning cogs, with focused closure-cog smoke assertions and docs/TODO updates.
+- [x] Added `p2smart` synchronous-serial clock variant diagnostics: the source fallback now preserves the native `invert_b` selector, the module reports normal/inverted RX-clock and clock-output mode plans for the documented four-pin jumper groups, and the focused sync diagnostic smoke now avoids the unbounded clocked TX/RX path after hardware showed that execution can run past the smoke timeout before received-data validation is solved.
+- [x] Repaired the focused `smartpins-sync-diag` hardware smoke after the clocked sync-serial TX/RX helper ran past the smoke timeout: the smoke now validates sync setup/readiness and clock-mode planning only, so the jumper-dependent suite completes while received-data execution stays open in TODO.
+- [x] Reworked `p2smart.sync_serial_clocked_jumper_variant_probes(...)` so aggregate variant diagnostics are compact planning records that return `execution_deferred` instead of invoking the clocked TX/RX path per group; hardware on `/dev/ttyUSB0` now verifies both one-group and default aggregate variant helpers return without hanging.
+- [x] Restored bounded hardware coverage for one real clocked sync-serial attempt in `/tests/p2/smoke_smartpins_sync_diag.be`: `sync_serial_clocked_probe(0, 1, 2, 3, [0x12], ...)` returns on `/dev/ttyUSB0` and reports the current no-ready/no-match receive status without hanging the suite.
+- [x] Added `p2smart.dac_adc_sampled_probe(...)` for multi-sample DAC-to-ADC jumper diagnostics, reporting low/high sample lists, min/max/average, signed and absolute average delta, polarity labels, and explicit uncalibrated polarity/voltage flags; host coverage pins the call sequence and `/tests/p2/smoke_smartpins_loopback.be` now stages one sampled `0->1` analog check.
+- [x] Added `p2smart.dac_variant_adc_sampled_probe(...)` so named DAC modes have the same multi-sample DAC-to-ADC diagnostic shape, including resistor/dither metadata, uncalibrated polarity/voltage flags, focused host call-sequence coverage, and a conservative `0->1` hardware smoke case.
+- [x] Added `p2smart.adc_variant_dac_sampled_probe(...)` so named ADC source/family modes can be sampled against a DAC jumper without claiming calibrated voltage; host coverage pins mode selection/call order and `/tests/p2/smoke_smartpins_loopback.be` now stages a conservative `3x`/`adc_ext` `0->1` check.
+- [x] Added `p2smart.adc_dac_variants_sampled_probe(...)` for combined named ADC source/family plus named DAC resistor/dither sampled jumper diagnostics; host coverage pins both mode selections and `/tests/p2/smoke_smartpins_loopback.be` now stages a conservative `10x`/`adc_scope` plus `75r_2v`/`plain` `0->1` check.
+- [x] Relaxed the analog smartpin smoke so DAC-to-ADC probes report sampled values and verify result shape/cleanup without requiring a nonzero delta; this matches current `/dev/ttyUSB0` behavior where a `0->1` DAC/ADC run can return flat readings while calibrated analog validation remains open.
+- [x] Fixed `p2smart.pulse_counter_probe(...)` and `transition_counter_probe(...)` so they arm the output with count `0`, read the counter baseline, then trigger the requested count; isolated hardware showed the old probes counted pulses before the baseline read, and the repaired `/tests/p2/smoke_smartpins_loopback.be` now passes again on `/dev/ttyUSB0`.
+- [x] Extended `/tests/p2/smoke_smartpins_loopback.be` to hardware-check named PWM `sawtooth`/`smps` through rise-counter loopback on every documented jumper pair in both directions.
+- [x] Added NCO-duty hardware diagnostics to `/tests/p2/smoke_smartpins_loopback.be` without claiming a passing waveform: direct `/dev/ttyUSB0` probes for several bit-period/duty values on jumper `0-1` currently report no rise-counter delta, so the smoke records result shape and values while TODO keeps NCO-duty waveform validation open.
+- [x] Added `p2smart.counter_variant_drive_probe(...)` for named counter/timer modes driven by a jumped GPIO output; focused host coverage pins the call sequence and `/tests/p2/smoke_smartpins_loopback.be` now hardware-checks named `count_highs` in both directions on every documented jumper pair.
+- [x] Added `p2smart.counter_variant_drive_modes_probe(...)` as an aggregate named-counter drive diagnostic with per-mode failure reporting.
+- [x] Added a dedicated `/tests/p2/smoke_smartpins_counter_modes.be` smoke and `smartpins-counter-modes` runner suite for the aggregate default counter-drive probe across the documented `0-1`, `2-3`, `4-5`, and `6-7` jumper pairs in both directions, while keeping the heavier smartpin loopback suite on its stable single-mode per-pair counter check.
+- [x] Kept `count_rises` out of the aggregate hardware default after direct `/dev/ttyUSB0` smoke attempts hung on the first `0->1` aggregate case; `count_highs` remains the hardware-safe default and `count_rises` remains explicit setup/host coverage until a timeout-safe hardware validation pattern is found.
+- [x] Added `make p2-smoke-smartpins-counter-modes PORT=...` and folded it into the aggregate `make p2-smoke-smartpins PORT=...` target so the focused counter-mode jumper smoke is repeatable through the same make entrypoints as the other smart-pin suites.
+- [x] Hardened the Catalina loader default on Linux: `mk/toolchain-catalina.mk` now resolves `LOADP2` from `command -v loadp2` before falling back to `.third_party_cache/flexprop/bin/loadp2`, so `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina` no longer fails just because the optional FlexProp cache is absent when a system `loadp2` is installed.
+- [x] Promoted sampled ADC/DAC jumper probes in `p2smart.capabilities()` from generic diagnostics to verified sampled-loopback coverage: `adc_dac_sampled_probe`, `dac_variant_adc_sampled_probe`, `adc_variant_dac_sampled_probe`, and `adc_dac_variants_sampled_probe`. The separate `adc_dac_delta` capability remains `unverified` because calibrated voltage and polarity thresholds are still not claimed.
+- [x] Extended `/tests/p2/smoke_import_all_libs.be` so SD import-all coverage also pins the verified sampled ADC/DAC `p2smart` statuses and status-filtered name list, not just the host-only smart-pin regression.
+- [x] Wired the focused Priority 4 cooperative task and current-VM IPC smokes into `/tests/p2/smoke_all.be` so the umbrella SD smoke now includes `smoke_task.be` and `smoke_p2ipc.be` alongside the existing closure-cog and p2compat coverage.
+- [x] Wired the grouped low-level P2 API smoke into `/tests/p2/smoke_all.be` so the umbrella SD smoke now includes `smoke_p2_api.be` before p2compat/task/IPC coverage; the focused `make p2-smoke-p2-api PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` target passes after keeping `wait_attention()` as pending semantics instead of a false self-attention assertion.
+- [x] Added bounded native `p2.cog.wait_attention_result(timeout_us)` / flat `p2.attention_wait_result(timeout_us)` as a result-shaped attention wait helper that polls with a timeout instead of using the raw blocking `_waitatn()` path. Rebuilt and flashed the Catalina XMM image with `CATALINA_DIR=../Catalina`; `make p2-smoke-p2-api PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` passed on the new `1044416` byte image.
+- [x] Added `p2ipc.attention_policy()` plus matching capability/contract/audit metadata so IPC reports bounded native cog-attention wait availability without falsely claiming channel/mailbox cross-cog wakeups. Host and import/P2 smokes pin the policy fields and keep `cross_cog_attention_wakeup == false`.
+- [x] Added `task.attention_policy()` plus matching capability/contract/audit metadata so the cooperative task scheduler reports bounded native cog-attention wait availability while keeping `task.wait("attention")` documented as a current-VM event, not a cross-cog task wakeup contract.
+- [x] Added current-VM `task.wait()` integration for imported `p2ipc` channel/mailbox objects: channel receive/send readiness and mailbox get/put readiness are now scheduler-pollable through task-readable object kinds, with focused host/P2 task coverage and IPC marker assertions.
+- [x] Hardened object-wait timeout parsing so `task.wait(queue, timeout)`, `task.wait(channel, timeout)`, and `task.wait(mailbox, timeout)` now apply the timeout to default get/receive waits instead of requiring the explicit mode argument form.
+- [x] Added `p2ipc` task-wait integration metadata (`task_wait_integration`, `task_wait_channel`, and `task_wait_mailbox`) to capabilities, contract, audit, required-key lists, and focused host/P2 IPC smokes.
+- [x] Added `p2compat.child_vm_policy(name)` as a snapshot-safe direct lookup helper for child-VM transfer-policy fields, including copied list values, with focused host/P2 p2compat coverage.
+- [x] Added `p2ipc.contract_value(name)` so tools can query individual current-VM IPC contract fields without parsing the full contract map, with focused host/P2 IPC coverage.
+- [x] Added `task.contract_value(name)` so tools can query individual cooperative scheduler contract fields without parsing the full contract map, with focused host/P2 task coverage.
+- [x] Added `task.execution_model_value(name)` so tools can query one cooperative scheduler execution-model field without parsing the full map, with focused host/P2 task coverage.
+- [x] Added `p2ipc.attention_policy_value(name)` so tools can query one bounded-attention/no-IPC-wakeup policy field without parsing the full map, with focused host/P2 IPC coverage.
+- [x] Added `task.attention_policy_value(name)` so tools can query one cooperative scheduler attention-policy field without parsing the full map, with focused host/P2 task coverage.
+- [x] Added `task.required_attention_policy_keys()` and extended `task.audit()` to report missing task attention-policy metadata separately, with focused host/P2 task coverage.
+- [x] Repaired the non-interactive Linux `loadp2 -t` wrapper path so `make p2-edge32-ram ...` no longer strips terminal mode; it now uses a bounded PTY attach, reaches the Berry prompt, disconnects, and exits successfully under non-TTY make runs.
+- [x] Restored the COMPACT Edge32 recovery image after grouped roadmap facades made it exceed Hub RAM: grouped roadmap facades now default to XMM-only, and non-XMM Edge32 uses a `92 KiB` main heap plus `8 KiB` worker heap. `make p2-edge32 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` now builds `518304 / 524288` bytes.
+- [x] Added a Hub RAM size guard for generated Catalina flash-loader wrapper images so an oversized `berry_p2_flash_loader.binary` fails during build instead of timing out silently during flash boot. The repaired Edge32 flash-loader wrapper is `520384 / 524288` bytes.
+- [x] Hardware-verified the Priority 0 aliases with native sibling Catalina on `/dev/ttyUSB0`: `make p2-edge32-ram PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` reached the Edge32 prompt, `make p2-edge32-flash ...` programmed and booted the Edge32 SPI-flash image, a REPL probe reported `edge32`, `make p2-xmm-flash ...` restored the standalone XMM image, and a REPL probe reported `xmm true` for the XMM profile and pointer-window heap.
+- [x] Fixed `p2.fs_info("/")` mounted-state diagnostics so calling `os.path.exists()` or other filesystem APIs before `p2.fs_info()` no longer leaves `partition_start=-1` / `volinfo_result_name='not_run'`; mounted snapshots now report the current Catalina volume start and FAT metadata.
+- [x] Fixed `os.path.splitext("LOCAL")` to return `["LOCAL", ""]` instead of `["", "LOCAL"]`, preserving the expected no-extension local filename shape.
+- [x] Hardened `/tests/p2/smoke_sd.be` for P2 fixed file-handle pools by closing every read handle explicitly, accepting P2 `seek()` success via `tell()` checks, and pinning the current uppercase `bytes.tohex()` result.
+- [x] Hardware-verified the full SD/file/os/os.path checklist on both current P2 Edge 32 MB profiles with native sibling Catalina: XMM standalone flash image `1044640 / 16777216` passed `run_file("/tests/p2/smoke_sd.be")`, Edge32 SPI-flash image `518304 / 524288` with flash wrapper `520384 / 524288` passed the same checklist, and the board was restored to XMM afterward with a final `xmm true` profile probe.
+- [x] Hardware-verified the focused range built-in smoke on the current native-Catalina XMM image: staged `/tests/p2/smoke_range.be` and `run_file("/tests/p2/smoke_range.be")` passed with `P2_SMOKE_PASS range`.
+- [x] Tightened the Priority 1 `p2mem` diagnostics after focused library-smoke probing: `p2mem.stats()` now keeps `p2.status_info()` error detection without returning the large nested status payload, and `p2mem.gc()` reports an explicit bounded `p2_gc_collect_deferred` snapshot on P2 instead of forcing a slow native collection from source-module diagnostics. Host `tests/p2/host_libstore_chunk.be` passes, and the focused hardware `stats -> cache -> gc` probe passed on `/dev/ttyUSB0`.
+- [x] Hardware-verified the Priority 1 host-like API compatibility metadata with the focused native-Catalina XMM smoke: `make p2-smoke-p2compat PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` staged only `modules/p2compat.be` plus `/tests/p2/smoke_p2compat.be` and passed `P2_SMOKE_PASS p2compat`.
+- [x] Rechecked `/berry/main.be` startup behavior with a minimal boot marker on the current native-Catalina XMM image: normal boot did not run the marker because `BE_P2_RUN_SD_MAIN` defaults to `0`, manual `run_file("/berry/main.be")` printed `P2_SD_MAIN_BOOT_MARKER` and returned `123`, and a final focused REPL probe confirmed `/berry/main.be` was removed from the SD card.
+- [x] Hardware-verified the opt-in `/berry/main.be` startup path with native sibling Catalina: `make p2-xmm-flash PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina CATALINA_EXTRA_CFLAGS='-DBE_P2_RUN_SD_MAIN=1'` built/flashed an XMM image `1044992 / 16777216`; a staged `/berry/main.be` printed `P2_SD_MAIN_BOOT_MARKER` during startup before `berry>` and removed itself; the board was restored with normal `make p2-xmm-flash ...` to image `1044640 / 16777216`, and a final focused REPL probe reported `xmm false` for profile plus `/berry/main.be` absence.
+- [x] Hardware-verified focused native `introspect` smokes on the non-XMM Edge32 profile with native sibling Catalina: `make p2-edge32-flash PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` booted image `518304 / 524288`, staged only `/tests/p2/intro.be` and `/tests/p2/ismeth.be`, and both `run_file()` checks passed with `P2_SMOKE_PASS introspect` and `P2_SMOKE_PASS introspect_ismethod`; the board was restored afterward to normal XMM and a final profile probe returned `xmm`.
+- [x] Added and hardware-verified a minimal normal smart-pin mode smoke: `/tests/p2/smoke_smartpins_normal_pin.be` drives `p2smart.NormalPin` output pin `0` into input pin `1`, checks high/low readback and clear state, promotes `p2smart.capabilities()["normal_pin"]` to `verified`, adds direct `smartpins-normal-pin` smoke plumbing, and passes on `/dev/ttyUSB0` after staging the current `modules/p2smart.be`.
+- [x] Added and hardware-verified a minimal `.bec` fallback smoke: `/tests/p2/smoke_bec_fallback_min.be` stages `/berry/lib/bec_min.be` plus dummy `/berry/cache/bec_min.bec`, verifies `libstore.info()` / `resolve()` select source fallback while reporting compiled metadata, cleans up both files, passes the SD write audit, and passes on `/dev/ttyUSB0` via a single direct `run_file()` smoke. `scripts/p2/repl_smoke.py --suite bec-fallback-min` exposes the same focused check.
+- [x] Added `make p2-smoke-bec-fallback-min PORT=... TOOLCHAIN=catalina CATALINA_DIR=../Catalina` plus the matching narrow SD staging helper so the minimal `.bec` fallback smoke can be rerun without invoking the broader Priority 1 or `.bec` fallback suites.
+- [x] Added and hardware-verified `/tests/p2/smoke_smartpins_quadrature_static.be` through `make p2-smoke-smartpins-quadrature-static PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` on the normal XMM image; the focused static-jumper smoke covers quadrature setup/sample/ack/clear and deliberately leaves `p2smart.status("quadrature") == "setup_only"` until real motion/direction validation exists.
+- [x] Added and hardware-verified `/tests/p2/smoke_libraries_lazy_min.be` with `scripts/p2/repl_smoke.py --suite libraries-lazy-min` on `/dev/ttyUSB0`; the focused Priority 1 smoke checks lazy SD source loading, zero eager PSRAM source-cache use, no direct PSRAM execution, expected policy/strategy fields, and status/policy/strategy snapshot isolation without running the broader library behavior suite.
+- [x] Added and hardware-verified `scripts/p2/repl_smoke.py --suite p2mem-policy-min` plus `make p2-smoke-p2mem-policy-min PORT=...`; the focused Priority 1 direct probe loads `/modules/p2mem.be` and verifies `p2mem` capability lookup, audit status, and bounded `gc_result()` diagnostics without running the broader library suite.
+- [x] Added and hardware-verified `scripts/p2/repl_smoke.py --suite p2mem-native-cache-min` plus `make p2-smoke-p2mem-native-cache-min PORT=...`; the focused Priority 1 direct probe loads `/modules/p2mem.be`, resets the native upper-PSRAM cache, performs a verified put/get through upper PSRAM, and checks the final entry count without running the broader library suite.
+- [x] Fixed Catalina XMM PSRAM block transfers in the P2 native wrappers by staging reads and writes through an explicit HUB buffer before calling Catalina's `psram_read()` / `psram_write()`. This makes Berry heap strings safe to store in native upper-PSRAM cache entries and restores checksum verification for short payloads such as `"abc"`.
+- [x] Added and hardware-verified `/tests/p2/smoke_pasm_policy_min.be` with `scripts/p2/repl_smoke.py --suite pasm-policy-min` on `/dev/ttyUSB0`; the focused Priority 3 smoke checks `p2.asm` function-bridge, inline-assembler, arbitrary-blob, and unsafe-gate policy/ABI metadata plus audit helpers without staging PASM blobs or running the full PASM layout smoke.
+- [x] Retired the stale Priority 3 TODO for safe native `p2.asm` intrinsics: `getrnd()`, `getct()`, `waitx(cycles)`, and guarded `hubset(value)` are implemented in the native grouped facade, documented in `docs/pasm.md` and `docs/p2-api.md`, and covered by `/tests/p2/smoke_p2_api.be` with positive safe calls plus non-destructive negative-argument diagnostics.
+- [x] Retired the stale Priority 3 TODO for PASM blob loading from SD: `libstore.pasm_load()` / `pasm_load_result()` cover `/berry/pasm/*.bin` flat and dotted nested names, `libstore.pasm_policy()` exposes the non-executing storage/readback contract, native `p2.asm.load(path)` returns 4-byte-aligned bytes with error coverage, and `/tests/p2/smoke_pasm_layout.be` hardware-verifies flat/nested staging, metadata, native loading, marker-fixture loading, and rejection of non-marker launch attempts. Arbitrary PASM execution remains tracked separately under the cog-launch ABI item.
+- [x] Retired the stale Priority 3 wording that treated all PASM cog launching as open: the safe exact-marker fixture launch path is implemented as `p2.asm.launch_probe()` and `p2.asm.launch_loaded_probe(blob)`, verifies marker/cog-id/stop cleanup, rejects non-marker blobs, and is covered by the PASM layout smoke. The remaining open item is now the narrower public arbitrary-blob launch ABI.
+- [x] Retired the Priority 3 inline-assembler decision TODO as an explicit default policy: `p2.asm.capabilities()` and `p2.asm.abi()` report `inline_assembler_policy == "unsupported_no_parser_or_safety_contract"` with required parser/codegen/ABI/clobber/relocation/source-mapping/safety-contract fields, docs describe that boundary, and the focused PASM policy smoke hardware-verifies the metadata. Inline assembly is intentionally unavailable in the normal build instead of silently missing.
+- [x] Retired the Priority 3 unsafe-assembly gate TODO for the default build: `p2.asm.capabilities()` and `p2.asm.abi()` report `unsafe_gate == "BE_P2_ENABLE_UNSAFE_ASM"`, `unsafe_default == false`, and `unsafe_module == "none"`; `p2.asm.audit()` checks the duplicated metadata; docs state raw PASM must remain explicit; and the focused PASM policy smoke hardware-verifies the default-off gate. Actual arbitrary unsafe execution remains part of the separate arbitrary-blob ABI work.
+- [x] Added and hardware-verified `/tests/p2/smoke_cog_policy_min.be` with `make p2-smoke-cog-policy-min PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina`; the focused Priority 4 smoke checks native-blink closure-cog handle metadata, nonblocking join/result/error policy, cleanup policy, unsupported isolated-VM/live-closure transfer flags, required capability keys, and audit helpers without spawning closure cogs.
+- [x] Added and hardware-verified `scripts/p2/repl_smoke.py --suite task-policy-min` on `/dev/ttyUSB0`; the focused Priority 4 direct probe loads `/modules/task.be` and verifies the source-level `p2_native_cooperative` backend, `current_vm_callback_step` scheduler policy, and clean task audit helper without running the broader task suite.
+- [x] Added and hardware-verified `scripts/p2/repl_smoke.py --suite ipc-policy-min` plus `make p2-smoke-ipc-policy-min PORT=...`; the focused Priority 4 direct probe loads `/modules/p2ipc.be` and checks current-VM IPC model metadata, task-wait integration, bounded-attention policy, and audit status without running the broader IPC suite.
+- [x] Updated `docs/testing.md` and `docs/coverage-matrix.md` so the documented normal progress path names the minimal focused smokes for Priority 1 lazy library and `.bec` fallback checks, Priority 2 normal-pin/quadrature-static checks, Priority 3 PASM policy checks, and Priority 4 cog/task/IPC policy checks instead of steering routine work toward broad aggregate suites.
+- [x] Added `p2smart.sync_serial_receive_policy()` to make the current synchronous-serial boundary explicit: unclocked probes can report constant raw samples, the bounded four-pin clocked probe returns cleanly without ready RX data, and matched receive words remain unverified. Host coverage and the focused sync diagnostic smoke now pin that policy without running broad smart-pin suites.
+- [x] Hardened `scripts/p2/repl_smoke.py` so uncaught Berry errors and stack tracebacks fail the runner even for custom commands without `--expect`; an intentional `assert(false)` probe now exits nonzero, while a one-line positive marker still passes. A focused ADC/DAC delta probe on jumper `0-1` stayed flat (`low avg 0`, `high avg 0`, `delta 0`), so `adc_dac_delta` remains unverified instead of being promoted from weak analog evidence.
+- [x] Added a focused Priority 1 core built-ins smoke entrypoint: `scripts/p2/repl_smoke.py --suite core-builtins-min` runs 8.3-safe short aliases for the existing `call`, `vararg`, `compile_module`, `conversions`, `list_core`, `map_core`, `map_keys`, and `bytes` smoke files, and `make p2-smoke-core-builtins-min PORT=...` uploads only those aliases before running the focused slice instead of the full SD smoke suite.
+- [x] Repaired `/tests/p2/smoke_call.be` after the focused core-builtins run exposed stale assumptions: invalid `call()` targets raise `value_error` with `first argument must be a function or a class`, terminal-list expansion into a vararg function preserves all expanded values, and raw method values are not bound callables, so the smoke now wraps the method call in a closure before exercising `call(..., [args])`.
+- [x] Repaired the remaining focused core-builtins smoke assumptions and hardware-verified `make p2-smoke-core-builtins-min PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` on the normal XMM image. The pass covers `call`, `vararg`, `compile_module`, `conversions`, `list_core`, `map_core`, `map_keys`, and `bytes` through 8.3-safe aliases. The fixes keep `compile_module` tolerant of normal profiles without the optional `global` module, align conversion expectations with current `bytes`/`range` instance typing and invalid-string numeric conversion behavior, align `map_core` with native `map` typing, and make `map_keys` record the P2 boundary where equivalent distinct instance keys and invalid hash return errors are not claimed even though same-instance object keys, real keys, and retained collision-key objects work.
+- [x] Added and hardware-verified the focused Priority 1 SD/file smoke target: `scripts/p2/repl_smoke.py --suite sd-file-min` runs only `/tests/p2/smoke_sd.be`, and `make p2-smoke-sd-file-min PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` uploads only that smoke before running it on the normal native-Catalina XMM image. The pass covers SD mount diagnostics, `open()` write/append/update/plus modes, explicit close behavior, `read()`, `readbytes()`, `readlines()`, `seek()`/`tell()`, rename/remove/listdir, cwd/mkdir cleanup, and `os.path` basename/dirname/join/split/splitext/existence/file/dir helpers without invoking the broad SD smoke suite.
+- [x] Re-verified the focused Priority 2 sync-serial diagnostic on the current native-Catalina XMM image with `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --suite smartpins-sync-diag --timeout 300 --startup-timeout 120`. The smoke passes after allowing the large staged `modules/p2smart.be` source import/compile to complete, covering the structured `sync_serial_receive_policy()` boundary, a bounded single clocked data/clock probe, and the default four-pin variant planning while keeping matched receive words explicitly unverified.
+- [x] Added and hardware-verified `scripts/p2/repl_smoke.py --suite smartpins-adc-dac-diag` plus `make p2-smoke-smartpins-adc-dac-diag PORT=...` as a focused Priority 2 ADC/DAC diagnostic-only target that assumes `modules/p2smart.be` is already staged. On `/dev/ttyUSB0` with the current native-Catalina XMM image, `make p2-smoke-smartpins-adc-dac-diag PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` passed and printed `P2_SMOKE_ADC_DAC_DIAG true 0 0 0 0 flat`, proving the policy and sampled result shape while keeping calibrated/nonzero ADC-DAC delta unverified.
+- [x] Added and hardware-verified `scripts/p2/repl_smoke.py --suite smartpins-nco-duty-diag` plus `make p2-smoke-smartpins-nco-duty-diag PORT=...` as a focused Priority 2 NCO-duty diagnostic-only target that assumes `modules/p2smart.be` is already staged. On `/dev/ttyUSB0` with the current native-Catalina XMM image, `make p2-smoke-smartpins-nco-duty-diag PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` passed and printed `P2_SMOKE_NCO_DUTY_DIAG false 0 0 0`, proving the result shape while keeping NCO-duty waveform validation open.
+- [x] Added and hardware-verified `scripts/p2/repl_smoke.py --suite smartpins-quadrature-diag` plus `make p2-smoke-smartpins-quadrature-diag PORT=...` as a focused Priority 2 quadrature diagnostic-only target that assumes `modules/p2smart.be` is already staged. On `/dev/ttyUSB0` with the current native-Catalina XMM image, `make p2-smoke-smartpins-quadrature-diag PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` passed and printed `P2_SMOKE_QUADRATURE_DIAG 0 0 0 0 false setup_only`, proving the static sample result shape while keeping real encoder motion/direction validation open.
+- [x] Re-verified the focused Priority 1 range smoke without running broad suites: uploaded only `tests/p2/smoke_range.be`, then ran `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/tests/p2/smoke_range.be")' --expect 'P2_SMOKE_PASS range' --timeout 180 --startup-timeout 120`. It passed on the current native-Catalina XMM image and printed `P2_SMOKE_PASS range`, confirming the `incr()`/`setrange()` range-method fix is no longer pending in the coverage matrix.
+- [x] Hardware-verified the focused `examples/gpio_loopback.be` example on the current native-Catalina XMM image. After repairing the staged `/modules/p2smart.be` copy and uploading only `examples/gpio_loopback.be` to `/berry/examples`, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/gpio_loopback.be")' --expect 'gpio loopback done' --timeout 240 --startup-timeout 120` passed. The run printed `ok true count 4`, four matching write/read samples on jumper `0-1`, and `gpio loopback done`.
+- [x] Hardware-verified the focused `examples/nco_counter_loopback.be` example on the current native-Catalina XMM image. Uploaded only `examples/nco_counter_loopback.be` to `/berry/examples`, then ran `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/nco_counter_loopback.be")' --expect 'nco counter loopback done' --timeout 240 --startup-timeout 120`. The run printed a fast `p2smart.nco_counter_probe(...)` result with counter delta `41`, a slower probe with counter delta `21`, and `nco counter loopback done`.
+- [x] Repaired and hardware-verified the focused `examples/task_primitives.be` example on the current native-Catalina XMM image. The example now prints scalar Queue/EventFlags/Timer result fields instead of whole result maps, avoiding the on-target map stringification failure seen during the first run. After staging `modules/task.be` and the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/modules/task.be"); run_file("/berry/examples/task_primitives.be")' --expect 'task primitives example done' --timeout 300 --startup-timeout 120` passed, printing Queue nil-payload/full/empty diagnostics, EventFlags ready/not-ready diagnostics, Timer expired/restart/cancel diagnostics, and `task primitives example done`. The explicit source-module preload remains part of the verified command because plain `import task` can resolve to the older native compatibility module on this image.
+- [x] Repaired and hardware-verified the focused `examples/cog_channel.be` current-VM IPC example on the current native-Catalina XMM image. The example now prints scalar result fields instead of whole result maps, and the hardware run fixed stale field assumptions for mailbox `put_result()` (`stored`/`ready`, not `full`) and buffer `fill_result()` (`filled`, not `size`). After staging `modules/p2ipc.be` and the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/cog_channel.be")' --expect 'cog channel example done' --timeout 240 --startup-timeout 120` passed, printing current-VM IPC contract metadata, channel full/snapshot/recv/clear/close diagnostics, mailbox put/peek/clear/close diagnostics, buffer fill/clear diagnostics, and `cog channel example done`.
+- [x] Repaired and hardware-verified the focused `examples/import_all_libs.be` quick import example on the current native-Catalina XMM image. The example now avoids heavy audit scans and optional hardware-deferred imports, prints progress markers, imports `binary_heap`, `configstore`, `math`, `p2compat`, `p2ipc`, and the active `task` backend from `/berry/examples`, and reaches `import all libs example done` with `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/import_all_libs.be")' --expect 'import all libs example done' --timeout 120 --startup-timeout 120`. The heavier `p2mem` and `p2smart` modules stay out of the user-facing quick example so it remains fast, but focused direct import-chain probes now cover them separately.
+- [x] Repaired and hardware-verified the focused `examples/smartpin_diagnostics.be` example on the current native-Catalina XMM image. The example now prints scalar result fields instead of whole nested probe maps and keeps the user-facing path to the representative `0-1` jumper pair, leaving the all-pair aggregate coverage to the dedicated smart-pin smokes. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/smartpin_diagnostics.be")' --expect 'smartpin diagnostics done' --timeout 240 --startup-timeout 120` passed, printing pair checks `8/8`, raw smart-pin reads, repository first/second values, high-counter delta `10240760`, pulse-counter delta `8`, transition-counter delta `4`, async drain `matched true count 4`, and `smartpin diagnostics done`.
+- [x] Repaired and hardware-verified the focused `examples/cog_closure.be` native-blink closure-cog example on the current native-Catalina XMM image. The example now prints scalar capability/info/result/cleanup fields instead of whole maps and avoids optional join/cleanup keys that are not present on the current boot image. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/cog_closure.be")' --expect 'cog closure example done' --timeout 240 --startup-timeout 120` passed, reporting handle policy `native_blink_info_stop_only`, native blink stack `2048`, handles `100` and `101` on cogs `6` and `7`, pins `38` and `39`, result values `150` and `450`, stop/kill `running false`, and `cog closure example done`.
+- [x] Re-verified the current `examples/uart_loopback.be` after adding the bounded drain probe. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/uart_loopback.be")' --expect 'uart loopback done' --timeout 180 --startup-timeout 120` passed on the current native-Catalina XMM image. The run printed three ready send/query events for bytes `65`, `66`, and `67`, then `drain ok true matched true count 4 values [68, 68, 68, 68]`, and reached `uart loopback done`.
+- [x] Repaired and hardware-verified the focused `examples/pasm_direct.be` safe PASM-adjacent example on the current native-Catalina XMM image. The example now uses scalar `p2.asm.audit_ok()` / `audit_problems().size()` helpers instead of indexing the current image's string-shaped `p2.asm.audit()` result, and it has a final `pasm direct done` marker. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/pasm_direct.be")' --expect 'pasm direct done' --timeout 240 --startup-timeout 120` passed, printing safe counter/random/hubset intrinsic output, marker-fixture-only launch policy, unsupported arbitrary-blob/function-bridge/inline-assembler policy values, `policy audit ok: true problems: 0`, marker fixture `ok/seen/cog-match/stopped` all `true`, and `pasm direct done`.
+- [x] Repaired and hardware-verified the focused `examples/task_scheduler.be` cooperative scheduler example on the current native-Catalina XMM image. The example now prints scalar scheduler/task/log diagnostics instead of whole maps/lists, uses short cooperative sleeps, and has a final `task scheduler example done` marker. After staging only the example and preloading the source scheduler with `/modules/task.be`, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/modules/task.be"); run_file("/berry/examples/task_scheduler.be")' --expect 'task scheduler example done' --timeout 300 --startup-timeout 120` passed, reporting `scheduler policy: current_vm_callback_step`, handles `0` and `1`, `steps: 5`, both task statuses `free`, five log entries `A1/B1/A2/B2/B3`, and `task scheduler example done`.
+- [x] Repaired and hardware-verified the focused `examples/cordic_demo.be` grouped CORDIC/math example on the current native-Catalina XMM image. The example now prints scalar `xypol`, `polxy`, and `rotxy` fields instead of whole result maps and has a final `cordic demo done` marker. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/cordic_demo.be")' --expect 'cordic demo done' --timeout 180 --startup-timeout 120` passed, printing `xypol r/t: 5 633866811`, `polxy x/y: 1 0`, `rotxy x/y: 1 0`, `isqrt(81): 9`, `muldiv64(6,7,3): 14`, and `cordic demo done`.
+- [x] Repaired and hardware-verified the focused `examples/debug_report.be` compact diagnostics example on the current native-Catalina XMM image. The example now uses backed `p2.debug` facade calls plus cheap `p2mem` policy/audit fields, avoids the slow full `p2mem.stats()` and module-record scan in the user-facing path, and has a final `debug report done` marker. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/debug_report.be")' --expect 'debug report done' --timeout 180 --startup-timeout 120` passed, printing profile `xmm`, LED pin `38`, cog count `8`, heap current `15049104`, GC after `110473`, hub total `524288`, p2mem audit `true 0`, p2mem capabilities `true true true`, and `debug report done`.
+- [x] Repaired and hardware-verified the focused `examples/psram_cache_stats.be` native PSRAM/cache stats example on the current native-Catalina XMM image. The example now uses native `p2.psram_info()` and `p2.psram_cache_info()` only, avoids slow source-module `libstore`/`p2mem` imports in the user-facing stats path, does not mutate/reset the cache, and has a final `psram cache stats done` marker. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/psram_cache_stats.be")' --expect 'psram cache stats done' --timeout 120 --startup-timeout 120` passed, reporting PSRAM available/heap `true true`, `33554432` bytes, `xmm+block` access, block base/bytes `16777216 16777216`, max transfer `8192`, native cache available `true`, cache base/limit `16777216 32505856`, next/used/free `16777216 0 15728640`, entries/max `0 16`, alloc count `0`, and `psram cache stats done`.
+- [x] Repaired and hardware-verified the focused `examples/file_sd.be` SD file example on the current native-Catalina XMM image. The example now uses a bounded temporary `/P2FEXMP.TXT` path, refuses to overwrite a pre-existing file, writes/reads/removes only the file it creates, and has a final `file sd example done` marker. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/file_sd.be")' --expect 'file sd example done' --timeout 120 --startup-timeout 120` passed, printing existence `true`, the expected text `hello from Berry on P2 SD`, hex bytes `68656C6C6F2066726F6D204265727279206F6E205032205344`, successful remove `true`, and `file sd example done`.
+- [x] Repaired and hardware-verified the focused `examples/json_sd.be` JSON-on-SD example on the current native-Catalina XMM image. The example now uses a bounded temporary `/P2JSON.TXT` path, refuses to overwrite a pre-existing file, writes/reads/removes only the file it creates, and has a final `json sd example done` marker. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/json_sd.be")' --expect 'json sd example done' --timeout 180 --startup-timeout 120` passed, printing `wrote /P2JSON.TXT`, `answer: 42`, `feature count: 3`, successful remove `true`, and `json sd example done`.
+- [x] Repaired and hardware-verified the focused `examples/repl_sd.be` read-only SD REPL helper on the current native-Catalina XMM image. The example now prints scalar mount/list diagnostics instead of dumping the whole root list and has a final `repl sd helper done` marker. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/repl_sd.be")' --expect 'repl sd helper done' --timeout 120 --startup-timeout 120` passed, printing filesystem `ok`, partition start `2048`, root entries `6`, `/berry/main.be` absent, and `repl sd helper done`.
+- [x] Hardware-verified the focused `examples/blink.be` board LED example on the current native-Catalina XMM image. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/blink.be")' --expect 'blink done' --timeout 180 --startup-timeout 120` passed, printing `Blinking P2 board LED on pin 38` and `blink done`; the example floats the LED pin before exit.
+- [x] Repaired and hardware-verified the focused `examples/adc_read.be` ADC wrapper example on the current native-Catalina XMM image. The example now prints scalar sample diagnostics instead of whole result maps, limits the user-facing run to four samples, acknowledges each sample, clears/floats the pin, and keeps the final `adc done` marker. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/adc_read.be")' --expect 'adc done' --timeout 180 --startup-timeout 120` passed, printing samples on pin `1` with ready/event/raw/wait fields: `false 0 0 20000`, `true 2 2 20000`, `true 2 2 20000`, `true 2 0 20000`, then `adc done`.
+- [x] Repaired and hardware-verified the focused `examples/dac_write.be` DAC wrapper example on the current native-Catalina XMM image. The example now prints scalar write diagnostics instead of whole result maps, uses a shorter bounded value sequence, clears/floats the pin, and keeps the final `dac done` marker. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/dac_write.be")' --expect 'dac done' --timeout 180 --startup-timeout 120` passed, printing successful writes on pin `0` for values `0`, `64`, `128`, `192`, `255`, and `0` with frame `256`, settle `60000`, then `dac done`.
+- [x] Repaired and hardware-verified the focused `examples/pwm_fade.be` PWM wrapper example on the current native-Catalina XMM image. The example now prints scalar duty diagnostics instead of whole result maps, uses a short bounded fade sequence on pin `0`, clears/floats the pin, and has a final `pwm fade done` marker. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/pwm_fade.be")' --expect 'pwm fade done' --timeout 180 --startup-timeout 120` passed, printing successful duty updates for `0`, `40`, `80`, `120`, `160`, and `200` with frame `200`, divisor `1`, settle `50000`, then `pwm fade done`.
+- [x] Repaired and hardware-verified the focused `examples/quadrature_counter.be` quadrature wrapper example on the current native-Catalina XMM image. The example now prints scalar sample diagnostics instead of whole result maps, limits the user-facing run to six static samples on the documented `0-1` jumper, acknowledges each sample, clears/floats the pins, and keeps the final `quadrature counter done` marker. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/quadrature_counter.be")' --expect 'quadrature counter done' --timeout 180 --startup-timeout 120` passed, printing six `before 0 after 0 delta 0 moved false direction 0 wait 50000` samples, then `quadrature counter done`.
+- [x] Repaired and hardware-verified the focused `examples/spi_loopback.be` synchronous-serial diagnostic example on the current native-Catalina XMM image. The example now prints scalar receive-policy, single clocked-probe, first-word, and default-variant planning diagnostics instead of dumping nested maps/lists, and keeps the final `sync serial probe done` marker. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/spi_loopback.be")' --expect 'sync serial probe done' --timeout 240 --startup-timeout 120` passed, reporting policy `unverified_no_matched_receive_words`, a bounded clocked probe with `ok false`, `ready 0`, `matched 0`, first word `sent 18 ready false event 0 raw nil value nil matched false error not_ready`, default variants `groups 2 failed 2 supported false error execution_deferred`, then `sync serial probe done`.
+- [x] Added final markers and hardware-verified the focused unsupported-hardware examples on the current native-Catalina XMM image. `examples/vga_test_pattern.be` now reaches `vga test pattern done` after reporting `video_output` and `vga_demo` as unsupported through `p2compat`; `examples/usb_keyboard_mouse.be` now reaches `usb keyboard mouse done` after reporting `usb_hid` and `usb_demo` as unsupported through `p2compat`. Both were compiled locally, staged to `/berry/examples`, and run with focused `scripts/p2/repl_smoke.py --command 'run_file(...)'` checks, preserving the explicit no-fake-demo contract.
+- [x] Re-ran the focused Catalina path audit after the native-sibling-Catalina cleanup: `make p2-catalina-path-audit TOOLCHAIN=catalina CATALINA_DIR=../Catalina` passed and reported that active P2 docs/tooling use the sibling Catalina path with no Docker Catalina references.
+- [x] Repaired and hardware-verified the focused `examples/nco_counter_loopback.be` NCO-to-counter example on the current native-Catalina XMM image. The example now prints scalar probe fields instead of whole result maps. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/nco_counter_loopback.be")' --expect 'nco counter loopback done' --timeout 180 --startup-timeout 120` passed, reporting fast NCO counter delta `41` for increment `536870912`, slower delta `20` for increment `268435456`, and `nco counter loopback done`.
+- [x] Repaired and hardware-verified the focused `examples/cog_closure_blink.be` closure-cog LED example on the current native-Catalina XMM image. The example now prints scalar capability/handle diagnostics instead of a whole capability map, stops/kills the spawned native-blink handles, floats pins `38` and `39`, and has a final `cog closure blink done` marker. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/cog_closure_blink.be")' --expect 'cog closure blink done' --timeout 180 --startup-timeout 120` passed, reporting handle policy `native_blink_info_stop_only`, native blink stack `2048`, handles `100` and `101` on cogs `6` and `7`, stopped/killed running `false`, and `cog closure blink done`.
+- [x] Repaired and hardware-verified the legacy `examples/p2/` helper examples on the current native-Catalina XMM image. `examples/p2/blink.be` now uses the active board LED from `p2.status_info()`, runs a bounded blink, floats the pin, and reaches `p2 blink done`; `pin_helpers.be`, `smartpin_helpers.be`, and `timing_helpers.be` now have final markers and pass focused `run_file(...)` smokes; `hardware_helpers.be` now prints scalar clock/tick/CORDIC/cog/attention diagnostics instead of whole maps/lists and reaches `p2 hardware helpers done`; `closure_blinker.be` now stops/kills native-blink handles and reaches `p2 closure blinker done`; `cog_spawn_source_blinker.be` reports unsupported `spawn_source` on this build and reaches `p2 source blinker done`.
+- [x] Repaired and hardware-verified the focused `examples/wifi/detect.be` AirLift/WiFi example on the current native-Catalina XMM image as a metadata-only diagnostic. The example no longer calls `wifi.init()`, `firmware_version()`, or `status()` and does not start SPI transactions; it prints `wifi.capabilities()`, `default_config()`, `audit()` and status-name metadata, then reaches `wifi detect done`. The first hardware run exposed a stale staged `/modules/wifi.be` without `capabilities()`; after uploading the current `modules/wifi.be`, the focused run passed and reported hardware `wifinina_airlift`, transport `spi`, deferred `true`, audit `true 0 metadata_only_no_spi_transaction`, pins `16 17 18 19 20 21 22`, and status names `connected no_shield`.
+- [x] Repaired and hardware-verified the focused `examples/import_all_libs.be` quick import sweep with metadata-only `wifi` included. After staging the current `modules/wifi.be` and the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/import_all_libs.be")' --expect 'import all libs example done' --timeout 180 --startup-timeout 120` passed, importing `binary_heap`, `configstore`, `math`, `p2compat`, `p2ipc`, the active `task` backend, and `wifi`, then reporting `wifi audit: true true` before `import all libs example done`. Separate focused direct probes also passed the heavier import chain through `p2mem` and `p2smart` while keeping this example quick.
+- [x] Hardware-verified the heavier Priority 1 import chain separately from the quick example on the current native-Catalina XMM image. A direct probe importing `binary_heap`, `configstore`, `math`, `p2compat`, `p2ipc`, `task`, `wifi`, and `p2mem` printed `P2_IMPORT_CHAIN_P2MEM true true`, and the full direct chain adding `p2smart` printed `P2_IMPORT_CHAIN_P2SMART true verified unverified`; `examples/import_all_libs.be` still excludes `p2mem` and `p2smart` because those source imports are slow and belong in focused probes rather than the user-facing quick sweep.
+- [x] Extended and hardware-verified the focused Priority 2 low-level validation smoke with additional grouped API negative coverage. `make p2-smoke-p2-api PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` uploaded only `/tests/p2/smoke_p2_api.be` and passed on the current native-Catalina XMM image after adding negative checks for `p2.clock.waitus(-1)`, `waitms(-1)`, `waitsec(-1)`, grouped pin direction/output/toggle/float invalid pins, and PSRAM-reserved pin `57` direction/float rejection.
+- [x] Closed the Priority 1 `/berry/lib` and `/berry/app` source-path item with focused hardware evidence on the current native-Catalina XMM image. Long `/tests/p2/smoke_import_*.be` names can collide on the target FAT view, so the verification staged only the relevant files under 8.3-safe aliases: `/tests/p2/ilayout.be` passed `P2_SMOKE_PASS import_layout`, `/tests/p2/iorder.be` passed `P2_SMOKE_PASS import_order`, and `/tests/p2/pkgpath.be` passed `P2_SMOKE_PASS package_paths` after cleaning only the known temporary package files `/berry/app/pkg/mod.be` and `/berry/app/pkg/other.be`.
+- [x] Closed the Priority 1 import-resolution preservation items with focused current-XMM hardware evidence. After staging only 8.3-safe aliases, `/tests/p2/infirst.be` passed `P2_SMOKE_PASS import_native_first`, `/tests/p2/icwd.be` passed `P2_SMOKE_PASS import_cwd`, `/tests/p2/lpaths.be` passed `P2_SMOKE_PASS libstore_paths`, and `/tests/p2/syspath.be` passed `P2_SMOKE_PASS sys_path_add` with the expected `P2_SMOKE_SKIP sys_path_add` on the normal profile where optional `sys` is absent. This verifies native-module-first import precedence, active-cwd import precedence/cache identity, scoped `libstore.path_add()` diagnostics, and configured-path behavior without running the broad SD suite.
+- [x] Closed the Priority 1 documented SD layout locations item with focused current-XMM hardware evidence. `/tests/p2/cfgstore.be` passed `P2_SMOKE_PASS configstore` for `/berry/config/*.json`; after changing `/tests/p2/smoke_example_paths.be` to use 8.3-safe temporary names, `/tests/p2/expath.be` passed `P2_SMOKE_PASS example_paths` for flat/nested `/berry/examples` helpers; after changing `/tests/p2/smoke_pasm_layout.be` to use stable `p2.asm.audit_ok()` / `audit_problems()` helpers instead of indexing the current image's string-shaped `audit()` result, `/tests/p2/pasmly.be` passed `P2_SMOKE_PASS pasm_layout` for `/berry/pasm` flat/nested blob paths, `p2.asm.load()`, marker-blob load, exact-fixture launch, non-marker rejection, missing-path diagnostics, and cleanup. A long `libstore.be` upload was interrupted once and then successfully retried alone with a longer timeout before these focused runs.
+- [x] Tightened Priority 1 `.bec` metadata handling after focused fallback probing on the current native-Catalina XMM image: `libstore.info()` now reports compiled manifest/freshness/load/selection fields from current helper state instead of stale hardcoded values, `compile_cache_probe()` handles missing `file.savecode` as `bytecode_emit_unavailable`, `libstore` read helpers now close file handles explicitly, and new compiled-manifest candidates use 8.3-safe `.jsn` sidecars instead of creating unrecoverable `.bec.json` names on the P2 FAT view. Focused validation passed through `make p2-smoke-bec-fallback-min PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina`; the larger `/tests/p2/smoke_bec_fallback.be` remains open and is not counted as closed evidence.
+- [x] Repaired and hardware-verified the broader Priority 1 `.bec` source-fallback smoke on the current native-Catalina XMM image. `libstore.compile_cache_plan()` now reports selection reasons consistently without a heavy nested `resolve()` pass, invalid non-object manifest sidecars fail fast as `invalid_manifest`, missing-source manifest templates short-circuit before unnecessary `.bec` reads, and compiled load/status plans avoid bytecode validation when freshness already proves the file cannot load. `/tests/p2/smoke_bec_fallback.be` was bounded for P2 hardware by keeping core fallback/manifest/compiled-only/emit-plan checks and leaving heavier aggregate JSON/provision emit-report coverage to host tests. The staged 8.3-safe alias passed with `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/tests/p2/becfall.be")' --expect 'P2_SMOKE_PASS bec_fallback' --timeout 480 --startup-timeout 120`.
+- [x] Closed the Priority 2 USB pair wrapper item as explicitly unsupported until a real implementation exists. `p2smart` keeps `usb_pair` unsupported, `p2compat` reports `usb_hid` and `usb_demo` as unsupported, host and P2 p2compat smokes pin those records, docs name the limitation, and `examples/usb_keyboard_mouse.be` hardware-runs to `usb keyboard mouse done` while reporting the unsupported records instead of faking HID behavior.
+- [x] Closed the Priority 1 host-like API documentation item. `p2compat` is now the backed compatibility ledger for bare-metal P2: supported/staged/partial/unsupported capabilities are queryable, unsupported host-like APIs such as environment variables, subprocesses, generic sockets, native host threads, VGA/video, and USB/HID are pinned by host and P2 smokes, and `docs/limitations.md`, `docs/p2-api.md`, and `docs/coverage-matrix.md` state that these are unsupported instead of hidden stubs.
+- [x] Closed the Priority 1 focused-smoke-entrypoint item. `scripts/p2/repl_smoke.py` exposes direct already-staged suites for `import-cache`, `import-churn`, `libraries`, `libraries-lazy-min`, and `priority1`, while `mk/p2.mk` provides focused wrappers including `p2-smoke-priority1-staged`, `p2-smoke-libraries-lazy-min`, `p2-smoke-core-builtins-min`, `p2-smoke-sd-file-min`, and `p2-smoke-bec-fallback-min`. `docs/testing.md` and `docs/coverage-matrix.md` document using these smaller entrypoints instead of broad suites for routine progress.
+- [x] Turned `examples/smartpin_diagnostics.be` into a practical four-jumper health check for the documented `0-1`, `2-3`, `4-5`, and `6-7` wiring instead of a single-pair demo. After staging only the updated example and current `modules/p2smart.be`, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/smartpin_diagnostics.be")' --expect 'smartpin diagnostics done' --timeout 360 --startup-timeout 120` passed on the native-Catalina XMM image, with all four pairs reporting `ok true`, `8 / 8` checks, GPIO loopback, high-counter deltas, pulse/transition counts, async serial, and async drain matches.
+- [x] Upgraded quadrature from static-only example coverage to synthetic motion/direction proof using the documented jumper wiring. The new focused `/tests/p2/smoke_smartpins_quadrature_motion.be` drives pins `0` and `2` into quadrature inputs `1` and `3`; the hardware run passed with `P2_SMOKE_QUAD_FORWARD 0 8 8 1 true`, `P2_SMOKE_QUAD_REVERSE 0 -8 -8 -1 true`, and `P2_SMOKE_PASS smartpins_quadrature_motion`. `examples/quadrature_counter.be` now uses the same two-jumper pattern and hardware-runs to `quadrature counter done`, printing forward direction `1` and reverse direction `-1`.
+- [x] Added and hardware-verified `examples/task_ipc.be`, a compact Priority 4 user-facing demo for cooperative task waits over current-VM IPC objects. After staging current `modules/task.be`, `modules/p2ipc.be`, and the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/modules/task.be"); run_file("/berry/examples/task_ipc.be")' --expect 'task ipc example done' --timeout 300 --startup-timeout 120` passed on the native-Catalina XMM image. The run showed channel receive wait released by `send_result("ready")`, channel send wait released after freeing a full channel, mailbox get wait released by `put_result("mail-ready")`, and mailbox put wait released after freeing a full mailbox.
+- [x] Repaired and hardware-verified `examples/cog_closure.be` on the current native-Catalina XMM image. The example now avoids stale/optional `status()` and `join()` map keys, prints scalar status fields plus the returned join snapshots and `p2.cog.result()` / `p2.cog.error()` values, then stops/kills the native-blink handles and floats pins `38` and `39`. After staging only the example, `python3 scripts/p2/repl_smoke.py --port /dev/ttyUSB0 --baud 230400 --command 'run_file("/berry/examples/cog_closure.be")' --expect 'cog closure example done' --timeout 240 --startup-timeout 120` passed, reporting handles `100` and `101`, result values `150` and `450`, stop/kill running `false`, and `cog closure example done`.

@@ -130,6 +130,22 @@ static void p2_push_map_int_pair(bvm *vm,
     be_pop(vm, 1);
 }
 
+static void p2_map_set_int(bvm *vm, const char *key, bint value)
+{
+    be_pushstring(vm, key);
+    be_pushint(vm, value);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+}
+
+static void p2_map_set_bool(bvm *vm, const char *key, int value)
+{
+    be_pushstring(vm, key);
+    be_pushbool(vm, value ? btrue : bfalse);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+}
+
 static int p2_hex_digit(int ch)
 {
     if (ch >= '0' && ch <= '9') {
@@ -450,6 +466,43 @@ int m_attention_wait(bvm *vm)
     be_return(vm);
 }
 
+int m_attention_wait_result(bvm *vm)
+{
+    uint32_t timeout_us = be_top(vm) >= 1 && !be_isnil(vm, 1)
+        ? p2_require_u32(vm, 1, "timeout_us must be an int")
+        : 0u;
+    uint32_t elapsed = 0;
+    uint32_t polls = 0;
+    uint32_t mask = 0;
+
+    for (;;) {
+        p2_check_interrupt_now(vm);
+        mask = _pollatn();
+        ++polls;
+        if (mask != 0u || elapsed >= timeout_us) {
+            break;
+        }
+        {
+            uint32_t chunk = timeout_us - elapsed;
+            if (chunk > 10u) {
+                chunk = 10u;
+            }
+            _waitus(chunk);
+            elapsed += chunk;
+        }
+    }
+
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "ok", mask != 0u);
+    p2_map_set_bool(vm, "timed_out", mask == 0u);
+    p2_map_set_int(vm, "mask", (bint)mask);
+    p2_map_set_int(vm, "timeout_us", (bint)timeout_us);
+    p2_map_set_int(vm, "elapsed_us", (bint)elapsed);
+    p2_map_set_int(vm, "polls", (bint)polls);
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
 int m_cordic_rotxy(bvm *vm)
 {
     cartesian_t coord;
@@ -484,7 +537,7 @@ int m_cordic_polxy(bvm *vm)
 
 int m_counter_wait_until(bvm *vm)
 {
-    _waitcnt(p2_require_u32(vm, 1, "tick must be an int"));
+    _waitcnt((uint32_t)p2_require_int(vm, 1, "tick must be an int"));
     be_return_nil(vm);
 }
 

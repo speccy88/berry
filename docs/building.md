@@ -7,7 +7,7 @@ Catalina is the preferred and verified P2 toolchain. Use FlexC only when the tas
 Known-good validation build:
 
 ```sh
-make p2 TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
+make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 ```
 
 ## Profiles
@@ -46,7 +46,7 @@ make p2-xmm TOOLCHAIN=catalina
 Standalone XMM flash install uses:
 
 ```sh
-make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
+make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 ```
 
 If the bundled `loadp2` does not support `-FLASHRAW`, the make target uses the equivalent `-HIMEM=flash @80000000=...` raw-image path.

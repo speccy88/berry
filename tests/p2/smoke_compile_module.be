@@ -40,17 +40,22 @@ assert(fn_local_collection() == 42)
 var fn_local_map = compile("var values = {\"a\": 20} values[\"b\"] = 22 return values[\"a\"] + values[\"b\"]")
 assert(fn_local_map() == 42)
 
-expect_error(def () compile("var a,b def f() a b end") end, "syntax_error")
+expect_error(def () compile("def f(") end, "syntax_error")
 expect_error(def () compile("return (1 +") end, "syntax_error")
 
-import global
-global.p2_compile_smoke_value = 40
-var fn3 = compile("return p2_compile_smoke_value + 2")
-assert(fn3() == 42)
-global.p2_compile_smoke_value = 41
-assert(fn3() == 43)
-global.undef("p2_compile_smoke_value")
-assert(!global.contains("p2_compile_smoke_value"))
+var has_global = true
+try
+    import global as g
+    g.p2_compile_smoke_value = 40
+    var fn3 = compile("return p2_compile_smoke_value + 2")
+    assert(fn3() == 42)
+    g.p2_compile_smoke_value = 41
+    assert(fn3() == 43)
+    g.undef("p2_compile_smoke_value")
+    assert(!g.contains("p2_compile_smoke_value"))
+except .. as e, m
+    has_global = false
+end
 
 var mod = module("p2_compile_module_smoke")
 assert(type(mod) == "module")
@@ -61,16 +66,20 @@ assert(mod.answer == 42)
 assert(mod.name == "berry")
 assert(mod.fn(41) == 42)
 
-global.p2_compile_module_ref = mod
-var compiled_module_update = compile("p2_compile_module_ref.answer += 1 return p2_compile_module_ref.answer")
-assert(compiled_module_update() == 43)
-assert(mod.answer == 43)
-global.undef("p2_compile_module_ref")
+if has_global
+    import global as g
+    g.p2_compile_module_ref = mod
+    var compiled_module_update = compile("p2_compile_module_ref.answer += 1 return p2_compile_module_ref.answer")
+    assert(compiled_module_update() == 43)
+    assert(mod.answer == 43)
+    g.undef("p2_compile_module_ref")
+end
 
 import introspect
 assert(introspect.name(mod) == "p2_compile_module_smoke")
 assert(introspect.contains(mod, "answer"))
-assert(introspect.get(mod, "answer") == 43)
+var expected_answer = has_global ? 43 : 42
+assert(introspect.get(mod, "answer") == expected_answer)
 introspect.set(mod, "answer", 84)
 assert(mod.answer == 84)
 

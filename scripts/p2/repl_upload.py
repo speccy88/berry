@@ -160,14 +160,21 @@ def main() -> int:
     parser.add_argument("--mkdir", action="append", default=[], help="create an empty target directory; repeat as needed")
     parser.add_argument("--recursive-directory", action="append", default=[])
     parser.add_argument("--file", action="append", default=[])
+    parser.add_argument(
+        "--target-file",
+        action="append",
+        default=[],
+        metavar="LOCAL=REMOTE",
+        help="upload LOCAL to REMOTE; REMOTE may be absolute or relative to --target-dir",
+    )
     parser.add_argument("--timeout", type=float, default=20.0)
     parser.add_argument("--line-ending", choices=sorted(LINE_ENDINGS), default="cr")
     parser.add_argument("--prompt", default="berry>")
     parser.add_argument("--chunk-body", type=int, default=96)
     args = parser.parse_args()
 
-    if not args.mkdir and not args.recursive_directory and not args.file:
-        parser.error("provide --mkdir, --file, or --recursive-directory")
+    if not args.mkdir and not args.recursive_directory and not args.file and not args.target_file:
+        parser.error("provide --mkdir, --file, --target-file, or --recursive-directory")
     if args.chunk_body <= 0 or args.chunk_body > 160:
         parser.error("--chunk-body must be 1..160")
 
@@ -177,6 +184,17 @@ def main() -> int:
         if not src.is_file():
             raise FileNotFoundError(src)
         transfers.append((src, target_join(args.target_dir, src.name)))
+    for mapping in args.target_file:
+        if "=" not in mapping:
+            parser.error("--target-file must use LOCAL=REMOTE")
+        local, remote = mapping.split("=", 1)
+        if not local or not remote:
+            parser.error("--target-file must use non-empty LOCAL and REMOTE")
+        src = Path(local)
+        if not src.is_file():
+            raise FileNotFoundError(src)
+        target = remote if remote.startswith("/") else target_join(args.target_dir, remote)
+        transfers.append((src, target))
     for dirname in args.recursive_directory:
         directory = Path(dirname)
         if not directory.is_dir():

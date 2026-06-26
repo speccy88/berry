@@ -7,13 +7,23 @@
 import p2
 
 def blinker(pin, ms)
-    return p2.cog.blinker(pin, ms)
+    p2.pin.dir_high(pin)
+    p2.pin.toggle(pin)
+    return ms
 end
 
-h38 = p2.cog.spawn(blinker, 38, 250)
-h39 = p2.cog.spawn(blinker, 39, 700)
+var h38 = p2.cog.spawn(blinker, 38, 250)
+var h39 = p2.cog.spawn(blinker, 39, 700)
 
 print("handles", h38, h39)
-print("info", p2.cog.info())
-print("stop later with:")
-print("p2.cog.stop(h38); p2.cog.stop(h39)")
+print("ids", p2.cog.id(h38), p2.cog.id(h39))
+
+p2.clock.waitms(750)
+
+var stopped = p2.cog.stop(h38)
+var killed = p2.cog.kill(h39)
+print("stop h38 running", stopped["running"])
+print("kill h39 running", killed["running"])
+p2.pin.float(38)
+p2.pin.float(39)
+print("p2 closure blinker done")

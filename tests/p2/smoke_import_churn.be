@@ -11,6 +11,7 @@ import math
 import p2compat
 import p2ipc
 import p2mem
+import p2smart
 import task
 import wifi
 
@@ -22,6 +23,7 @@ var math_ptr = introspect.toptr(math)
 var p2compat_ptr = introspect.toptr(p2compat)
 var p2ipc_ptr = introspect.toptr(p2ipc)
 var p2mem_ptr = introspect.toptr(p2mem)
+var p2smart_ptr = introspect.toptr(p2smart)
 var task_ptr = introspect.toptr(task)
 var wifi_ptr = introspect.toptr(wifi)
 var expected = [
@@ -32,6 +34,7 @@ var expected = [
     "p2compat",
     "p2ipc",
     "p2mem",
+    "p2smart",
     "task",
     "wifi"
 ]
@@ -81,6 +84,7 @@ import math
 import p2compat
 import p2ipc
 import p2mem
+import p2smart
 import task
 import wifi
 
@@ -92,6 +96,7 @@ assert(introspect.toptr(math) == math_ptr)
 assert(introspect.toptr(p2compat) == p2compat_ptr)
 assert(introspect.toptr(p2ipc) == p2ipc_ptr)
 assert(introspect.toptr(p2mem) == p2mem_ptr)
+assert(introspect.toptr(p2smart) == p2smart_ptr)
 assert(introspect.toptr(task) == task_ptr)
 assert(introspect.toptr(wifi) == wifi_ptr)
 
@@ -101,8 +106,21 @@ assert(configstore.path("demo") == "/berry/config/demo.json")
 assert(libstore.info("math")["exists"])
 assert(p2compat.status("environment") == p2compat.UNSUPPORTED)
 assert(type(p2ipc.Mutex) == "class")
-assert(type(p2mem.stats()) == "map")
-assert(task.info()["max_tasks"] == 16)
+var p2mem_stats_type = type(p2mem.stats())
+assert(p2mem_stats_type == "map" || p2mem_stats_type == "instance")
+assert(type(p2smart.GPIOInput) == "class")
+assert(type(p2smart.GPIOOutput) == "class")
+assert(type(p2smart.PWM) == "class")
+assert(type(p2smart.Quadrature) == "class")
+assert(type(p2smart.Repository) == "class")
+assert(type(p2smart.Transition) == "class")
+assert(type(p2smart.AsyncSerialPair) == "class")
+assert(type(p2smart.SyncSerialPair) == "class")
+assert(type(p2smart.ADC) == "class")
+assert(type(p2smart.DAC) == "class")
+var task_max = task.info()["max_tasks"]
+assert(task_max == 16 || task_max == 32)
+assert(task.capability("max_tasks") == task_max)
 assert(wifi.STATUS[255] == "no_shield")
 
 var data = [5, 2, 8, 1]

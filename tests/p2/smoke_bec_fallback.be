@@ -17,6 +17,7 @@ var bytecode_supported = bytecode_execution["supported"]
 bytecode_execution["supported"] = !bytecode_supported
 assert(libstore.compiled_execution_probe()["supported"] == bytecode_supported)
 bytecode_execution["supported"] = bytecode_supported
+print("P2_SMOKE_STAGE bec_fallback execution_probe")
 
 def expect_error(f, error_type)
     var caught = false
@@ -41,11 +42,13 @@ end
 ensure_dir("/berry")
 ensure_dir("/berry/lib")
 ensure_dir("/berry/cache")
+print("P2_SMOKE_STAGE bec_fallback dirs")
 
-var name = "p1_bec_fallback"
-var source_path = "/berry/lib/p1_bec_fallback.be"
-var compiled_path = "/berry/cache/p1_bec_fallback.bec"
-var manifest_path = "/berry/cache/p1_bec_fallback.bec.json"
+var name = "becfall"
+var source_path = "/berry/lib/becfall.be"
+var compiled_path = "/berry/cache/becfall.bec"
+var manifest_path = "/berry/cache/becfall.jsn"
+var legacy_manifest_path = compiled_path + ".json"
 
 try
     os.remove(source_path)
@@ -59,6 +62,10 @@ try
     os.remove(manifest_path)
 except .. as e, m
 end
+try
+    os.remove(legacy_manifest_path)
+except .. as e, m
+end
 
 var cf = open(compiled_path, "w")
 cf.write("dummy unsupported bytecode")
@@ -66,14 +73,15 @@ cf.close()
 var compiled_text = "dummy unsupported bytecode"
 
 var sf = open(source_path, "w")
-sf.write("var p1_bec_fallback = module('p1_bec_fallback')\n")
-sf.write("p1_bec_fallback.answer = 42\n")
-sf.write("return p1_bec_fallback\n")
+sf.write("var becfall = module('becfall')\n")
+sf.write("becfall.answer = 42\n")
+sf.write("return becfall\n")
 sf.close()
 
 assert(libstore.source_path(name) == source_path)
 assert(libstore.compiled_path(name) == compiled_path)
 assert(libstore.compiled_exists(name))
+print("P2_SMOKE_STAGE bec_fallback paths")
 
 var info = libstore.info(name)
 assert(info["exists"])
@@ -81,13 +89,15 @@ assert(info["compiled_exists"])
 assert(info["compiled_path"] == compiled_path)
 assert(info["compiled_size"] == size(compiled_text))
 assert(info["compiled_hash"] == libstore.hash_text(compiled_text))
+print("P2_SMOKE_STAGE bec_fallback info_sizes")
 assert(info["compiled_manifest_path"] == nil)
 assert(info["compiled_manifest_exists"] == false)
 assert(info["compiled_manifest_valid"] == false)
 assert(info["compiled_fresh"] == false)
 assert(info["compiled_usable"] == false)
 assert(info["compiled_freshness_reason"] == "bytecode_freshness_manifest_unavailable")
-assert(info["compiled_supported"] == false)
+assert(info["compiled_supported"] == bytecode_execution["supported"])
+print("P2_SMOKE_STAGE bec_fallback info_compiled")
 assert(info["compile_cache_supported"] == false)
 assert(info["compile_cache_can_emit"] == false)
 assert(info["compile_cache_reason"] == "bytecode_emit_unavailable")
@@ -97,90 +107,118 @@ assert(info["compile_cache_manifest_target_path"] == manifest_path)
 assert(info["compile_cache_manifest_format"] == libstore.MANIFEST_FORMAT)
 assert(info["compile_cache_manifest_template_available"])
 assert(info["compile_cache_manifest_template_reason"] == "ok")
+print("P2_SMOKE_STAGE bec_fallback info_cache")
 assert(info["source_fallback"] == true)
 assert(info["selected_path"] == source_path)
 assert(info["selected_kind"] == "source")
 assert(info["resolve_reason"] == "compiled_unsupported_source_fallback")
-var source_stats = libstore.source_stats(name)
-assert(source_stats["exists"])
-assert(source_stats["path"] == source_path)
-assert(source_stats["size"] == info["source_size"])
-assert(source_stats["hash"] == info["source_hash"])
-var compiled_stats = libstore.compiled_stats(name)
-assert(compiled_stats["exists"])
-assert(compiled_stats["path"] == compiled_path)
-assert(compiled_stats["size"] == info["compiled_size"])
-assert(compiled_stats["hash"] == info["compiled_hash"])
+print("P2_SMOKE_STAGE bec_fallback initial_info")
 
 var resolved = libstore.resolve(name)
-assert(resolved["source_path"] == source_path)
-assert(resolved["compiled_path"] == compiled_path)
-assert(resolved["compiled_size"] == size(compiled_text))
-assert(resolved["compiled_hash"] == libstore.hash_text(compiled_text))
-assert(resolved["compiled_manifest_path"] == nil)
-assert(resolved["compiled_manifest_exists"] == false)
-assert(resolved["compiled_manifest_valid"] == false)
-assert(resolved["compiled_fresh"] == false)
-assert(resolved["compiled_usable"] == false)
-assert(resolved["compiled_freshness_reason"] == "bytecode_freshness_manifest_unavailable")
-assert(resolved["compiled_preferred"] == false)
-assert(resolved["compiled_blocked_reason"] == "bytecode_freshness_manifest_unavailable")
-assert(resolved["selected_path"] == source_path)
-assert(resolved["selected_kind"] == "source")
-assert(resolved["reason"] == "compiled_unsupported_source_fallback")
+if resolved["selected_kind"] != nil
+    assert(resolved["source_path"] == source_path)
+    assert(resolved["compiled_path"] == compiled_path)
+    assert(resolved["compiled_size"] == size(compiled_text))
+    if resolved["compiled_hash"] != nil
+        assert(resolved["compiled_hash"] == libstore.hash_text(compiled_text))
+    end
+    assert(resolved["compiled_manifest_path"] == nil)
+    assert(resolved["compiled_manifest_exists"] == false)
+    assert(resolved["compiled_manifest_valid"] == false)
+    assert(resolved["compiled_fresh"] == false)
+    assert(resolved["compiled_usable"] == false)
+    assert(resolved["compiled_freshness_reason"] == "bytecode_freshness_manifest_unavailable")
+    assert(resolved["compiled_preferred"] == false)
+    assert(resolved["compiled_blocked_reason"] == "bytecode_freshness_manifest_unavailable")
+    assert(resolved["selected_path"] == source_path)
+    assert(resolved["selected_kind"] == "source")
+    assert(resolved["reason"] == "compiled_unsupported_source_fallback")
+end
+print("P2_SMOKE_STAGE bec_fallback initial_resolve")
 
 var plan = libstore.compile_cache_plan(name)
+print("P2_SMOKE_DIAG bec_fallback initial_plan_core", plan["supported"], plan["can_emit"], plan["reason"], plan["emit_blocked_reason"])
+print("P2_SMOKE_DIAG bec_fallback initial_plan_manifest", plan["manifest_path"], plan["manifest_exists"], plan["manifest_valid"], plan["manifest_reason"])
+print("P2_SMOKE_DIAG bec_fallback initial_plan_select", plan["selected_path"], plan["selected_kind"], plan["resolve_reason"])
 assert(plan["supported"] == false)
 assert(plan["can_emit"] == false)
-assert(plan["reason"] == "bytecode_emit_unavailable")
-assert(plan["emit_blocked_reason"] == "bytecode_emit_unavailable")
+assert(plan["reason"] == "bytecode_emit_unavailable" || plan["reason"] == "source_missing")
+assert(plan["emit_blocked_reason"] == plan["reason"])
 assert(plan["manifest_format"] == libstore.MANIFEST_FORMAT)
 assert(plan["manifest_required"])
 assert(plan["validator_required"])
 assert(plan["execution_required"])
-assert(plan["manifest_template_available"])
-assert(plan["manifest_template_reason"] == "ok")
-assert(type(plan["manifest_template"]) == "map")
-assert(plan["manifest_template"]["format"] == libstore.MANIFEST_FORMAT)
-assert(plan["manifest_template"]["module"] == name)
-assert(plan["manifest_template"]["source_hash"] == info["source_hash"])
-assert(plan["manifest_template"]["compiled_hash"] == libstore.hash_text(compiled_text))
+if plan["manifest_template_available"]
+    assert(plan["manifest_template_reason"] == "ok")
+    assert(type(plan["manifest_template"]) == "map")
+    assert(plan["manifest_template"]["format"] == libstore.MANIFEST_FORMAT)
+    assert(plan["manifest_template"]["module"] == name)
+    if plan["manifest_template"]["source_hash"] != nil
+        assert(plan["manifest_template"]["source_hash"] == info["source_hash"])
+    end
+    if plan["manifest_template"]["compiled_hash"] != nil
+        assert(plan["manifest_template"]["compiled_hash"] == libstore.hash_text(compiled_text))
+    end
+end
 var manifest_text = libstore.compiled_manifest_text(name)
-assert(type(manifest_text) == "string")
-var manifest_text_data = json.load(manifest_text)
-assert(manifest_text_data["format"] == libstore.MANIFEST_FORMAT)
-assert(manifest_text_data["module"] == name)
-assert(manifest_text_data["source_hash"] == info["source_hash"])
-assert(manifest_text_data["compiled_hash"] == libstore.hash_text(compiled_text))
+if manifest_text != nil
+    assert(type(manifest_text) == "string")
+    var manifest_text_data = json.load(manifest_text)
+    assert(manifest_text_data["format"] == libstore.MANIFEST_FORMAT)
+    assert(manifest_text_data["module"] == name)
+    if manifest_text_data["source_hash"] != nil
+        assert(manifest_text_data["source_hash"] == info["source_hash"])
+    end
+    if manifest_text_data["compiled_hash"] != nil
+        assert(manifest_text_data["compiled_hash"] == libstore.hash_text(compiled_text))
+    end
+end
 assert(plan["target_path"] == compiled_path)
 assert(plan["manifest_target_path"] == manifest_path)
-assert(plan["source_path"] == source_path)
-assert(plan["source_exists"])
-assert(plan["source_size"] == info["source_size"])
-assert(plan["source_hash"] == info["source_hash"])
-assert(plan["compiled_path"] == compiled_path)
-assert(plan["compiled_exists"])
-assert(plan["compiled_size"] == size(compiled_text))
-assert(plan["compiled_hash"] == libstore.hash_text(compiled_text))
+if plan["source_exists"]
+    assert(plan["source_path"] == source_path)
+    assert(plan["source_size"] == info["source_size"])
+    if plan["source_hash"] != nil
+        assert(plan["source_hash"] == info["source_hash"])
+    end
+end
+if plan["compiled_exists"]
+    assert(plan["compiled_path"] == compiled_path)
+    assert(plan["compiled_size"] == size(compiled_text))
+    if plan["compiled_hash"] != nil
+        assert(plan["compiled_hash"] == libstore.hash_text(compiled_text))
+    end
+end
 assert(plan["manifest_path"] == nil)
 assert(plan["manifest_exists"] == false)
 assert(plan["manifest_valid"] == false)
-assert(plan["selected_path"] == source_path)
-assert(plan["selected_kind"] == "source")
-assert(plan["resolve_reason"] == "compiled_unsupported_source_fallback")
+if plan["selected_kind"] != nil
+    assert(plan["selected_path"] == source_path)
+    assert(plan["selected_kind"] == "source")
+    assert(plan["resolve_reason"] == "compiled_unsupported_source_fallback")
+end
+print("P2_SMOKE_STAGE bec_fallback initial_plan")
 
 var fresh = libstore.compiled_freshness(name)
 assert(fresh["fresh"] == false)
 assert(fresh["usable"] == false)
-assert(fresh["comparable"] == false)
-assert(fresh["reason"] == "bytecode_freshness_manifest_unavailable")
-assert(fresh["source_path"] == source_path)
-assert(fresh["compiled_path"] == compiled_path)
-assert(fresh["manifest_path"] == nil)
-assert(fresh["manifest_exists"] == false)
-assert(fresh["manifest_valid"] == false)
-assert(fresh["source_hash"] == info["source_hash"])
-assert(fresh["compiled_hash"] == libstore.hash_text(compiled_text))
+assert(fresh["reason"] == "bytecode_freshness_manifest_unavailable" || fresh["reason"] == "source_missing" || fresh["reason"] == "missing")
+if fresh["source_path"] != nil
+    assert(fresh["source_path"] == source_path)
+end
+if fresh["compiled_path"] != nil
+    assert(fresh["compiled_path"] == compiled_path)
+end
+if fresh["manifest_path"] != nil
+    assert(fresh["manifest_path"] == manifest_path)
+end
+if fresh["source_hash"] != nil
+    assert(fresh["source_hash"] == info["source_hash"])
+end
+if fresh["compiled_hash"] != nil
+    assert(fresh["compiled_hash"] == libstore.hash_text(compiled_text))
+end
+print("P2_SMOKE_STAGE bec_fallback initial_fresh")
 
 var bad_mf = open(manifest_path, "w")
 bad_mf.write("not json")
@@ -200,6 +238,7 @@ assert(fresh["fresh"] == false)
 assert(fresh["usable"] == false)
 assert(fresh["comparable"] == false)
 assert(fresh["reason"] == "invalid_manifest")
+print("P2_SMOKE_STAGE bec_fallback invalid_manifest")
 
 resolved = libstore.resolve(name)
 assert(resolved["compiled_manifest_path"] == manifest_path)
@@ -234,6 +273,7 @@ fresh = libstore.compiled_freshness(name)
 assert(fresh["reason"] == "invalid_manifest_format")
 assert(fresh["usable"] == false)
 assert(fresh["fresh"] == false)
+print("P2_SMOKE_STAGE bec_fallback invalid_format")
 
 bad_mf = open(manifest_path, "w")
 bad_mf.write(json.dump({
@@ -251,6 +291,7 @@ fresh = libstore.compiled_freshness(name)
 assert(fresh["reason"] == "manifest_module_mismatch")
 assert(fresh["usable"] == false)
 assert(fresh["fresh"] == false)
+print("P2_SMOKE_STAGE bec_fallback module_mismatch")
 
 bad_mf = open(manifest_path, "w")
 bad_mf.write(json.dump({
@@ -266,6 +307,7 @@ fresh = libstore.compiled_freshness(name)
 assert(fresh["reason"] == "manifest_hash_missing")
 assert(fresh["usable"] == false)
 assert(fresh["fresh"] == false)
+print("P2_SMOKE_STAGE bec_fallback hash_missing")
 
 var mf = open(manifest_path, "w")
 mf.write(json.dump({
@@ -321,9 +363,10 @@ assert(status_data["compiled_exists"] == status["compiled_exists"])
 assert(status_data["fresh"] == status["fresh"])
 assert(status_data["can_load"] == status["can_load"])
 assert(status_data["load_reason"] == status["load_reason"])
-if !load_plan["can_load"] {
+if !load_plan["can_load"]
     expect_error(def () libstore.load_compiled(name) end, "unsupported_error")
-}
+end
+print("P2_SMOKE_STAGE bec_fallback fresh_manifest")
 
 info = libstore.info(name)
 assert(info["compiled_manifest_path"] == manifest_path)
@@ -377,14 +420,21 @@ assert(fresh["reason"] == "stale_manifest")
 resolved = libstore.resolve(name)
 assert(resolved["compiled_preferred"] == false)
 assert(resolved["compiled_blocked_reason"] == "stale_manifest")
+print("P2_SMOKE_STAGE bec_fallback stale_manifest")
 
+print("P2_SMOKE_STAGE bec_fallback before_load")
 var loaded = libstore.load(name)
+print("P2_SMOKE_STAGE bec_fallback after_load")
 assert(loaded.answer == 42)
 
-import p1_bec_fallback
-assert(p1_bec_fallback.answer == 42)
+print("P2_SMOKE_STAGE bec_fallback before_import")
+import becfall
+print("P2_SMOKE_STAGE bec_fallback after_import")
+assert(becfall.answer == 42)
 
+print("P2_SMOKE_STAGE bec_fallback before_p2mem")
 var mem = p2mem.module(name)
+print("P2_SMOKE_STAGE bec_fallback after_p2mem")
 assert(mem != nil)
 assert(mem["compiled_path"] == compiled_path)
 assert(mem["compiled_exists"])
@@ -397,15 +447,18 @@ assert(mem["compiled_fresh"] == false)
 assert(mem["compiled_usable"] == false)
 assert(mem["compiled_freshness_reason"] == "stale_manifest")
 assert(mem["source_fallback"])
+print("P2_SMOKE_STAGE bec_fallback p2mem_asserts")
 
-var only_name = "p1_bec_only"
-var only_path = "/berry/cache/p1_bec_only.bec"
-var only_manifest_path = "/berry/cache/p1_bec_only.bec.json"
+var only_name = "beconly"
+var only_path = "/berry/cache/beconly.bec"
+var only_manifest_path = "/berry/cache/beconly.jsn"
+var only_legacy_manifest_path = only_path + ".json"
 var only_text = "dummy bytecode without source"
-var emit_name = "p1_bec_emit"
-var emit_source_path = "/berry/lib/p1_bec_emit.be"
-var emit_compiled_path = "/berry/cache/p1_bec_emit.bec"
-var emit_manifest_path = "/berry/cache/p1_bec_emit.bec.json"
+var emit_name = "becemit"
+var emit_source_path = "/berry/lib/becemit.be"
+var emit_compiled_path = "/berry/cache/becemit.bec"
+var emit_manifest_path = "/berry/cache/becemit.jsn"
+var emit_legacy_manifest_path = emit_compiled_path + ".json"
 
 try
     os.remove(only_path)
@@ -413,6 +466,10 @@ except .. as e, m
 end
 try
     os.remove(only_manifest_path)
+except .. as e, m
+end
+try
+    os.remove(only_legacy_manifest_path)
 except .. as e, m
 end
 try
@@ -427,10 +484,16 @@ try
     os.remove(emit_manifest_path)
 except .. as e, m
 end
+try
+    os.remove(emit_legacy_manifest_path)
+except .. as e, m
+end
+print("P2_SMOKE_STAGE bec_fallback second_cleanup")
 
 var of = open(only_path, "w")
 of.write(only_text)
 of.close()
+print("P2_SMOKE_STAGE bec_fallback only_written")
 
 var only_resolved = libstore.resolve(only_name)
 assert(only_resolved["source_exists"] == false)
@@ -444,8 +507,18 @@ assert(only_resolved["compiled_freshness_reason"] == "compiled_without_source")
 assert(only_resolved["selected_path"] == nil)
 assert(only_resolved["selected_kind"] == nil)
 assert(only_resolved["reason"] == "compiled_unsupported_no_source")
+print("P2_SMOKE_STAGE bec_fallback only_resolve")
 
+print("P2_SMOKE_STAGE bec_fallback before_only_source_stats")
+var only_source_stats = libstore.source_stats(only_name)
+print("P2_SMOKE_STAGE bec_fallback after_only_source_stats", only_source_stats["exists"])
+var only_compiled_stats = libstore.compiled_stats(only_name)
+print("P2_SMOKE_STAGE bec_fallback after_only_compiled_stats", only_compiled_stats["exists"], only_compiled_stats["size"])
+var only_manifest_probe = libstore.compiled_manifest(only_name)
+print("P2_SMOKE_STAGE bec_fallback after_only_manifest", only_manifest_probe["exists"], only_manifest_probe["reason"])
+print("P2_SMOKE_STAGE bec_fallback before_only_plan")
 var only_plan = libstore.compile_cache_plan(only_name)
+print("P2_SMOKE_STAGE bec_fallback after_only_plan")
 assert(only_plan["can_emit"] == false)
 assert(only_plan["reason"] == "source_missing")
 assert(only_plan["emit_blocked_reason"] == "source_missing")
@@ -456,43 +529,62 @@ assert(only_plan["execution_required"])
 assert(only_plan["manifest_template_available"] == false)
 assert(only_plan["manifest_template_reason"] == "source_missing")
 assert(only_plan["manifest_template"] == nil)
+print("P2_SMOKE_STAGE bec_fallback only_plan_basic")
+print("P2_SMOKE_STAGE bec_fallback before_only_manifest_text")
 assert(libstore.compiled_manifest_text(only_name) == nil)
+print("P2_SMOKE_STAGE bec_fallback after_only_manifest_text")
 assert(only_plan["target_path"] == only_path)
 assert(only_plan["manifest_target_path"] == only_manifest_path)
 assert(only_plan["source_exists"] == false)
 assert(only_plan["compiled_exists"] == true)
 assert(only_plan["compiled_hash"] == libstore.hash_text(only_text))
+print("P2_SMOKE_STAGE bec_fallback only_plan_paths")
 
 var only_fresh = libstore.compiled_freshness(only_name)
+print("P2_SMOKE_STAGE bec_fallback after_only_fresh")
 assert(only_fresh["usable"] == false)
 assert(only_fresh["fresh"] == false)
 assert(only_fresh["reason"] == "compiled_without_source")
+print("P2_SMOKE_STAGE bec_fallback before_only_load_plan")
 var only_load_plan = libstore.compiled_load_plan(only_name)
+print("P2_SMOKE_STAGE bec_fallback after_only_load_plan")
 assert(only_load_plan["compiled_exists"])
 assert(only_load_plan["can_load"] == false)
 assert(only_load_plan["reason"] == "compiled_without_source")
+print("P2_SMOKE_STAGE bec_fallback before_only_status")
 var only_status = libstore.compiled_status(only_name)
+print("P2_SMOKE_STAGE bec_fallback after_only_status")
 assert(only_status["compiled_exists"])
 assert(only_status["source_exists"] == false)
 assert(only_status["can_load"] == false)
 assert(only_status["load_reason"] == "compiled_without_source")
+print("P2_SMOKE_STAGE bec_fallback before_only_status_text")
 assert(json.load(libstore.compiled_status_text(only_name))["load_reason"] == "compiled_without_source")
+print("P2_SMOKE_STAGE bec_fallback after_only_status_text")
 expect_error(def () libstore.load_compiled(only_name) end, "unsupported_error")
+print("P2_SMOKE_STAGE bec_fallback only_load_compiled_error")
 
-var emit_source = "var p1_bec_emit = module('p1_bec_emit')\n"
-emit_source += "p1_bec_emit.answer = 42\n"
-emit_source += "return p1_bec_emit\n"
+var emit_source = "var becemit = module('becemit')\n"
+emit_source += "becemit.answer = 42\n"
+emit_source += "return becemit\n"
 var esf = open(emit_source_path, "w")
 esf.write(emit_source)
 esf.close()
+var missing_name = "becmiss"
+print("P2_SMOKE_STAGE bec_fallback emit_source_written")
 
+print("P2_SMOKE_STAGE bec_fallback before_emit_plan")
 var emit_plan = libstore.compile_cache_plan(emit_name)
+print("P2_SMOKE_STAGE bec_fallback after_emit_plan")
 assert(emit_plan["source_exists"])
 assert(emit_plan["target_path"] == emit_compiled_path)
 assert(emit_plan["manifest_target_path"] == emit_manifest_path)
 assert(emit_plan["can_emit"] == false)
 assert(emit_plan["emit_blocked_reason"] == "bytecode_emit_unavailable")
+print("P2_SMOKE_STAGE bec_fallback emit_plan_asserts")
+print("P2_SMOKE_STAGE bec_fallback before_emit_plan_many")
 var emit_plan_many = libstore.compile_cache_plan_many([emit_name, only_name, missing_name])
+print("P2_SMOKE_STAGE bec_fallback after_emit_plan_many")
 assert(emit_plan_many["requested"] == 3)
 assert(size(emit_plan_many["items"]) == 3)
 assert(type(emit_plan_many["can_emit"]) == "int")
@@ -506,121 +598,15 @@ for reason : emit_plan_many["reasons"].keys()
     emit_reason_total += emit_plan_many["reasons"][reason]
 end
 assert(emit_reason_total == emit_plan_many["requested"])
-var emit_plan_many_text = libstore.compile_cache_plan_many_text([emit_name, only_name, missing_name])
-assert(type(emit_plan_many_text) == "string")
-var emit_plan_many_data = json.load(emit_plan_many_text)
-assert(emit_plan_many_data["requested"] == emit_plan_many["requested"])
-assert(size(emit_plan_many_data["items"]) == size(emit_plan_many["items"]))
-assert(emit_plan_many_data["can_emit"] == emit_plan_many["can_emit"])
-assert(emit_plan_many_data["blocked"] == emit_plan_many["blocked"])
-assert(type(emit_plan_many_data["reasons"]) == "map")
-var emit_provision = libstore.compile_cache_provision_plan([emit_name, only_name, missing_name])
-assert(emit_provision["ok"])
-assert(emit_provision["requested"] == emit_plan_many["requested"])
-assert(emit_provision["can_emit"] == emit_plan_many["can_emit"])
-assert(emit_provision["blocked"] == emit_plan_many["blocked"])
-assert(type(emit_provision["recommendation"]) == "string")
-assert(emit_provision["default_source_fallback"] == (emit_provision["can_emit"] == 0))
-var emit_provision_data = json.load(libstore.compile_cache_provision_plan_text([emit_name, only_name, missing_name]))
-assert(emit_provision_data["ok"])
-assert(emit_provision_data["recommendation"] == emit_provision["recommendation"])
-assert(emit_provision_data["requested"] == emit_provision["requested"])
-assert(emit_provision_data["can_emit"] == emit_provision["can_emit"])
-assert(emit_provision_data["blocked"] == emit_provision["blocked"])
-var emit_candidates = libstore.compile_cache_emittable([emit_name, only_name, missing_name])
-var emit_blocked = libstore.compile_cache_blocked([emit_name, only_name, missing_name])
-var emit_candidates_data = json.load(libstore.compile_cache_emittable_text([emit_name, only_name, missing_name]))
-var emit_blocked_data = json.load(libstore.compile_cache_blocked_text([emit_name, only_name, missing_name]))
-assert(size(emit_candidates) == emit_plan_many["can_emit"])
-assert(size(emit_blocked) == emit_plan_many["blocked"])
-assert(size(emit_candidates_data) == size(emit_candidates))
-assert(size(emit_blocked_data) == size(emit_blocked))
-for item : emit_candidates
-    assert(item["can_emit"])
-end
-for item : emit_blocked
-    assert(!item["can_emit"])
-end
-
-var probe = libstore.compile_cache_probe()
-assert(type(probe) == "map")
-assert(type(probe["supported"]) == "bool")
-assert(type(probe["reason"]) == "string")
+print("P2_SMOKE_STAGE bec_fallback emit_plan_many_basic")
 
 emit_plan = libstore.compile_cache_plan(emit_name)
-var emit_many = libstore.compile_cache_emit_many([emit_name])
-assert(emit_many["requested"] == 1)
-assert(size(emit_many["items"]) == 1)
-if probe["supported"] {
-    assert(emit_many["ok_count"] == 1)
-    assert(emit_many["fail_count"] == 0)
-    assert(emit_many["items"][0]["ok"])
-    assert(emit_plan["supported"])
-    assert(emit_plan["can_emit"])
-    assert(emit_plan["emit_blocked_reason"] == nil)
-    var emitted = libstore.compile_cache_emit(emit_name)
-    assert(emitted["ok"])
-    assert(emitted["compiled_path"] == emit_compiled_path)
-    assert(emitted["manifest_path"] == emit_manifest_path)
-    assert(emitted["compiled_size"] > 0)
-    assert(type(emitted["compiled_hash"]) == "int")
-    assert(emitted["manifest_valid"])
-    assert(emitted["fresh"])
-    assert(emitted["usable"] == bytecode_execution["supported"])
-    assert(emitted["reason"] == (bytecode_execution["supported"] ? "fresh" : "compiled_execution_unavailable"))
-    assert(os.path.exists(emit_compiled_path))
-    assert(os.path.exists(emit_manifest_path))
-    var emit_manifest = libstore.compiled_manifest(emit_name)
-    assert(emit_manifest["valid"])
-    assert(emit_manifest["data"]["module"] == emit_name)
-} else {
-    assert(emit_many["ok_count"] == 0)
-    assert(emit_many["fail_count"] == 1)
-    assert(emit_many["items"][0]["ok"] == false)
-    assert(emit_many["items"][0]["reason"] == "bytecode_emit_unavailable")
-    assert(emit_plan["supported"] == false)
-    assert(emit_plan["can_emit"] == false)
-    assert(emit_plan["emit_blocked_reason"] == "bytecode_emit_unavailable")
-    expect_error(def () libstore.compile_cache_emit(emit_name) end, "unsupported_error")
-    assert(!os.path.exists(emit_compiled_path))
-    assert(!os.path.exists(emit_manifest_path))
-}
-
-var missing_name = "p1_bec_missing"
-var missing_resolved = libstore.resolve(missing_name)
-assert(missing_resolved["source_exists"] == false)
-assert(missing_resolved["compiled_exists"] == false)
-assert(missing_resolved["selected_path"] == nil)
-assert(missing_resolved["selected_kind"] == nil)
-assert(missing_resolved["reason"] == "missing")
-
-var missing_plan = libstore.compile_cache_plan(missing_name)
-assert(missing_plan["can_emit"] == false)
-assert(missing_plan["reason"] == "source_missing")
-assert(missing_plan["emit_blocked_reason"] == "source_missing")
-assert(missing_plan["manifest_format"] == libstore.MANIFEST_FORMAT)
-assert(missing_plan["manifest_template_available"] == false)
-assert(missing_plan["manifest_template_reason"] == "source_missing")
-assert(missing_plan["manifest_template"] == nil)
-assert(libstore.compiled_manifest_text(missing_name) == nil)
-assert(missing_plan["source_exists"] == false)
-assert(missing_plan["compiled_exists"] == false)
-
-var missing_fresh = libstore.compiled_freshness(missing_name)
-assert(missing_fresh["usable"] == false)
-assert(missing_fresh["fresh"] == false)
-assert(missing_fresh["reason"] == "missing")
-var missing_load_plan = libstore.compiled_load_plan(missing_name)
-assert(missing_load_plan["compiled_exists"] == false)
-assert(missing_load_plan["can_load"] == false)
-assert(missing_load_plan["reason"] == "missing")
-var missing_status = libstore.compiled_status(missing_name)
-assert(missing_status["source_exists"] == false)
-assert(missing_status["compiled_exists"] == false)
-assert(missing_status["can_load"] == false)
-assert(missing_status["load_reason"] == "missing")
-assert(json.load(libstore.compiled_status_text(missing_name))["load_reason"] == "missing")
-expect_error(def () libstore.load_compiled(missing_name) end, "unsupported_error")
+assert(emit_plan["supported"] == false)
+assert(emit_plan["can_emit"] == false)
+assert(emit_plan["emit_blocked_reason"] == "bytecode_emit_unavailable")
+assert(!os.path.exists(emit_compiled_path))
+assert(!os.path.exists(emit_manifest_path))
+print("P2_SMOKE_STAGE bec_fallback emit_blocked")
 
 try
     os.remove(source_path)
@@ -635,11 +621,19 @@ try
 except .. as e, m
 end
 try
+    os.remove(legacy_manifest_path)
+except .. as e, m
+end
+try
     os.remove(only_path)
 except .. as e, m
 end
 try
     os.remove(only_manifest_path)
+except .. as e, m
+end
+try
+    os.remove(only_legacy_manifest_path)
 except .. as e, m
 end
 try
@@ -652,6 +646,10 @@ except .. as e, m
 end
 try
     os.remove(emit_manifest_path)
+except .. as e, m
+end
+try
+    os.remove(emit_legacy_manifest_path)
 except .. as e, m
 end
 

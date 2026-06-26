@@ -6,9 +6,20 @@
 ** https://github.com/Skiars/berry/blob/master/LICENSE
 ********************************************************************/
 #include "berry.h"
+#include "be_module.h"
+#include "be_string.h"
 #include <time.h>
 
 #if BE_USE_TIME_MODULE
+
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+static void time_module_set_func(bvm *vm, const char *name, bntvfunc func)
+{
+    be_pushntvfunction(vm, func);
+    be_setmember(vm, -2, name);
+    be_pop(vm, 1);
+}
+#endif
 
 static int m_time(bvm *vm)
 {
@@ -49,6 +60,19 @@ static int m_clock(bvm *vm)
     be_pushreal(vm, clock() / (breal)CLOCKS_PER_SEC);
     be_return(vm);
 }
+
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+void be_cache_timemodule(bvm *vm)
+{
+    bstring *name = be_newstr(vm, "time");
+    be_newmodule(vm);
+    time_module_set_func(vm, "time", m_time);
+    time_module_set_func(vm, "dump", m_dump);
+    time_module_set_func(vm, "clock", m_clock);
+    be_cache_module(vm, name);
+    be_pop(vm, 1);
+}
+#endif
 
 #if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 be_native_module_attr_table(time) {

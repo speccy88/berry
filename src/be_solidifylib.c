@@ -24,12 +24,23 @@
 #include <ctype.h>
 #include <inttypes.h>
 
+#if !(defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 extern const bclass be_class_list;
 extern const bclass be_class_map;
 extern const bclass be_class_bytes;
+#endif
 
 #if BE_USE_SOLIDIFY_MODULE
 #include <inttypes.h>
+
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+static void solidify_module_set_func(bvm *vm, const char *name, bntvfunc func)
+{
+    be_pushntvfunction(vm, func);
+    be_setmember(vm, -2, name);
+    be_pop(vm, 1);
+}
+#endif
 
 #define be_builtin_count(vm) \
     be_vector_count(&(vm)->gbldesc.builtin.vlist)
@@ -205,9 +216,9 @@ static void m_solidify_bvalue(bvm *vm, bbool str_literal, const bvalue * value, 
         break;
     case BE_REAL:
 #if BE_USE_SINGLE_FLOAT
-        logfmt("be_const_real_hex(0x%08" PRIX32 ")", (uint32_t)(uintptr_t)var_toobj(value));
+        logfmt("be_const_real_hex(0x%08lX)", (unsigned long)(uint32_t)(uintptr_t)var_toobj(value));
 #else
-        logfmt("be_const_real_hex(0x%016" PRIx64 ")", (uint64_t)var_toobj(value));
+        logfmt("be_const_real_hex(0x%016llx)", (unsigned long long)(uint64_t)var_toobj(value));
 #endif
         break;
     case BE_STRING:
@@ -265,6 +276,9 @@ static void m_solidify_bvalue(bvm *vm, bbool str_literal, const bvalue * value, 
         break;
     case BE_INSTANCE:
     {
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+        be_raise(vm, "internal_error", "instance constants are unsupported in P2 solidify");
+#else
         binstance * ins = (binstance *) var_toobj(value);
         bclass * cl = ins->_class;
 
@@ -296,6 +310,7 @@ static void m_solidify_bvalue(bvm *vm, bbool str_literal, const bvalue * value, 
             m_solidify_bvalue(vm, str_literal, &ins->members[0], prefix_name, key, fout);
             logfmt("    ) } ))");
         }
+#endif
     }
         break;
     case BE_MAP:
@@ -360,7 +375,7 @@ static void m_solidify_proto(bvm *vm, bbool str_literal, const bproto *pr, const
         for (int32_t i = 0; i < pr->nproto; i++) {
             size_t sub_len = strlen(func_name) + 10;
             char sub_name[sub_len];
-            snprintf(sub_name, sizeof(sub_name), "%s_%"PRId32, func_name, i);
+            snprintf(sub_name, sizeof(sub_name), "%s_%ld", func_name, (long)i);
             m_solidify_proto(vm, str_literal, pr->ptab[i], sub_name, indent+2, prefix_name, fout);
             logfmt(",\n");
         }
@@ -403,7 +418,7 @@ static void m_solidify_proto(bvm *vm, bbool str_literal, const bproto *pr, const
     logfmt("%*s( &(const binstruction[%2d]) {  /* code */\n", indent, "", pr->codesize);
     for (int pc = 0; pc < pr->codesize; pc++) {
         uint32_t ins = pr->code[pc];
-        logfmt("%*s  0x%08"PRIX32",  //", indent, "", ins);
+        logfmt("%*s  0x%08lX,  //", indent, "", (unsigned long)ins);
         be_print_inst(ins, pc, fout);
         bopcode op = IGET_OP(ins);
         if (op == OP_GETGBL || op == OP_SETGBL) {
@@ -867,6 +882,19 @@ static int m_nocompact(bvm *vm)
     }
     be_return_nil(vm);
 }
+
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+void be_cache_solidifymodule(bvm *vm)
+{
+    bstring *name = be_newstr(vm, "solidify");
+    be_newmodule(vm);
+    solidify_module_set_func(vm, "dump", m_dump);
+    solidify_module_set_func(vm, "compact", m_compact);
+    solidify_module_set_func(vm, "nocompact", m_nocompact);
+    be_cache_module(vm, name);
+    be_pop(vm, 1);
+}
+#endif
 
 #if !BE_USE_PRECOMPILED_OBJECT
 be_native_module_attr_table(solidify) {

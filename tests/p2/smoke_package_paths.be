@@ -1,3 +1,4 @@
+# P2_SD_WRITE_AUDIT max_write_opens=2
 print("P2_SMOKE_BEGIN package_paths")
 
 import os

@@ -6,13 +6,36 @@
 ** https://github.com/Skiars/berry/blob/master/LICENSE
 ********************************************************************/
 #include "be_object.h"
+#include "be_exec.h"
+#include "be_list.h"
+#include "be_string.h"
+#include "be_module.h"
+#include "be_vm.h"
+#include "berry.h"
 
 #if BE_USE_SYS_MODULE
 
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+static void sys_module_set_func(bvm *vm, const char *name, bntvfunc func)
+{
+    be_pushntvfunction(vm, func);
+    be_setmember(vm, -2, name);
+    be_pop(vm, 1);
+}
+#endif
+
 static int m_path(bvm *vm)
 {
-    be_getbuiltin(vm, "list");
+    blist *copy;
+    bvalue *arg;
+
     be_module_path(vm);
+    copy = be_list_copy(vm, var_toobj(vm->top - 1));
+    be_pop(vm, 1);
+
+    be_getbuiltin(vm, "list");
+    arg = be_incrtop(vm);
+    var_setlist(arg, copy);
     be_call(vm, 1);
     be_pop(vm, 1);
     be_return(vm);
@@ -33,9 +56,21 @@ static int m_path_add(bvm *vm)
     be_return(vm);
 }
 
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+void be_cache_sysmodule(bvm *vm)
+{
+    bstring *name = be_newstr(vm, "sys");
+    be_newmodule(vm);
+    sys_module_set_func(vm, "path", m_path);
+    sys_module_set_func(vm, "path_add", m_path_add);
+    be_cache_module(vm, name);
+    be_pop(vm, 1);
+}
+#endif
+
 #if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 be_native_module_attr_table(sys){
-    be_native_module_function("path", m_path)
+    be_native_module_function("path", m_path),
     be_native_module_function("path_add", m_path_add)
 };
 

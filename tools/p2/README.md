@@ -6,8 +6,8 @@ This repository does not vendor full compiler distributions and does not use git
 
 Instead:
 
-- use an existing FlexProp or Catalina installation, or
-- bootstrap a local cache under `.third_party_cache/`
+- use the sibling Catalina checkout for normal P2 builds
+- use an existing FlexProp installation or bootstrap FlexProp loader tools under `.third_party_cache/`
 
 ## Tool Variables
 
@@ -19,7 +19,7 @@ Examples:
 
 ```sh
 make p2 TOOLCHAIN=flexc FLEXPROP_DIR=/opt/flexprop
-make p2 TOOLCHAIN=catalina CATALINA_DIR=/opt/catalina
+make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 make p2-run TOOLCHAIN=flexc PORT=/dev/ttyUSB0 LOADP2=/opt/flexprop/bin/loadp2
 ```
 
@@ -28,18 +28,17 @@ make p2-run TOOLCHAIN=flexc PORT=/dev/ttyUSB0 LOADP2=/opt/flexprop/bin/loadp2
 Linux or macOS:
 
 - `tools/p2/bootstrap/fetch-flexprop-tools.sh`
-- `tools/p2/bootstrap/fetch-catalina-tools.sh`
 
 Windows PowerShell:
 
 - `tools/p2/bootstrap/fetch-flexprop-tools.ps1`
-- `tools/p2/bootstrap/fetch-catalina-tools.ps1`
 
 Bootstrap expectations:
 
 - FlexProp shell bootstrap fetches into the requested cache directory.
 - FlexProp PowerShell bootstrap uses `FLEXPROP_ZIP_URL` if it needs to download a release archive.
-- Catalina shell and PowerShell bootstrap helpers use an existing installation when present, or clone from `CATALINA_REPO` when that environment variable is supplied.
+- Catalina is not bootstrapped by this repository. Set `CATALINA_DIR=../Catalina`
+  or another explicit external Catalina checkout.
 
 ## Loader Helpers
 

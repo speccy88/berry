@@ -16,11 +16,32 @@
 
 #if BE_USE_STRICT_MODULE
 
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+static void strict_module_set_func(bvm *vm, const char *name, bntvfunc func)
+{
+    be_pushntvfunction(vm, func);
+    be_setmember(vm, -2, name);
+    be_pop(vm, 1);
+}
+#endif
+
 static int m_init(bvm *vm)
 {
     comp_set_strict(vm);    /* enable compiler strict mode */
     be_return_nil(vm);
 }
+
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+void be_cache_strictmodule(bvm *vm)
+{
+    bstring *name = be_newstr(vm, "strict");
+    be_newmodule(vm);
+    strict_module_set_func(vm, "()", m_init);
+    comp_set_strict(vm);
+    be_cache_module(vm, name);
+    be_pop(vm, 1);
+}
+#endif
 
 #if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 be_native_module_attr_table(strict) {

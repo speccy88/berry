@@ -11,7 +11,7 @@ Berry-side loader/build fixes, historical failed experiments, raw diagnostic hel
 Local Catalina fork:
 
 ```text
-/Users/fred/Documents/Code/catalina-speccy88
+../Catalina
 ```
 
 Berry validation repo:
@@ -30,18 +30,18 @@ P2 Edge32 on /dev/cu.usbserial-P97cvdxp
 
 After the Catalina changes below were built into Berry:
 
-- `make p2-edge32-ram TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88 PORT=/dev/cu.usbserial-P97cvdxp`
+- `make p2-edge32-ram TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/cu.usbserial-P97cvdxp`
   - reached `[edge32 profile]`
   - imported `p2` and `os`
   - `p2.fs_info("/")` returned `mount_result_name='ok'`, `sd_response=0`, `partition_start=2048`
   - `os.listdir("/")` returned `[]`
 
-- `make p2-edge32-flash TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88 PORT=/dev/cu.usbserial-P97cvdxp`
+- `make p2-edge32-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/cu.usbserial-P97cvdxp`
   - reached `[edge32 profile]`
   - full Berry `file`, `os`, and `os.path` checklist passed on SD
   - test file and directory were removed and root returned to `[]`
 
-- `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88 CATALINA_PLAIN_SD=1 PORT=/dev/cu.usbserial-P97cvdxp`
+- `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina CATALINA_PLAIN_SD=1 PORT=/dev/cu.usbserial-P97cvdxp`
   - reached `[xmm profile]`
   - banner reported `image 769408 B`, `code 636504 B`
   - `p2.fs_info("/")` returned `mount_result_name='ok'`, `sd_response=0`, `partition_start=2048`, FAT32
@@ -254,7 +254,7 @@ Changing the Catalina C sources is not enough. The P2/LARGE libraries used by Be
 At minimum, after changing the SD service/DOSFS sources, rebuild the relevant P2 LARGE `cx` assembly objects and refresh `catalina.idx` in:
 
 ```text
-/Users/fred/Documents/Code/catalina-speccy88/lib/p2/xmm/cx
+../Catalina/lib/p2/xmm/cx
 ```
 
 Objects involved in this repair/testing included:

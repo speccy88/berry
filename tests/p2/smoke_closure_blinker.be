@@ -7,7 +7,9 @@
 import p2
 
 def blinker(pin, ms)
-    return p2.cog.blinker(pin, ms)
+    p2.pin.dir_high(pin)
+    p2.pin.toggle(pin)
+    return ms
 end
 
 h38 = p2.cog.spawn(blinker, 38, 250)

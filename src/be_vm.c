@@ -23,12 +23,30 @@
 #include "be_libs.h"
 #include <string.h>
 #include <math.h>
+#include <stdint.h>
+#if defined(BE_P2_TRACE_NATIVE_CALL) && BE_P2_TRACE_NATIVE_CALL
+#include <stdio.h>
+#endif
 
 #if defined(BE_P2_STARTUP_TRACE) && BE_P2_STARTUP_TRACE
 extern void p2_serial_puts(const char *s);
 #define VM_TRACE(_msg) p2_serial_puts(_msg)
 #else
 #define VM_TRACE(_msg) ((void)0)
+#endif
+
+#if defined(BE_P2_TRACE_NATIVE_CALL) && BE_P2_TRACE_NATIVE_CALL
+extern void p2_serial_puts(const char *s);
+#define P2_NATIVE_CALL_TRACE(_msg) p2_serial_puts(_msg)
+static void p2_native_call_trace_func(const char *label, bntvfunc f)
+{
+    char buffer[64];
+    snprintf(buffer, sizeof(buffer), "[vm] %s 0x%08lX\n", label, (unsigned long)f);
+    p2_serial_puts(buffer);
+}
+#else
+#define P2_NATIVE_CALL_TRACE(_msg) ((void)0)
+#define p2_native_call_trace_func(_label, _func) ((void)0)
 #endif
 
 #if defined(BE_P2_ENABLE_MAIN_INTERRUPT) && BE_P2_ENABLE_MAIN_INTERRUPT
@@ -96,6 +114,76 @@ extern void p2_check_interrupt(bvm *vm);
 #define opcase(opcode)      case OP_##opcode
 #define dispatch()          goto loop
 
+static bbool real_bits_is_nan(breal x)
+{
+#if BE_USE_SINGLE_FLOAT
+    union {
+        breal r;
+        uint32_t u;
+    } v;
+    v.r = x;
+    return (v.u & 0x7FFFFFFFUL) > 0x7F800000UL;
+#else
+    return x != x;
+#endif
+}
+
+static bbool real_bits_is_inf(breal x)
+{
+#if BE_USE_SINGLE_FLOAT
+    union {
+        breal r;
+        uint32_t u;
+    } v;
+    v.r = x;
+    return (v.u & 0x7FFFFFFFUL) == 0x7F800000UL;
+#else
+    return x != (breal)0.0 && x + x == x;
+#endif
+}
+
+static bbool real_bits_is_negative(breal x)
+{
+#if BE_USE_SINGLE_FLOAT
+    union {
+        breal r;
+        uint32_t u;
+    } v;
+    v.r = x;
+    return (v.u & 0x80000000UL) != 0;
+#else
+    return x < (breal)0.0;
+#endif
+}
+
+static breal real_bits_nan(void)
+{
+#if BE_USE_SINGLE_FLOAT
+    union {
+        uint32_t u;
+        breal r;
+    } v;
+    v.u = 0x7FC00000UL;
+    return v.r;
+#else
+    return (breal)0.0 / (breal)0.0;
+#endif
+}
+
+static breal real_bits_inf(bbool negative)
+{
+#if BE_USE_SINGLE_FLOAT
+    union {
+        uint32_t u;
+        breal r;
+    } v;
+    v.u = negative ? 0xFF800000UL : 0x7F800000UL;
+    return v.r;
+#else
+    return negative ? (breal)-1.0 / (breal)0.0 : (breal)1.0 / (breal)0.0;
+#endif
+}
+
 #define equal_rule(op, iseq) \
     bbool res; \
     be_assert(!var_isstatic(a)); \
@@ -103,7 +191,9 @@ extern void p2_check_interrupt(bvm *vm);
     if (var_isint(a) && var_isint(b)) { \
         res = ibinop(op, a, b); \
     } else if (var_isnumber(a) && var_isnumber(b)) { \
-        res = var2real(a) op var2real(b); \
+        breal ar = var2real(a); \
+        breal br = var2real(b); \
+        res = real_bits_is_nan(ar) || real_bits_is_nan(br) ? (iseq ? bfalse : btrue) : ar op br; \
     } else if (var_isinstance(a) && !var_isnil(b)) { \
         res = object_eqop(vm, #op, iseq, a, b); \
     } else if (var_primetype(a) == var_primetype(b)) { /* same types */ \
@@ -157,7 +247,9 @@ extern void p2_check_interrupt(bvm *vm);
         if (var_isint(a) && var_isint(b)) { \
             res = ibinop(op, a, b); \
         } else if (var_isnumber(a) && var_isnumber(b)) { \
-            res = var2real(a) op var2real(b); \
+            breal ar = var2real(a); \
+            breal br = var2real(b); \
+            res = real_bits_is_nan(ar) || real_bits_is_nan(br) ? bfalse : ar op br; \
         } else if (var_isstr(a) && var_isstr(b)) { \
             bstring *s1 = var_tostr(a), *s2 = var_tostr(b); \
             res = be_strcmp(s1, s2) op 0; \
@@ -732,7 +824,18 @@ newframe: /* a new call frame */
                 var_setreal(dst, x.r + y.r);
 #else  // ESP32
                 breal x = var2real(a), y = var2real(b);
-                var_setreal(dst, x + y);
+                if (real_bits_is_nan(x) || real_bits_is_nan(y)) {
+                    var_setreal(dst, real_bits_nan());
+                } else if (real_bits_is_inf(x) || real_bits_is_inf(y)) {
+                    if (real_bits_is_inf(x) && real_bits_is_inf(y) &&
+                            real_bits_is_negative(x) != real_bits_is_negative(y)) {
+                        var_setreal(dst, real_bits_nan());
+                    } else {
+                        var_setreal(dst, real_bits_inf(real_bits_is_inf(x) ? real_bits_is_negative(x) : real_bits_is_negative(y)));
+                    }
+                } else {
+                    var_setreal(dst, x + y);
+                }
 #endif // ESP32
             } else if (var_isstr(a) && var_isstr(b)) { /* strcat */
                 bstring *s = be_strcat(vm, var_tostr(a), var_tostr(b));
@@ -756,7 +859,18 @@ newframe: /* a new call frame */
                 var_setint(dst, ibinop(-, a, b));
             } else if (var_isnumber(a) && var_isnumber(b)) {
                 breal x = var2real(a), y = var2real(b);
-                var_setreal(dst, x - y);
+                if (real_bits_is_nan(x) || real_bits_is_nan(y)) {
+                    var_setreal(dst, real_bits_nan());
+                } else if (real_bits_is_inf(x) || real_bits_is_inf(y)) {
+                    if (real_bits_is_inf(x) && real_bits_is_inf(y) &&
+                            real_bits_is_negative(x) == real_bits_is_negative(y)) {
+                        var_setreal(dst, real_bits_nan());
+                    } else {
+                        var_setreal(dst, real_bits_inf(real_bits_is_inf(x) ? real_bits_is_negative(x) : !real_bits_is_negative(y)));
+                    }
+                } else {
+                    var_setreal(dst, x - y);
+                }
             } else if (var_isinstance(a)) {
                 ins_binop(vm, "-", ins);
             } else if (var_iscomptr(a) && var_isint(b)) {
@@ -1300,9 +1414,14 @@ newframe: /* a new call frame */
             }
             case BE_NTVFUNC: {
                 bntvfunc f = var_tontvfunc(var);
+                P2_NATIVE_CALL_TRACE("[vm] opcall ntv before\n");
+                p2_native_call_trace_func("opcall ntv func", f);
                 push_native(vm, var, argc, mode);
+                P2_NATIVE_CALL_TRACE("[vm] opcall ntv enter\n");
                 f(vm); /* call C primitive function */
+                P2_NATIVE_CALL_TRACE("[vm] opcall ntv leave\n");
                 ret_native(vm);
+                P2_NATIVE_CALL_TRACE("[vm] opcall ntv after\n");
                 break;
             }
             case BE_CTYPE_FUNC: {
@@ -1411,9 +1530,14 @@ static void do_ntvclos(bvm *vm, int pos, int argc)
 static void do_ntvfunc(bvm *vm, int pos, int argc)
 {
     bntvfunc f = var_tontvfunc(vm->reg + pos);
+    P2_NATIVE_CALL_TRACE("[vm] do ntv before\n");
+    p2_native_call_trace_func("do ntv func", f);
     push_native(vm, vm->reg + pos, argc, 0);
+    P2_NATIVE_CALL_TRACE("[vm] do ntv enter\n");
     f(vm); /* call C primitive function */
+    P2_NATIVE_CALL_TRACE("[vm] do ntv leave\n");
     ret_native(vm);
+    P2_NATIVE_CALL_TRACE("[vm] do ntv after\n");
 }
 
 static void do_cfunc(bvm *vm, int pos, int argc)

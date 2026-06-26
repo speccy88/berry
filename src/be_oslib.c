@@ -224,6 +224,10 @@ static int m_path_splitext(bvm *vm)
     if (be_top(vm) >= 1 && be_isstring(vm, 1)) {
         const char *path = be_tostring(vm, 1);
         const char *split = be_splitname(path);
+        const char *name = be_splitpath(path);
+        if (split == name) {
+            split = path + strlen(path);
+        }
         be_getbuiltin(vm, "list");
         be_pushnstring(vm, path, split - path);
         be_pushstring(vm, split);

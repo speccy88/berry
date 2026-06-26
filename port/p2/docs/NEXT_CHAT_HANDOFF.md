@@ -10,12 +10,12 @@ with 32 MB PSRAM and Catalina/lcc.
 ## Current Working State
 
 - Normal COMPACT P2 Edge 32 MB PSRAM Catalina flash path still works:
- - `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88`
+ - `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=../Catalina`
  - Boots `[edge32 profile]` from SPI flash.
 - XMM unified-memory path now works over serial:
- - `make p2-xmm-run PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88`
+ - `make p2-xmm-run PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=../Catalina`
 - XMM unified-memory path now works from standalone SPI flash:
- - `make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88`
+ - `make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=../Catalina`
  - Reset or power-cycle afterward. The sparse stage-2 loader shows an
  `Initializing PSRAM` spinner, then Berry shows a VM startup spinner before the
  REPL. Current captures reach `berry>` about 3 seconds after attach.

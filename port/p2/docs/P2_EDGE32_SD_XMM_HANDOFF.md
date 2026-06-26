@@ -43,12 +43,12 @@ Hardware:
 
 - P2 Edge 32 MB board on `/dev/cu.usbserial-P97cvdxp`
 - native macOS Catalina/lcc:
- `/Users/fred/Documents/Code/catalina-speccy88`
+ `../Catalina`
 
 Verified `edge32` flash:
 
 ```sh
-make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
+make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 ```
 
 - Boots from SPI flash.
@@ -62,7 +62,7 @@ make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA
 Verified standalone XMM flash:
 
 ```sh
-make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
+make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 ```
 
 - Boots from SPI flash through the fast sparse XMM loader; current captures reach the REPL in about 3 seconds after attach and show both PSRAM and VM startup spinners.

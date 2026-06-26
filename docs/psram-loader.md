@@ -12,7 +12,7 @@ On `xmm`, Catalina owns the lower PSRAM window as transparent external heap. Ber
 - `p2.psram_test()` smoke-tests bounded block transfer.
 - `libstore.cache_source(name)` mirrors source text into the safe PSRAM block/cache window.
 - `libstore.cached_source(name)` materializes cached source back into active VM RAM before compilation.
-- `p2mem.stats()`, `p2mem.cache()`, and `p2mem.evict()` report and reset the current source-cache facade.
+- `p2mem.stats()`, `p2mem.stats_result()`, `p2mem.cache()`, `p2mem.cache_result()`, and `p2mem.evict()` report and reset the current source-cache facade. Result helpers wrap lower diagnostic failures in an `ok/error/message` map for tooling. `p2mem.cache()["items"]` includes both the compatibility `chunks` count and explicit `chunk_count` field for source-cache entries.
 
 ## What remains open
 

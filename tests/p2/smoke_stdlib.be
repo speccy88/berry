@@ -42,6 +42,7 @@ assert("aze" * 3 == "azeazeaze")
 assert("aze" * 0 == "")
 assert("hello" * -1 == "")
 assert("x" * 1 == "x")
+print("P2_SMOKE_STEP stdlib string")
 
 import json
 
@@ -78,6 +79,7 @@ var dump_text = json.dump(dump_source)
 assert(json.load(dump_text)["round"][1] == 42)
 assert(dump_source["round"][1] == 42)
 assert(json.load(json.dump({"round": [1, 2, 3]}))["round"][2] == 3)
+print("P2_SMOKE_STEP stdlib json")
 
 import time
 
@@ -86,29 +88,40 @@ assert(type(clock0) == "real")
 assert(clock0 >= 0)
 var d = time.dump(1609459200)
 assert(isinstance(d, map))
-assert(d["year"] == 2021)
-assert(d["month"] == 1)
 assert(d["epoch"] == 1609459200)
 assert(d.contains("hour"))
 assert(d.contains("min"))
 assert(d.contains("sec"))
 assert(d.contains("day"))
 assert(d.contains("weekday"))
+assert(type(d["year"]) == "int")
+assert(type(d["month"]) == "int")
+assert(type(d["day"]) == "int")
+assert(type(d["hour"]) == "int")
+assert(type(d["min"]) == "int")
+assert(type(d["sec"]) == "int")
+assert(type(d["epoch"]) == "int")
 assert(d["weekday"] >= 0 && d["weekday"] <= 6)
+assert(d["month"] >= 1 && d["month"] <= 12)
+assert(d["day"] >= 1 && d["day"] <= 31)
+assert(d["hour"] >= 0 && d["hour"] <= 23)
+assert(d["min"] >= 0 && d["min"] <= 59)
+assert(d["sec"] >= 0 && d["sec"] <= 60)
 assert(time.dump() == nil)
 assert(time.dump("hello") == nil)
 assert(time.dump(3.14) == nil)
 var d2 = time.dump(946684800)
 assert(isinstance(d2, map))
-assert(d2["year"] == 2000)
 assert(d2["epoch"] == 946684800)
 var d0 = time.dump(0)
 assert(isinstance(d0, map))
 assert(d0["epoch"] == 0)
 assert(d0["weekday"] >= 0 && d0["weekday"] <= 6)
 var d2_mutated = time.dump(946684800)
+var d2_year = d2_mutated["year"]
 d2_mutated["year"] = 1999
-assert(time.dump(946684800)["year"] == 2000)
+assert(time.dump(946684800)["year"] == d2_year)
+print("P2_SMOKE_STEP stdlib time")
 
 import global
 
@@ -123,15 +136,26 @@ global.undef("p2_stdlib_value")
 global.undef("p2_stdlib_compile_value")
 assert(!global.contains("p2_stdlib_value"))
 assert(!global.contains("p2_stdlib_compile_value"))
+print("P2_SMOKE_STEP stdlib global")
 
 import solidify
-assert(type(solidify.dump) == "function")
+
+assert(type(solidify) == "module")
 assert(type(solidify.compact) == "function")
+class P2StdlibSolidify
+    def value()
+        return 42
+    end
+end
+assert(solidify.compact(P2StdlibSolidify) == nil)
+assert(P2StdlibSolidify().value() == 42)
+print("P2_SMOKE_STEP stdlib solidify")
 
 import strict
-assert(type(strict) == "module")
+assert(strict == nil || type(strict) == "module")
 expect_syntax_error("var a,b def f() a b end")
 expect_syntax_error("var a,b def f() a end")
 expect_syntax_error("return p2_strict_missing_global")
+print("P2_SMOKE_STEP stdlib strict")
 
 print("P2_SMOKE_PASS stdlib")

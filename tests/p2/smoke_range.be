@@ -26,6 +26,16 @@ def expect_compiled_value_error(code)
     end
 end
 
+def expect_stop_iteration(f)
+    var caught = false
+    try
+        f()
+    except .. as e, m
+        caught = e == "stop_iteration"
+    end
+    assert(caught)
+end
+
 assert(expand(0..5) == [0, 1, 2, 3, 4, 5])
 assert(expand(0..0) == [0])
 assert(expand(5..0) == [])
@@ -95,7 +105,7 @@ assert(iter_b() == 2)
 assert(iter_a() == 6)
 assert(iter_b() == 4)
 assert(iter_b() == 6)
-assert(iter_b() == nil)
+expect_stop_iteration(iter_b)
 assert(expand(reusable) == [2, 4, 6])
 
 var retarget = range(1, 3)
@@ -104,7 +114,7 @@ assert(old_iter() == 1)
 retarget.setrange(10, 14, 2)
 assert(old_iter() == 2)
 assert(old_iter() == 3)
-assert(old_iter() == nil)
+expect_stop_iteration(old_iter)
 assert(expand(retarget) == [10, 12, 14])
 
 var neg_retarget = range(6, 2, -2)
@@ -113,7 +123,7 @@ assert(neg_old_iter() == 6)
 neg_retarget.setrange(1, 3)
 assert(neg_old_iter() == 4)
 assert(neg_old_iter() == 2)
-assert(neg_old_iter() == nil)
+expect_stop_iteration(neg_old_iter)
 assert(expand(neg_retarget) == [1, 2, 3])
 
 expect_compiled_value_error("range(1, 2, 0)")

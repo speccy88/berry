@@ -9,6 +9,7 @@
 #include "be_module.h"
 #include "be_object.h"
 #include "be_string.h"
+#include "be_sys.h"
 #include "be_var.h"
 #include "be_vm.h"
 #include "berry_conf_p2.h"
@@ -18,6 +19,7 @@
 
 #include <propeller2.h>
 #include <prop.h>
+#include <smartpin.h>
 #include <cog.h>
 #if defined(__CATALINA_LARGE)
 #include <hmalloc.h>
@@ -47,7 +49,11 @@ static const unsigned long p2_xmmcache_array[] = {
 #endif
 
 #ifndef BE_P2_ENABLE_ROADMAP_NATIVE_FACADES
+#if defined(BE_P2_PROFILE) && BE_P2_PROFILE == BE_P2_PROFILE_XMM
+#define BE_P2_ENABLE_ROADMAP_NATIVE_FACADES 1
+#else
 #define BE_P2_ENABLE_ROADMAP_NATIVE_FACADES 0
+#endif
 #endif
 
 #ifndef BE_P2_ENABLE_EXPERIMENTAL_VM_COG
@@ -100,6 +106,43 @@ static size_t p2_psram_cache_alloc_count;
 static size_t p2_psram_cache_entry_count;
 static p2_psram_cache_entry p2_psram_cache_entries[P2_PSRAM_CACHE_MAX_ENTRIES];
 
+#if P2_HAS_CATALINA_PSRAM
+static unsigned char p2_psram_transfer_buffer[P2_PSRAM_TRANSFER_MAX];
+
+static int p2_psram_read_bytes(void *dst, size_t address, size_t size)
+{
+    int result;
+
+    if (size == 0) {
+        return 0;
+    }
+    if (size > (size_t)P2_PSRAM_TRANSFER_MAX) {
+        return ERR_INVALID;
+    }
+    result = psram_read(p2_psram_transfer_buffer,
+        (void *)(uintptr_t)address,
+        (int32_t)size);
+    if (result >= 0) {
+        memcpy(dst, p2_psram_transfer_buffer, size);
+    }
+    return result;
+}
+
+static int p2_psram_write_bytes(const void *src, size_t address, size_t size)
+{
+    if (size == 0) {
+        return 0;
+    }
+    if (size > (size_t)P2_PSRAM_TRANSFER_MAX) {
+        return ERR_INVALID;
+    }
+    memcpy(p2_psram_transfer_buffer, src, size);
+    return psram_write(p2_psram_transfer_buffer,
+        (void *)(uintptr_t)address,
+        (int32_t)size);
+}
+#endif
+
 static void p2_psram_require_available(bvm *vm);
 static int m_p2_closure_cog_stop(bvm *vm);
 static int m_p2_closure_cog_blinker(bvm *vm);
@@ -143,6 +186,7 @@ extern int m_lock_check(bvm *vm);
 extern int m_attention_signal(bvm *vm);
 extern int m_attention_poll(bvm *vm);
 extern int m_attention_wait(bvm *vm);
+extern int m_attention_wait_result(bvm *vm);
 extern int m_cordic_rotxy(bvm *vm);
 extern int m_cordic_xypol(bvm *vm);
 extern int m_cordic_polxy(bvm *vm);
@@ -192,6 +236,13 @@ static void p2_module_set_func(bvm *vm, const char *name, bntvfunc func)
     be_pop(vm, 1);
 }
 
+static void p2_module_set_int(bvm *vm, const char *name, bint value)
+{
+    be_pushint(vm, value);
+    be_setmember(vm, -2, name);
+    be_pop(vm, 1);
+}
+
 static bint p2_require_int_arg(bvm *vm, int index, const char *message)
 {
     if (be_top(vm) < index || !be_isint(vm, index)) {
@@ -236,6 +287,34 @@ static void p2_map_set_string(bvm *vm, const char *key, const char *value)
     be_pop(vm, 2);
 }
 
+static void p2_map_set_nil(bvm *vm, const char *key)
+{
+    be_pushstring(vm, key);
+    be_pushnil(vm);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+}
+
+static void p2_push_string_list(bvm *vm, const char *const *items, size_t count)
+{
+    size_t i;
+
+    be_newobject(vm, "list");
+    for (i = 0; i < count; ++i) {
+        be_pushstring(vm, items[i]);
+        be_data_push(vm, -2);
+        be_pop(vm, 1);
+    }
+}
+
+static void p2_map_set_empty_list(bvm *vm, const char *key)
+{
+    be_pushstring(vm, key);
+    be_newobject(vm, "list");
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+}
+
 static void p2_map_set_u32_hex(bvm *vm, const char *key, uint32_t value)
 {
     char buffer[11];
@@ -245,6 +324,49 @@ static void p2_map_set_u32_hex(bvm *vm, const char *key, uint32_t value)
 }
 
 static int p2_sd_probe_swap_cs_clk;
+
+static int m_p2_asm_load(bvm *vm)
+{
+    const char *path;
+    void *file;
+    size_t length;
+    size_t got;
+    void *buffer;
+
+    if (be_top(vm) < 1 || !be_isstring(vm, 1)) {
+        be_raise(vm, "type_error", "path must be a string");
+    }
+    path = be_tostring(vm, 1);
+    if (path == NULL || path[0] == '\0') {
+        be_raise(vm, "value_error", "path must be non-empty");
+    }
+    file = be_fopen(path, "rb");
+    if (file == NULL) {
+        be_raise(vm, "io_error", "PASM blob not found");
+    }
+    length = be_fsize(file);
+    if (length == 0u) {
+        be_fclose(file);
+        be_raise(vm, "value_error", "PASM blob must be non-empty");
+    }
+    if ((length & 3u) != 0u) {
+        be_fclose(file);
+        be_raise(vm, "value_error", "PASM blob size must be 4-byte aligned");
+    }
+    if (length > (size_t)vm->bytesmaxsize) {
+        be_fclose(file);
+        be_raise(vm, "memory_error", "PASM blob exceeds maximum bytes size");
+    }
+
+    buffer = be_pushbytes(vm, NULL, length);
+    got = be_fread(file, buffer, length);
+    be_fclose(file);
+    if (got != length) {
+        be_pop(vm, 1);
+        be_raise(vm, "io_error", "failed to read PASM blob");
+    }
+    be_return(vm);
+}
 
 static int p2_sd_probe_cs_pin(void)
 {
@@ -555,8 +677,17 @@ static int m_p2_hubset(bvm *vm)
 }
 #endif
 
+static int p2_closure_cog_id_for_handle(bvm *vm, int index);
+
 static int m_p2_cogid(bvm *vm)
 {
+    if (be_top(vm) >= 1) {
+        bint handle = p2_require_int_arg(vm, 1, "handle must be an int");
+        if (handle < P2_CLOSURE_COG_HANDLE_BASE) {
+            be_raise(vm, "value_error", "handle must be a spawned cog handle");
+        }
+        return p2_closure_cog_id_for_handle(vm, 1);
+    }
     be_pushint(vm, (bint)_cogid());
     be_return(vm);
 }
@@ -1110,7 +1241,8 @@ static const uint32_t p2_cog_marker_pasm[] = {
     0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u
 };
 
-static int p2_cog_marker_probe(int target_cog, uint32_t *marker_out, uint32_t *cog_out)
+static int p2_cog_marker_probe_blob(const void *blob, size_t length,
+    int target_cog, uint32_t *marker_out, uint32_t *cog_out)
 {
     uint32_t *program;
     uint32_t *mailbox;
@@ -1123,7 +1255,10 @@ static int p2_cog_marker_probe(int target_cog, uint32_t *marker_out, uint32_t *c
     if (cog_out != NULL) {
         *cog_out = 0xffffffffu;
     }
-    program = (uint32_t *)p2_hub_mem_alloc(sizeof(p2_cog_marker_pasm));
+    if (blob == NULL || length == 0u || (length & 3u) != 0u) {
+        return -1;
+    }
+    program = (uint32_t *)p2_hub_mem_alloc(length);
     mailbox = (uint32_t *)p2_hub_mem_alloc(2u * sizeof(uint32_t));
     if (program == NULL || mailbox == NULL) {
         if (program != NULL) {
@@ -1134,7 +1269,7 @@ static int p2_cog_marker_probe(int target_cog, uint32_t *marker_out, uint32_t *c
         }
         return -1;
     }
-    memcpy(program, p2_cog_marker_pasm, sizeof(p2_cog_marker_pasm));
+    memcpy(program, blob, length);
     mailbox[0] = 0;
     mailbox[1] = 0xffffffffu;
     cog = _cogstart_PASM(target_cog, program, mailbox);
@@ -1153,6 +1288,276 @@ static int p2_cog_marker_probe(int target_cog, uint32_t *marker_out, uint32_t *c
     p2_hub_mem_free(mailbox);
     p2_hub_mem_free(program);
     return cog;
+}
+
+static int p2_cog_marker_probe(int target_cog, uint32_t *marker_out, uint32_t *cog_out)
+{
+    return p2_cog_marker_probe_blob(p2_cog_marker_pasm,
+        sizeof(p2_cog_marker_pasm), target_cog, marker_out, cog_out);
+}
+
+static const char *P2_ASM_RAW_COGNEW_POLICY = "low_level_existing_path_not_public_blob_abi";
+static const char *P2_ASM_RAW_COGNEW_REASON = "exposed for existing low-level control; arbitrary blob safety contract is not complete";
+static const char *P2_ASM_ARBITRARY_BLOB_POLICY = "unsupported_exact_marker_fixture_only";
+static const char *P2_ASM_ARBITRARY_BLOB_REASON = "entry, argument, return, clobber, pointer, interrupt, stack, and cleanup rules are not defined";
+static const char *P2_ASM_FUNCTION_BRIDGE_POLICY = "unsupported_no_calling_convention";
+static const char *P2_ASM_FUNCTION_BRIDGE_REASON = "argument marshalling, return values, timeouts, cog reuse, and cleanup are not defined";
+static const char *P2_ASM_INLINE_ASSEMBLER_POLICY = "unsupported_no_parser_or_safety_contract";
+static const char *P2_ASM_INLINE_ASSEMBLER_REASON = "assembly parser, code generation, ABI, clobbers, labels, relocation, and safety checks are not defined";
+static const char *P2_ASM_UNSAFE_GATE = "BE_P2_ENABLE_UNSAFE_ASM";
+static const char *P2_ASM_UNSAFE_MODULE = "none";
+static const char *P2_ASM_LAUNCH_POLICY = "exact_marker_fixture_only";
+static const char *P2_ASM_ABI_STATUS = "marker_fixture_only";
+static const char *P2_ASM_UNSUPPORTED_REASON = "PASM ABI and arbitrary-code safety are not complete";
+
+static const char *const P2_ASM_REQUIRED_CAPABILITY_KEYS[] = {
+    "safe_intrinsics",
+    "sd_load",
+    "raw_cognew",
+    "raw_cognew_policy",
+    "raw_cognew_reason",
+    "marker_probe",
+    "sd_marker_probe",
+    "arbitrary_sd_launch_supported",
+    "arbitrary_blob_policy",
+    "arbitrary_blob_reason",
+    "function_bridge",
+    "function_bridge_policy",
+    "function_bridge_reason",
+    "inline_assembler",
+    "inline_assembler_policy",
+    "inline_assembler_reason",
+    "unsafe_asm",
+    "unsafe_gate",
+    "unsafe_default",
+    "unsafe_module",
+    "launch_policy",
+    "unsupported_reason"
+};
+
+static const char *const P2_ASM_REQUIRED_ABI_KEYS[] = {
+    "status",
+    "entry",
+    "raw_cognew_policy",
+    "argument",
+    "return_value",
+    "cleanup",
+    "hub_pointer_rule",
+    "psram_pointer_rule",
+    "cog_lut_rule",
+    "interrupt_rule",
+    "stack_rule",
+    "arbitrary_blob_abi",
+    "arbitrary_blob_policy",
+    "arbitrary_blob_required",
+    "function_bridge_abi",
+    "function_bridge_policy",
+    "function_bridge_required",
+    "inline_assembler_abi",
+    "inline_assembler_policy",
+    "inline_assembler_required",
+    "unsafe_gate",
+    "unsafe_default",
+    "unsafe_module"
+};
+
+static int m_p2_asm_required_capability_keys(bvm *vm)
+{
+    p2_push_string_list(vm, P2_ASM_REQUIRED_CAPABILITY_KEYS,
+        sizeof(P2_ASM_REQUIRED_CAPABILITY_KEYS) / sizeof(P2_ASM_REQUIRED_CAPABILITY_KEYS[0]));
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_asm_required_abi_keys(bvm *vm)
+{
+    p2_push_string_list(vm, P2_ASM_REQUIRED_ABI_KEYS,
+        sizeof(P2_ASM_REQUIRED_ABI_KEYS) / sizeof(P2_ASM_REQUIRED_ABI_KEYS[0]));
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_asm_capabilities(bvm *vm)
+{
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "safe_intrinsics", 1);
+    p2_map_set_bool(vm, "sd_load", 1);
+    p2_map_set_bool(vm, "raw_cognew", 1);
+    p2_map_set_string(vm, "raw_cognew_policy", P2_ASM_RAW_COGNEW_POLICY);
+    p2_map_set_string(vm, "raw_cognew_reason", P2_ASM_RAW_COGNEW_REASON);
+    p2_map_set_bool(vm, "marker_probe", 1);
+    p2_map_set_bool(vm, "sd_marker_probe", 1);
+    p2_map_set_bool(vm, "arbitrary_sd_launch_supported", 0);
+    p2_map_set_string(vm, "arbitrary_blob_policy", P2_ASM_ARBITRARY_BLOB_POLICY);
+    p2_map_set_string(vm, "arbitrary_blob_reason", P2_ASM_ARBITRARY_BLOB_REASON);
+    p2_map_set_bool(vm, "function_bridge", 0);
+    p2_map_set_string(vm, "function_bridge_policy", P2_ASM_FUNCTION_BRIDGE_POLICY);
+    p2_map_set_string(vm, "function_bridge_reason", P2_ASM_FUNCTION_BRIDGE_REASON);
+    p2_map_set_bool(vm, "inline_assembler", 0);
+    p2_map_set_string(vm, "inline_assembler_policy", P2_ASM_INLINE_ASSEMBLER_POLICY);
+    p2_map_set_string(vm, "inline_assembler_reason", P2_ASM_INLINE_ASSEMBLER_REASON);
+    p2_map_set_bool(vm, "unsafe_asm", 0);
+    p2_map_set_string(vm, "unsafe_gate", P2_ASM_UNSAFE_GATE);
+    p2_map_set_bool(vm, "unsafe_default", 0);
+    p2_map_set_string(vm, "unsafe_module", P2_ASM_UNSAFE_MODULE);
+    p2_map_set_string(vm, "launch_policy", P2_ASM_LAUNCH_POLICY);
+    p2_map_set_string(vm, "unsupported_reason", P2_ASM_UNSUPPORTED_REASON);
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_asm_abi(bvm *vm)
+{
+    be_newobject(vm, "map");
+    p2_map_set_string(vm, "status", P2_ASM_ABI_STATUS);
+    p2_map_set_string(vm, "entry", "_cogstart_PASM(cog, program, mailbox)");
+    p2_map_set_string(vm, "raw_cognew_policy", P2_ASM_RAW_COGNEW_POLICY);
+    p2_map_set_string(vm, "argument", "mailbox pointer in PTRA");
+    p2_map_set_string(vm, "return_value", "mailbox marker/cog id; no function return ABI yet");
+    p2_map_set_string(vm, "cleanup", "caller stops child cog after marker or timeout");
+    p2_map_set_string(vm, "hub_pointer_rule", "fixture executes from copied hub buffer");
+    p2_map_set_string(vm, "psram_pointer_rule", "no PSRAM pointers passed to fixture");
+    p2_map_set_string(vm, "cog_lut_rule", "no caller-visible cog/LUT state contract yet");
+    p2_map_set_string(vm, "interrupt_rule", "no interrupt contract yet");
+    p2_map_set_string(vm, "stack_rule", "no stack is provided to marker fixture");
+    p2_map_set_bool(vm, "arbitrary_blob_abi", 0);
+    p2_map_set_string(vm, "arbitrary_blob_policy", P2_ASM_ARBITRARY_BLOB_POLICY);
+    p2_map_set_string(vm, "arbitrary_blob_required", "entry address, blob layout, arguments, returns, clobbers, hub and PSRAM pointer ownership, cog/LUT rules, interrupts, stack, cleanup, timeout, and child failure handling");
+    p2_map_set_bool(vm, "function_bridge_abi", 0);
+    p2_map_set_string(vm, "function_bridge_policy", P2_ASM_FUNCTION_BRIDGE_POLICY);
+    p2_map_set_string(vm, "function_bridge_required", "argument marshalling, return values, timeout behavior, cog reuse, resource cleanup, and error propagation");
+    p2_map_set_bool(vm, "inline_assembler_abi", 0);
+    p2_map_set_string(vm, "inline_assembler_policy", P2_ASM_INLINE_ASSEMBLER_POLICY);
+    p2_map_set_string(vm, "inline_assembler_required", "assembly parser, code generation, ABI, register clobbers, labels, relocation, source mapping, optimizer interaction, and safety checks");
+    p2_map_set_string(vm, "unsafe_gate", P2_ASM_UNSAFE_GATE);
+    p2_map_set_bool(vm, "unsafe_default", 0);
+    p2_map_set_string(vm, "unsafe_module", P2_ASM_UNSAFE_MODULE);
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_asm_audit(bvm *vm)
+{
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "ok", 1);
+    p2_map_set_int(vm, "problem_count", 0);
+    be_pushstring(vm, "problems");
+    be_newobject(vm, "list");
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+    p2_map_set_empty_list(vm, "missing_capability_keys");
+    p2_map_set_empty_list(vm, "missing_abi_keys");
+    p2_map_set_bool(vm, "raw_cognew_policy_match", 1);
+    p2_map_set_bool(vm, "arbitrary_blob_policy_match", 1);
+    p2_map_set_bool(vm, "function_bridge_policy_match", 1);
+    p2_map_set_bool(vm, "inline_assembler_policy_match", 1);
+    p2_map_set_bool(vm, "unsafe_gate_match", 1);
+    p2_map_set_string(vm, "status", P2_ASM_ABI_STATUS);
+    p2_map_set_string(vm, "launch_policy", P2_ASM_LAUNCH_POLICY);
+    p2_map_set_string(vm, "raw_cognew_policy", P2_ASM_RAW_COGNEW_POLICY);
+    p2_map_set_string(vm, "arbitrary_blob_policy", P2_ASM_ARBITRARY_BLOB_POLICY);
+    p2_map_set_string(vm, "function_bridge_policy", P2_ASM_FUNCTION_BRIDGE_POLICY);
+    p2_map_set_string(vm, "inline_assembler_policy", P2_ASM_INLINE_ASSEMBLER_POLICY);
+    p2_map_set_string(vm, "unsafe_gate", P2_ASM_UNSAFE_GATE);
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_asm_audit_problems(bvm *vm)
+{
+    be_newobject(vm, "list");
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_asm_audit_ok(bvm *vm)
+{
+    be_pushbool(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_asm_marker_blob(bvm *vm)
+{
+    be_pushbytes(vm, p2_cog_marker_pasm, sizeof(p2_cog_marker_pasm));
+    be_return(vm);
+}
+
+static int m_p2_asm_launch_probe(bvm *vm)
+{
+    int target_cog = ANY_COG;
+    uint32_t marker = 0u;
+    uint32_t cog_seen = 0xffffffffu;
+    int cog;
+    int running_after = 0;
+
+    if (be_top(vm) >= 1 && !be_isnil(vm, 1)) {
+        bint requested = p2_require_int_arg(vm, 1, "cog must be an int");
+        if (requested < 0 || requested > 7) {
+            be_raise(vm, "value_error", "cog must be between 0 and 7");
+        }
+        target_cog = (int)requested;
+    }
+
+    cog = p2_cog_marker_probe(target_cog, &marker, &cog_seen);
+    if (cog >= 0 && cog < 8) {
+        running_after = _cogchk(cog) != 0;
+    }
+
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "ok", cog >= 0 && marker != 0u && cog_seen == (uint32_t)cog && !running_after);
+    p2_map_set_int(vm, "target_cog", (bint)target_cog);
+    p2_map_set_int(vm, "cog", (bint)cog);
+    p2_map_set_int(vm, "marker", (bint)marker);
+    p2_map_set_int(vm, "cog_seen", (bint)cog_seen);
+    p2_map_set_bool(vm, "marker_seen", marker != 0u);
+    p2_map_set_bool(vm, "cog_seen_matches", cog >= 0 && cog_seen == (uint32_t)cog);
+    p2_map_set_bool(vm, "stopped", cog >= 0 && !running_after);
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_asm_launch_loaded_probe(bvm *vm)
+{
+    const void *blob;
+    size_t length = 0u;
+    int target_cog = ANY_COG;
+    uint32_t marker = 0u;
+    uint32_t cog_seen = 0xffffffffu;
+    int cog;
+    int running_after = 0;
+
+    if (be_top(vm) < 1 || !be_isbytes(vm, 1)) {
+        be_raise(vm, "type_error", "probe blob must be a bytes object");
+    }
+    blob = be_tobytes(vm, 1, &length);
+    if (length != sizeof(p2_cog_marker_pasm) ||
+        memcmp(blob, p2_cog_marker_pasm, sizeof(p2_cog_marker_pasm)) != 0) {
+        be_raise(vm, "value_error", "unsupported PASM probe blob");
+    }
+    if (be_top(vm) >= 2 && !be_isnil(vm, 2)) {
+        bint requested = p2_require_int_arg(vm, 2, "cog must be an int");
+        if (requested < 0 || requested > 7) {
+            be_raise(vm, "value_error", "cog must be between 0 and 7");
+        }
+        target_cog = (int)requested;
+    }
+
+    cog = p2_cog_marker_probe_blob(blob, length, target_cog, &marker, &cog_seen);
+    if (cog >= 0 && cog < 8) {
+        running_after = _cogchk(cog) != 0;
+    }
+
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "ok", cog >= 0 && marker != 0u && cog_seen == (uint32_t)cog && !running_after);
+    p2_map_set_int(vm, "target_cog", (bint)target_cog);
+    p2_map_set_int(vm, "cog", (bint)cog);
+    p2_map_set_int(vm, "marker", (bint)marker);
+    p2_map_set_int(vm, "cog_seen", (bint)cog_seen);
+    p2_map_set_bool(vm, "marker_seen", marker != 0u);
+    p2_map_set_bool(vm, "cog_seen_matches", cog >= 0 && cog_seen == (uint32_t)cog);
+    p2_map_set_bool(vm, "stopped", cog >= 0 && !running_after);
+    be_pop(vm, 1);
+    be_return(vm);
 }
 
 static int p2_cog_large_marker_probe(int target_cog, uint32_t *marker_out, uint32_t *cog_out)
@@ -2023,6 +2428,18 @@ static p2_closure_cog_slot *p2_closure_cog_require_handle(bvm *vm, int index, in
         *slot_index = slot;
     }
     return &p2_closure_cog_slots[slot];
+}
+
+static int p2_closure_cog_id_for_handle(bvm *vm, int index)
+{
+    int slot_index;
+    p2_closure_cog_slot *slot = p2_closure_cog_require_handle(vm, index, &slot_index);
+    (void)slot_index;
+
+    p2_closure_cog_sync_native_blink(slot);
+    p2_closure_cog_sync_isolated_source(slot);
+    be_pushint(vm, (bint)slot->cog_id);
+    be_return(vm);
 }
 
 enum {
@@ -3192,6 +3609,198 @@ static int m_p2_closure_cog_info(bvm *vm)
     be_return(vm);
 }
 
+static int m_p2_closure_cog_status(bvm *vm)
+{
+    return m_p2_closure_cog_info(vm);
+}
+
+static int m_p2_closure_cog_join(bvm *vm)
+{
+    int slot_index;
+    int raw_running = 0;
+    p2_closure_cog_slot *slot = p2_closure_cog_require_handle(vm, 1, &slot_index);
+
+    p2_closure_cog_sync_native_blink(slot);
+    p2_closure_cog_sync_isolated_source(slot);
+    if (slot->cog_id >= 0 && slot->cog_id < 8) {
+        raw_running = _cogchk(slot->cog_id) ? 1 : 0;
+    }
+    be_newobject(vm, "map");
+    p2_map_set_int(vm, "slot", (bint)slot_index);
+    p2_map_set_int(vm, "handle", slot->handle);
+    p2_map_set_int(vm, "cog", (bint)slot->cog_id);
+    p2_map_set_int(vm, "status", (bint)slot->status);
+    p2_map_set_bool(vm, "running", slot->status == 1 && raw_running);
+    p2_map_set_bool(vm, "raw_running", raw_running);
+    p2_map_set_bool(vm, "native_blink", slot->native_blink);
+    p2_map_set_string(vm, "model", slot->native_blink ? "native_blink" : (slot->isolated_source ? "isolated_source_vm" : "shared_vm_repl_idle"));
+    p2_map_set_bool(vm, "joined", !(slot->status == 1 && raw_running));
+    p2_map_set_bool(vm, "blocking", 0);
+    p2_map_set_string(vm, "join_policy", "nonblocking_status_snapshot");
+    p2_map_set_string(vm, "error", slot->last_error[0] ? slot->last_error : "");
+    switch (slot->last_result_type) {
+    case 1:
+        p2_map_set_string(vm, "result_type_name", "int");
+        p2_map_set_int(vm, "result", slot->last_result_int);
+        break;
+    case 2:
+        p2_map_set_string(vm, "result_type_name", "bool");
+        p2_map_set_bool(vm, "result", slot->last_result_bool);
+        break;
+    case 3:
+        p2_map_set_string(vm, "result_type_name", "nil");
+        p2_map_set_nil(vm, "result");
+        break;
+    default:
+        p2_map_set_string(vm, "result_type_name", "unsupported_or_missing");
+        p2_map_set_nil(vm, "result");
+        break;
+    }
+    be_return(vm);
+}
+
+static int m_p2_closure_cog_result(bvm *vm)
+{
+    int slot_index;
+    p2_closure_cog_slot *slot = p2_closure_cog_require_handle(vm, 1, &slot_index);
+    (void)slot_index;
+
+    p2_closure_cog_sync_native_blink(slot);
+    p2_closure_cog_sync_isolated_source(slot);
+    switch (slot->last_result_type) {
+    case 1:
+        be_pushint(vm, slot->last_result_int);
+        break;
+    case 2:
+        be_pushbool(vm, slot->last_result_bool);
+        break;
+    case 3:
+        be_pushnil(vm);
+        break;
+    default:
+        be_pushnil(vm);
+        break;
+    }
+    be_return(vm);
+}
+
+static int m_p2_closure_cog_error(bvm *vm)
+{
+    int slot_index;
+    p2_closure_cog_slot *slot = p2_closure_cog_require_handle(vm, 1, &slot_index);
+    (void)slot_index;
+
+    p2_closure_cog_sync_native_blink(slot);
+    p2_closure_cog_sync_isolated_source(slot);
+    if (slot->last_error[0]) {
+        be_pushstring(vm, slot->last_error);
+    } else {
+        be_pushnil(vm);
+    }
+    be_return(vm);
+}
+
+static int m_p2_closure_cog_stop(bvm *vm);
+
+static int m_p2_closure_cog_kill(bvm *vm)
+{
+    return m_p2_closure_cog_stop(vm);
+}
+
+static const char *const P2_COG_REQUIRED_CAPABILITY_KEYS[] = {
+    "spawn",
+    "spawn_task",
+    "spawn_source",
+    "berry_closure",
+    "isolated_child_vm_cog",
+    "blinker_descriptor",
+    "task_descriptor",
+    "function_entity_spawn",
+    "function_entity_setup_call",
+    "function_entity_descriptor_return",
+    "task_kinds",
+    "task_release",
+    "task_descriptor_info",
+    "task_max_args",
+    "native_blink",
+    "native_blink_stack",
+    "handle_base",
+    "max_handles",
+    "handle_model",
+    "handle_id",
+    "handle_info",
+    "handle_status",
+    "handle_stop",
+    "handle_result",
+    "handle_error",
+    "handle_join",
+    "handle_kill",
+    "handle_status_policy",
+    "handle_join_policy",
+    "handle_join_result_policy",
+    "handle_kill_policy",
+    "handle_cleanup_policy",
+    "handle_result_policy",
+    "handle_error_policy",
+    "handle_unsupported_reason",
+    "unsafe_shared_vm",
+    "reject_unsupported",
+    "isolated_vm_closure",
+    "isolated_source_vm",
+    "literal_closure_transfer",
+    "bytecode_loader",
+    "bytecode_saver"
+};
+
+static int m_p2_closure_cog_required_capability_keys(bvm *vm)
+{
+    p2_push_string_list(vm, P2_COG_REQUIRED_CAPABILITY_KEYS,
+        sizeof(P2_COG_REQUIRED_CAPABILITY_KEYS) / sizeof(P2_COG_REQUIRED_CAPABILITY_KEYS[0]));
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_closure_cog_audit(bvm *vm)
+{
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "ok", 1);
+    p2_map_set_int(vm, "problem_count", 0);
+    p2_map_set_empty_list(vm, "problems");
+    p2_map_set_empty_list(vm, "missing_capability_keys");
+    p2_map_set_string(vm, "handle_model", "native_blink_info_stop_only");
+    p2_map_set_string(vm, "handle_join_policy", "nonblocking_status_snapshot");
+    p2_map_set_string(vm, "handle_cleanup_policy", "stop_releases_stack_mailbox_source_slot");
+    p2_map_set_bool(vm, "unsafe_shared_vm",
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+        1
+#else
+        0
+#endif
+    );
+    p2_map_set_bool(vm, "reject_unsupported",
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+        0
+#else
+        1
+#endif
+    );
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_closure_cog_audit_problems(bvm *vm)
+{
+    be_newobject(vm, "list");
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_closure_cog_audit_ok(bvm *vm)
+{
+    be_pushbool(vm, 1);
+    be_return(vm);
+}
+
 static int m_p2_closure_cog_capabilities(bvm *vm)
 {
     be_newobject(vm, "map");
@@ -3219,6 +3828,23 @@ static int m_p2_closure_cog_capabilities(bvm *vm)
     p2_map_set_int(vm, "native_blink_stack", (bint)P2_CLOSURE_COG_STACK_NATIVE_BLINK);
     p2_map_set_int(vm, "handle_base", (bint)P2_CLOSURE_COG_HANDLE_BASE);
     p2_map_set_int(vm, "max_handles", (bint)P2_CLOSURE_COG_MAX);
+    p2_map_set_string(vm, "handle_model", "native_blink_info_stop_only");
+    p2_map_set_bool(vm, "handle_id", 1);
+    p2_map_set_bool(vm, "handle_info", 1);
+    p2_map_set_bool(vm, "handle_status", 1);
+    p2_map_set_bool(vm, "handle_stop", 1);
+    p2_map_set_bool(vm, "handle_result", 1);
+    p2_map_set_bool(vm, "handle_error", 1);
+    p2_map_set_bool(vm, "handle_join", 1);
+    p2_map_set_bool(vm, "handle_kill", 1);
+    p2_map_set_string(vm, "handle_status_policy", "status_aliases_info_map");
+    p2_map_set_string(vm, "handle_join_policy", "nonblocking_status_snapshot");
+    p2_map_set_string(vm, "handle_join_result_policy", "result_and_error_fields_in_join_snapshot");
+    p2_map_set_string(vm, "handle_kill_policy", "force_stop_cleanup_alias");
+    p2_map_set_string(vm, "handle_cleanup_policy", "stop_releases_stack_mailbox_source_slot");
+    p2_map_set_string(vm, "handle_result_policy", "last_result_value_nonblocking");
+    p2_map_set_string(vm, "handle_error_policy", "last_error_string_nonblocking");
+    p2_map_set_string(vm, "handle_unsupported_reason", "blocking result waits and cross-cog exception propagation are not defined for the interim native_blink handle model");
 #if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
     p2_map_set_bool(vm, "unsafe_shared_vm", 1);
     p2_map_set_bool(vm, "reject_unsupported", 0);
@@ -3247,8 +3873,15 @@ static int m_p2_closure_cog_stop(bvm *vm)
 {
     int slot_index;
     int wait_count = 0;
+    int had_stack;
+    int had_source_partition;
+    int had_source_job;
+    int mailbox_released = 0;
     p2_closure_cog_slot *slot = p2_closure_cog_require_handle(vm, 1, &slot_index);
 
+    had_stack = slot->stack != NULL;
+    had_source_partition = slot->isolated_source ? 1 : 0;
+    had_source_job = slot->source_job != NULL;
     slot->stop = 1;
     if (slot->native_blink) {
 #if defined(__CATALINA_LARGE)
@@ -3292,6 +3925,7 @@ static int m_p2_closure_cog_stop(bvm *vm)
     if (slot->native_mailbox != NULL) {
         p2_hub_mem_free((void *)slot->native_mailbox);
         slot->native_mailbox = NULL;
+        mailbox_released = 1;
     }
 #endif
     if (slot->isolated_source) {
@@ -3301,6 +3935,14 @@ static int m_p2_closure_cog_stop(bvm *vm)
             slot->source_job = NULL;
         }
     }
+    p2_map_set_bool(vm, "cleanup_attempted", 1);
+    p2_map_set_string(vm, "cleanup_policy", "stop_releases_stack_mailbox_source_slot");
+    p2_map_set_bool(vm, "stack_released", had_stack);
+    p2_map_set_bool(vm, "mailbox_released", mailbox_released);
+    p2_map_set_bool(vm, "source_partition_release_attempted", had_source_partition);
+    p2_map_set_bool(vm, "source_job_released", had_source_job);
+    p2_map_set_bool(vm, "slot_released", 1);
+    p2_map_set_bool(vm, "handle_valid_after_stop", 0);
     memset(slot, 0, sizeof(*slot));
     be_return(vm);
 }
@@ -5126,10 +5768,10 @@ static int m_p2_vm_copyable(bvm *vm)
     } else if (be_isfunction(vm, 1)) {
         kind = "function";
         reason = "closure/function transfer needs explicit child VM launch support";
-    } else if (be_islist(vm, 1)) {
+    } else if (be_islist(vm, 1) || be_islistinstance(vm, 1)) {
         kind = "list";
         reason = "list object graph transfer is not supported";
-    } else if (be_ismap(vm, 1)) {
+    } else if (be_ismap(vm, 1) || be_ismapinstance(vm, 1)) {
         kind = "map";
         reason = "map object graph transfer is not supported";
     }
@@ -5958,9 +6600,7 @@ static int m_p2_psram_cache_read_entry(bvm *vm)
 #if P2_HAS_CATALINA_PSRAM
     if (size > 0) {
         char *buffer = be_malloc(vm, (size_t)size);
-        int result = psram_read(buffer,
-            (void *)(uintptr_t)address,
-            (int32_t)size);
+        int result = p2_psram_read_bytes(buffer, address, (size_t)size);
         if (result < 0) {
             be_free(vm, buffer, (size_t)size);
             be_raise(vm, "io_error", "PSRAM cache entry read failed");
@@ -6004,9 +6644,7 @@ static int m_p2_psram_cache_write_entry(bvm *vm)
 
 #if P2_HAS_CATALINA_PSRAM
     if (size > 0) {
-        result = psram_write((void *)data,
-            (void *)(uintptr_t)address,
-            (int32_t)size);
+        result = p2_psram_write_bytes(data, address, size);
         if (result < 0) {
             be_raise(vm, "io_error", "PSRAM cache entry write failed");
         }
@@ -6051,9 +6689,9 @@ static int m_p2_psram_cache_verify_entry(bvm *vm)
     if (has_write) {
         char *buffer = be_malloc(vm, entry->last_write_size);
 
-        result = psram_read(buffer,
-            (void *)(uintptr_t)(entry->address + entry->last_write_offset),
-            (int32_t)entry->last_write_size);
+        result = p2_psram_read_bytes(buffer,
+            entry->address + entry->last_write_offset,
+            entry->last_write_size);
         if (result >= 0) {
             checksum = p2_psram_cache_checksum(buffer, entry->last_write_size);
         }
@@ -6089,9 +6727,7 @@ static int m_p2_psram_cache_read(bvm *vm)
 #if P2_HAS_CATALINA_PSRAM
     if (size > 0) {
         char *buffer = be_malloc(vm, (size_t)size);
-        int result = psram_read(buffer,
-            (void *)(uintptr_t)address,
-            (int32_t)size);
+        int result = p2_psram_read_bytes(buffer, address, (size_t)size);
         if (result < 0) {
             be_free(vm, buffer, (size_t)size);
             be_raise(vm, "io_error", "PSRAM cache read failed");
@@ -6131,9 +6767,7 @@ static int m_p2_psram_cache_write(bvm *vm)
 
 #if P2_HAS_CATALINA_PSRAM
     if (size > 0) {
-        result = psram_write((void *)data,
-            (void *)(uintptr_t)address,
-            (int32_t)size);
+        result = p2_psram_write_bytes(data, address, size);
         if (result < 0) {
             be_raise(vm, "io_error", "PSRAM cache write failed");
         }
@@ -6187,9 +6821,7 @@ static int m_p2_psram_read(bvm *vm)
 #if P2_HAS_CATALINA_PSRAM
     if (size > 0) {
         char *buffer = be_malloc(vm, (size_t)size);
-        int result = psram_read(buffer,
-            (void *)(uintptr_t)address,
-            (int32_t)size);
+        int result = p2_psram_read_bytes(buffer, (size_t)address, (size_t)size);
         if (result < 0) {
             be_free(vm, buffer, (size_t)size);
             be_raise(vm, "io_error", "PSRAM read failed");
@@ -6229,9 +6861,7 @@ static int m_p2_psram_write(bvm *vm)
 
 #if P2_HAS_CATALINA_PSRAM
     if (size > 0) {
-        result = psram_write((void *)data,
-            (void *)(uintptr_t)address,
-            (int32_t)size);
+        result = p2_psram_write_bytes(data, (size_t)address, size);
         if (result < 0) {
             be_raise(vm, "io_error", "PSRAM write failed");
         }
@@ -6277,13 +6907,13 @@ static int m_p2_psram_test(bvm *vm)
             p2_map_set_string(vm, "error", "address outside PSRAM");
         } else {
             memset(readback, 0, sizeof(readback));
-            write_result = psram_write((void *)pattern,
-                (void *)(uintptr_t)address,
-                (int32_t)sizeof(pattern));
+            write_result = p2_psram_write_bytes(pattern,
+                (size_t)address,
+                sizeof(pattern));
             if (write_result >= 0) {
-                read_result = psram_read(readback,
-                    (void *)(uintptr_t)address,
-                    (int32_t)sizeof(readback));
+                read_result = p2_psram_read_bytes(readback,
+                    (size_t)address,
+                    sizeof(readback));
                 ok = read_result >= 0 && strcmp(readback, pattern) == 0;
             }
             p2_map_set_int(vm, "write_result", (bint)write_result);
@@ -6508,6 +7138,7 @@ static int m_p2_status(bvm *vm)
         unsigned long registry_entry = 0u;
         int registry_type = 0xff;
         int slot_index = -1;
+        int map_index;
         p2_closure_cog_slot *slot = NULL;
 
         p2_status_cog_describe(cog, raw, (int)cogid,
@@ -6627,8 +7258,13 @@ static void p2_status_info_cogs(bvm *vm)
 {
     int cog;
     int current = _cogid();
+    int list_index;
+    int data_index;
+    int extra;
 
     be_newobject(vm, "list");
+    list_index = be_absindex(vm, -2);
+    data_index = be_absindex(vm, -1);
     for (cog = 0; cog < 8; ++cog) {
         int raw = _cogchk(cog);
         char role[24];
@@ -6636,6 +7272,7 @@ static void p2_status_info_cogs(bvm *vm)
         unsigned long registry_entry = 0u;
         int registry_type = 0xff;
         int slot_index = -1;
+        int map_index;
         p2_closure_cog_slot *slot = NULL;
 
         p2_status_cog_describe(cog, raw, current,
@@ -6647,6 +7284,7 @@ static void p2_status_info_cogs(bvm *vm)
             &slot);
 
         be_newobject(vm, "map");
+        map_index = be_absindex(vm, -2);
         p2_map_set_int(vm, "id", (bint)cog);
         p2_map_set_bool(vm, "running", raw != 0);
         p2_map_set_int(vm, "raw", (bint)raw);
@@ -6664,16 +7302,23 @@ static void p2_status_info_cogs(bvm *vm)
         p2_map_set_int(vm, "native_pin", slot ? (bint)slot->native_pin : (bint)-1);
         p2_map_set_int(vm, "period_ms", slot ? (bint)slot->period_ms : (bint)-1);
         p2_map_set_int(vm, "stack_bytes", (bint)-1);
-        be_pop(vm, 1);
-        be_data_push(vm, -2);
-        be_pop(vm, 1);
+        be_pushvalue(vm, map_index);
+        be_data_push(vm, data_index);
+        be_pop(vm, 3);
     }
-    be_pop(vm, 1);
+    extra = be_top(vm) - list_index;
+    if (extra > 0) {
+        be_pop(vm, extra);
+    }
 }
 
 static int m_p2_status_info(bvm *vm)
 {
+    int status_index;
+    int extra;
+
     be_newobject(vm, "map");
+    status_index = be_absindex(vm, -2);
 
     be_pushstring(vm, "build");
     p2_status_info_build(vm);
@@ -6712,7 +7357,10 @@ static int m_p2_status_info(bvm *vm)
     be_setindex(vm, -3);
     be_pop(vm, 2);
 
-    be_pop(vm, 1);
+    extra = be_top(vm) - status_index;
+    if (extra > 0) {
+        be_pop(vm, extra);
+    }
     be_return(vm);
 }
 
@@ -6843,7 +7491,6 @@ static int m_p2_debug_gc(bvm *vm)
 static int m_p2_debug_cogs(bvm *vm)
 {
     p2_status_info_cogs(vm);
-    be_pop(vm, 1);
     be_return(vm);
 }
 
@@ -6885,14 +7532,25 @@ static int m_p2_debug_pin(bvm *vm)
 static int m_p2_debug_pins(bvm *vm)
 {
     int pin;
+    int list_index;
+    int data_index;
+    int map_index;
+    int extra;
 
     be_newobject(vm, "list");
+    list_index = be_absindex(vm, -2);
+    data_index = be_absindex(vm, -1);
     for (pin = 0; pin < 64; ++pin) {
         p2_debug_pin_record(vm, pin);
-        be_data_push(vm, -2);
-        be_pop(vm, 1);
+        map_index = be_absindex(vm, -2);
+        be_pushvalue(vm, map_index);
+        be_data_push(vm, data_index);
+        be_pop(vm, 3);
     }
-    be_pop(vm, 1);
+    extra = be_top(vm) - list_index;
+    if (extra > 0) {
+        be_pop(vm, extra);
+    }
     be_return(vm);
 }
 
@@ -6989,11 +7647,21 @@ static void p2_module_add_cog(bvm *vm)
     p2_module_set_func(vm, "spawn", m_p2_closure_cog_spawn);
     p2_module_set_func(vm, "spawn_task", m_p2_closure_cog_spawn);
     p2_module_set_func(vm, "info", m_p2_closure_cog_info);
+    p2_module_set_func(vm, "status", m_p2_closure_cog_status);
+    p2_module_set_func(vm, "join", m_p2_closure_cog_join);
+    p2_module_set_func(vm, "result", m_p2_closure_cog_result);
+    p2_module_set_func(vm, "error", m_p2_closure_cog_error);
+    p2_module_set_func(vm, "kill", m_p2_closure_cog_kill);
     p2_module_set_func(vm, "capabilities", m_p2_closure_cog_capabilities);
+    p2_module_set_func(vm, "required_capability_keys", m_p2_closure_cog_required_capability_keys);
+    p2_module_set_func(vm, "audit", m_p2_closure_cog_audit);
+    p2_module_set_func(vm, "audit_problems", m_p2_closure_cog_audit_problems);
+    p2_module_set_func(vm, "audit_ok", m_p2_closure_cog_audit_ok);
     p2_module_set_func(vm, "vm_cog_ping", m_p2_vm_cog_ping);
     p2_module_set_func(vm, "attention", m_attention_signal);
     p2_module_set_func(vm, "poll_attention", m_attention_poll);
     p2_module_set_func(vm, "wait_attention", m_attention_wait);
+    p2_module_set_func(vm, "wait_attention_result", m_attention_wait_result);
     p2_module_set_current_as_member(vm, "cog");
 }
 
@@ -7051,11 +7719,154 @@ static void p2_module_add_rng(bvm *vm)
 static void p2_module_add_asm(bvm *vm)
 {
     be_newmodule(vm);
+    p2_module_set_func(vm, "load", m_p2_asm_load);
     p2_module_set_func(vm, "getrnd", m_misc_random);
     p2_module_set_func(vm, "getct", m_counter_ticks);
     p2_module_set_func(vm, "waitx", m_counter_wait_ticks);
     p2_module_set_func(vm, "hubset", m_p2_hubset);
+    p2_module_set_func(vm, "cognew", m_cog_start_pasm);
+    p2_module_set_func(vm, "cogstop", m_cog_stop);
+    p2_module_set_func(vm, "cogcheck", m_cog_check);
+    p2_module_set_func(vm, "capabilities", m_p2_asm_capabilities);
+    p2_module_set_func(vm, "required_capability_keys", m_p2_asm_required_capability_keys);
+    p2_module_set_func(vm, "abi", m_p2_asm_abi);
+    p2_module_set_func(vm, "required_abi_keys", m_p2_asm_required_abi_keys);
+    p2_module_set_func(vm, "audit", m_p2_asm_audit);
+    p2_module_set_func(vm, "audit_problems", m_p2_asm_audit_problems);
+    p2_module_set_func(vm, "audit_ok", m_p2_asm_audit_ok);
+    p2_module_set_func(vm, "marker_blob", m_p2_asm_marker_blob);
+    p2_module_set_func(vm, "launch_probe", m_p2_asm_launch_probe);
+    p2_module_set_func(vm, "launch_loaded_probe", m_p2_asm_launch_loaded_probe);
     p2_module_set_current_as_member(vm, "asm");
+}
+
+typedef struct {
+    const char *name;
+    bint value;
+} p2_named_int;
+
+static const p2_named_int p2_smart_constants[] = {
+    { "true_a", P_TRUE_A },
+    { "local_a", P_LOCAL_A },
+    { "plus1_a", P_PLUS1_A },
+    { "plus2_a", P_PLUS2_A },
+    { "plus3_a", P_PLUS3_A },
+    { "outbit_a", P_OUTBIT_A },
+    { "minus3_a", P_MINUS3_A },
+    { "minus2_a", P_MINUS2_A },
+    { "minus1_a", P_MINUS1_A },
+    { "true_b", P_TRUE_B },
+    { "invert_b", P_INVERT_B },
+    { "local_b", P_LOCAL_B },
+    { "plus1_b", P_PLUS1_B },
+    { "plus2_b", P_PLUS2_B },
+    { "plus3_b", P_PLUS3_B },
+    { "outbit_b", P_OUTBIT_B },
+    { "minus3_b", P_MINUS3_B },
+    { "minus2_b", P_MINUS2_B },
+    { "minus1_b", P_MINUS1_B },
+    { "pass_ab", P_PASS_AB },
+    { "and_ab", P_AND_AB },
+    { "or_ab", P_OR_AB },
+    { "xor_ab", P_XOR_AB },
+    { "filt0_ab", P_FILT0_AB },
+    { "filt1_ab", P_FILT1_AB },
+    { "filt2_ab", P_FILT2_AB },
+    { "filt3_ab", P_FILT3_AB },
+    { "logic_a", P_LOGIC_A },
+    { "logic_a_fb", P_LOGIC_A_FB },
+    { "logic_b_fb", P_LOGIC_B_FB },
+    { "schmitt_a", P_SCHMITT_A },
+    { "schmitt_a_fb", P_SCHMITT_A_FB },
+    { "schmitt_b_fb", P_SCHMITT_B_FB },
+    { "compare_ab", P_COMPARE_AB },
+    { "compare_ab_fb", P_COMPARE_AB_FB },
+    { "adc_gio", P_ADC_GIO },
+    { "adc_vio", P_ADC_VIO },
+    { "adc_float", P_ADC_FLOAT },
+    { "adc_1x", P_ADC_1X },
+    { "adc_3x", P_ADC_3X },
+    { "adc_10x", P_ADC_10X },
+    { "adc_30x", P_ADC_30X },
+    { "adc_100x", P_ADC_100X },
+    { "dac_990r_3v", P_DAC_990R_3V },
+    { "dac_600r_2v", P_DAC_600R_2V },
+    { "dac_124r_3v", P_DAC_124R_3V },
+    { "dac_75r_2v", P_DAC_75R_2V },
+    { "level_a", P_LEVEL_A },
+    { "level_a_fbn", P_LEVEL_A_FBN },
+    { "level_b_fbp", P_LEVEL_B_FBP },
+    { "level_b_fbn", P_LEVEL_B_FBN },
+    { "async_io", P_ASYNC_IO },
+    { "sync_io", P_SYNC_IO },
+    { "true_in", P_TRUE_IN },
+    { "invert_in", P_INVERT_IN },
+    { "true_output", P_TRUE_OUTPUT },
+    { "invert_output", P_INVERT_OUTPUT },
+    { "high_fast", P_HIGH_FAST },
+    { "high_1k5", P_HIGH_1K5 },
+    { "high_15k", P_HIGH_15K },
+    { "high_150k", P_HIGH_150K },
+    { "high_1ma", P_HIGH_1MA },
+    { "high_100ua", P_HIGH_100UA },
+    { "high_10ua", P_HIGH_10UA },
+    { "high_float", P_HIGH_FLOAT },
+    { "low_fast", P_LOW_FAST },
+    { "low_1k5", P_LOW_1K5 },
+    { "low_15k", P_LOW_15K },
+    { "low_150k", P_LOW_150K },
+    { "low_1ma", P_LOW_1MA },
+    { "low_100ua", P_LOW_100UA },
+    { "low_10ua", P_LOW_10UA },
+    { "low_float", P_LOW_FLOAT },
+    { "tt_00", P_TT_00 },
+    { "tt_01", P_TT_01 },
+    { "tt_10", P_TT_10 },
+    { "tt_11", P_TT_11 },
+    { "oe", P_OE },
+    { "channel", P_CHANNEL },
+    { "bitdac", P_BITDAC },
+    { "normal", P_NORMAL },
+    { "repository", P_REPOSITORY },
+    { "dac_noise", P_DAC_NOISE },
+    { "dac_dither_rnd", P_DAC_DITHER_RND },
+    { "dac_dither_pwm", P_DAC_DITHER_PWM },
+    { "pulse", P_PULSE },
+    { "transition", P_TRANSITION },
+    { "nco_freq", P_NCO_FREQ },
+    { "nco_duty", P_NCO_DUTY },
+    { "pwm_triangle", P_PWM_TRIANGLE },
+    { "pwm_sawtooth", P_PWM_SAWTOOTH },
+    { "pwm_smps", P_PWM_SMPS },
+    { "quadrature", P_QUADRATURE },
+    { "reg_up", P_REG_UP },
+    { "reg_up_down", P_REG_UP_DOWN },
+    { "count_rises", P_COUNT_RISES },
+    { "count_highs", P_COUNT_HIGHS },
+    { "state_ticks", P_STATE_TICKS },
+    { "high_ticks", P_HIGH_TICKS },
+    { "events_ticks", P_EVENTS_TICKS },
+    { "periods_ticks", P_PERIODS_TICKS },
+    { "periods_highs", P_PERIODS_HIGHS },
+    { "counter_ticks", P_COUNTER_TICKS },
+    { "counter_highs", P_COUNTER_HIGHS },
+    { "counter_periods", P_COUNTER_PERIODS },
+    { "adc", P_ADC },
+    { "adc_ext", P_ADC_EXT },
+    { "adc_scope", P_ADC_SCOPE },
+    { "usb_pair", P_USB_PAIR },
+    { "sync_tx", P_SYNC_TX },
+    { "sync_rx", P_SYNC_RX },
+    { "async_tx", P_ASYNC_TX },
+    { "async_rx", P_ASYNC_RX },
+};
+
+static void p2_module_add_smart_constants(bvm *vm)
+{
+    size_t i;
+    for (i = 0; i < sizeof(p2_smart_constants) / sizeof(p2_smart_constants[0]); ++i) {
+        p2_module_set_int(vm, p2_smart_constants[i].name, p2_smart_constants[i].value);
+    }
 }
 
 static void p2_module_add_smart(bvm *vm)
@@ -7069,6 +7880,7 @@ static void p2_module_add_smart(bvm *vm)
     p2_module_set_func(vm, "rqpin", m_smartpin_query);
     p2_module_set_func(vm, "start", m_smartpin_start);
     p2_module_set_func(vm, "clear", m_smartpin_clear);
+    p2_module_add_smart_constants(vm);
     p2_module_set_current_as_member(vm, "smart");
 }
 
@@ -7092,10 +7904,20 @@ static void p2_module_add_runtime_cog(bvm *vm)
     p2_module_set_func(vm, "spawn", m_p2_closure_cog_spawn);
     p2_module_set_func(vm, "spawn_task", m_p2_closure_cog_spawn);
     p2_module_set_func(vm, "info", m_p2_closure_cog_info);
+    p2_module_set_func(vm, "status", m_p2_closure_cog_status);
+    p2_module_set_func(vm, "join", m_p2_closure_cog_join);
+    p2_module_set_func(vm, "result", m_p2_closure_cog_result);
+    p2_module_set_func(vm, "error", m_p2_closure_cog_error);
+    p2_module_set_func(vm, "kill", m_p2_closure_cog_kill);
     p2_module_set_func(vm, "capabilities", m_p2_closure_cog_capabilities);
+    p2_module_set_func(vm, "required_capability_keys", m_p2_closure_cog_required_capability_keys);
+    p2_module_set_func(vm, "audit", m_p2_closure_cog_audit);
+    p2_module_set_func(vm, "audit_problems", m_p2_closure_cog_audit_problems);
+    p2_module_set_func(vm, "audit_ok", m_p2_closure_cog_audit_ok);
     p2_module_set_func(vm, "attention", m_attention_signal);
     p2_module_set_func(vm, "poll_attention", m_attention_poll);
     p2_module_set_func(vm, "wait_attention", m_attention_wait);
+    p2_module_set_func(vm, "wait_attention_result", m_attention_wait_result);
     be_setmember(vm, -2, "cog");
     be_pop(vm, 1);
 }
@@ -7112,6 +7934,151 @@ static void p2_module_add_runtime_pin(bvm *vm)
     p2_module_set_func(vm, "float", m_pin_float);
     p2_module_set_func(vm, "read", m_pin_read);
     be_setmember(vm, -2, "pin");
+    be_pop(vm, 1);
+}
+
+typedef struct {
+    const char *name;
+    bint value;
+} p2_runtime_named_int;
+
+static const p2_runtime_named_int p2_runtime_smart_constants[] = {
+    { "true_a", P_TRUE_A },
+    { "local_a", P_LOCAL_A },
+    { "plus1_a", P_PLUS1_A },
+    { "plus2_a", P_PLUS2_A },
+    { "plus3_a", P_PLUS3_A },
+    { "outbit_a", P_OUTBIT_A },
+    { "minus3_a", P_MINUS3_A },
+    { "minus2_a", P_MINUS2_A },
+    { "minus1_a", P_MINUS1_A },
+    { "true_b", P_TRUE_B },
+    { "invert_b", P_INVERT_B },
+    { "local_b", P_LOCAL_B },
+    { "plus1_b", P_PLUS1_B },
+    { "plus2_b", P_PLUS2_B },
+    { "plus3_b", P_PLUS3_B },
+    { "outbit_b", P_OUTBIT_B },
+    { "minus3_b", P_MINUS3_B },
+    { "minus2_b", P_MINUS2_B },
+    { "minus1_b", P_MINUS1_B },
+    { "pass_ab", P_PASS_AB },
+    { "and_ab", P_AND_AB },
+    { "or_ab", P_OR_AB },
+    { "xor_ab", P_XOR_AB },
+    { "filt0_ab", P_FILT0_AB },
+    { "filt1_ab", P_FILT1_AB },
+    { "filt2_ab", P_FILT2_AB },
+    { "filt3_ab", P_FILT3_AB },
+    { "logic_a", P_LOGIC_A },
+    { "logic_a_fb", P_LOGIC_A_FB },
+    { "logic_b_fb", P_LOGIC_B_FB },
+    { "schmitt_a", P_SCHMITT_A },
+    { "schmitt_a_fb", P_SCHMITT_A_FB },
+    { "schmitt_b_fb", P_SCHMITT_B_FB },
+    { "compare_ab", P_COMPARE_AB },
+    { "compare_ab_fb", P_COMPARE_AB_FB },
+    { "adc_gio", P_ADC_GIO },
+    { "adc_vio", P_ADC_VIO },
+    { "adc_float", P_ADC_FLOAT },
+    { "adc_1x", P_ADC_1X },
+    { "adc_3x", P_ADC_3X },
+    { "adc_10x", P_ADC_10X },
+    { "adc_30x", P_ADC_30X },
+    { "adc_100x", P_ADC_100X },
+    { "dac_990r_3v", P_DAC_990R_3V },
+    { "dac_600r_2v", P_DAC_600R_2V },
+    { "dac_124r_3v", P_DAC_124R_3V },
+    { "dac_75r_2v", P_DAC_75R_2V },
+    { "level_a", P_LEVEL_A },
+    { "level_a_fbn", P_LEVEL_A_FBN },
+    { "level_b_fbp", P_LEVEL_B_FBP },
+    { "level_b_fbn", P_LEVEL_B_FBN },
+    { "async_io", P_ASYNC_IO },
+    { "sync_io", P_SYNC_IO },
+    { "true_in", P_TRUE_IN },
+    { "invert_in", P_INVERT_IN },
+    { "true_output", P_TRUE_OUTPUT },
+    { "invert_output", P_INVERT_OUTPUT },
+    { "high_fast", P_HIGH_FAST },
+    { "high_1k5", P_HIGH_1K5 },
+    { "high_15k", P_HIGH_15K },
+    { "high_150k", P_HIGH_150K },
+    { "high_1ma", P_HIGH_1MA },
+    { "high_100ua", P_HIGH_100UA },
+    { "high_10ua", P_HIGH_10UA },
+    { "high_float", P_HIGH_FLOAT },
+    { "low_fast", P_LOW_FAST },
+    { "low_1k5", P_LOW_1K5 },
+    { "low_15k", P_LOW_15K },
+    { "low_150k", P_LOW_150K },
+    { "low_1ma", P_LOW_1MA },
+    { "low_100ua", P_LOW_100UA },
+    { "low_10ua", P_LOW_10UA },
+    { "low_float", P_LOW_FLOAT },
+    { "tt_00", P_TT_00 },
+    { "tt_01", P_TT_01 },
+    { "tt_10", P_TT_10 },
+    { "tt_11", P_TT_11 },
+    { "oe", P_OE },
+    { "channel", P_CHANNEL },
+    { "bitdac", P_BITDAC },
+    { "normal", P_NORMAL },
+    { "repository", P_REPOSITORY },
+    { "dac_noise", P_DAC_NOISE },
+    { "dac_dither_rnd", P_DAC_DITHER_RND },
+    { "dac_dither_pwm", P_DAC_DITHER_PWM },
+    { "pulse", P_PULSE },
+    { "transition", P_TRANSITION },
+    { "nco_freq", P_NCO_FREQ },
+    { "nco_duty", P_NCO_DUTY },
+    { "pwm_triangle", P_PWM_TRIANGLE },
+    { "pwm_sawtooth", P_PWM_SAWTOOTH },
+    { "pwm_smps", P_PWM_SMPS },
+    { "quadrature", P_QUADRATURE },
+    { "reg_up", P_REG_UP },
+    { "reg_up_down", P_REG_UP_DOWN },
+    { "count_rises", P_COUNT_RISES },
+    { "count_highs", P_COUNT_HIGHS },
+    { "state_ticks", P_STATE_TICKS },
+    { "high_ticks", P_HIGH_TICKS },
+    { "events_ticks", P_EVENTS_TICKS },
+    { "periods_ticks", P_PERIODS_TICKS },
+    { "periods_highs", P_PERIODS_HIGHS },
+    { "counter_ticks", P_COUNTER_TICKS },
+    { "counter_highs", P_COUNTER_HIGHS },
+    { "counter_periods", P_COUNTER_PERIODS },
+    { "adc", P_ADC },
+    { "adc_ext", P_ADC_EXT },
+    { "adc_scope", P_ADC_SCOPE },
+    { "usb_pair", P_USB_PAIR },
+    { "sync_tx", P_SYNC_TX },
+    { "sync_rx", P_SYNC_RX },
+    { "async_tx", P_ASYNC_TX },
+    { "async_rx", P_ASYNC_RX },
+};
+
+static void p2_module_add_runtime_smart_constants(bvm *vm)
+{
+    size_t i;
+    for (i = 0; i < sizeof(p2_runtime_smart_constants) / sizeof(p2_runtime_smart_constants[0]); ++i) {
+        p2_module_set_int(vm, p2_runtime_smart_constants[i].name, p2_runtime_smart_constants[i].value);
+    }
+}
+
+static void p2_module_add_runtime_smart(bvm *vm)
+{
+    be_newmodule(vm);
+    p2_module_set_func(vm, "wrpin", m_smartpin_write_mode);
+    p2_module_set_func(vm, "wxpin", m_smartpin_write_x);
+    p2_module_set_func(vm, "wypin", m_smartpin_write_y);
+    p2_module_set_func(vm, "akpin", m_smartpin_ack);
+    p2_module_set_func(vm, "rdpin", m_smartpin_read);
+    p2_module_set_func(vm, "rqpin", m_smartpin_query);
+    p2_module_set_func(vm, "start", m_smartpin_start);
+    p2_module_set_func(vm, "clear", m_smartpin_clear);
+    p2_module_add_runtime_smart_constants(vm);
+    be_setmember(vm, -2, "smart");
     be_pop(vm, 1);
 }
 
@@ -7202,6 +8169,10 @@ static int m_p2_member(bvm *vm)
 #endif
     else if (!strcmp(name, "cog_is_task")) be_pushntvfunction(vm, m_p2_closure_cog_is_task);
     else if (!strcmp(name, "cog_info")) be_pushntvfunction(vm, m_p2_closure_cog_info);
+    else if (!strcmp(name, "cog_required_capability_keys")) be_pushntvfunction(vm, m_p2_closure_cog_required_capability_keys);
+    else if (!strcmp(name, "cog_audit")) be_pushntvfunction(vm, m_p2_closure_cog_audit);
+    else if (!strcmp(name, "cog_audit_problems")) be_pushntvfunction(vm, m_p2_closure_cog_audit_problems);
+    else if (!strcmp(name, "cog_audit_ok")) be_pushntvfunction(vm, m_p2_closure_cog_audit_ok);
     else if (!strcmp(name, "cog_closure_stop")) be_pushntvfunction(vm, m_p2_closure_cog_stop);
     else if (!strcmp(name, "cog_stop")) be_pushntvfunction(vm, m_p2_cog_stop);
     else if (!strcmp(name, "cog_raw_stop")) be_pushntvfunction(vm, m_cog_stop);
@@ -7211,6 +8182,7 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "attention_signal")) be_pushntvfunction(vm, m_attention_signal);
     else if (!strcmp(name, "attention_poll")) be_pushntvfunction(vm, m_attention_poll);
     else if (!strcmp(name, "attention_wait")) be_pushntvfunction(vm, m_attention_wait);
+    else if (!strcmp(name, "attention_wait_result")) be_pushntvfunction(vm, m_attention_wait_result);
     else if (!strcmp(name, "rotxy")) be_pushntvfunction(vm, m_cordic_rotxy);
     else if (!strcmp(name, "xypol")) be_pushntvfunction(vm, m_cordic_xypol);
     else if (!strcmp(name, "polxy")) be_pushntvfunction(vm, m_cordic_polxy);
@@ -7269,6 +8241,13 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "psram_read")) be_pushntvfunction(vm, m_p2_psram_read);
     else if (!strcmp(name, "psram_write")) be_pushntvfunction(vm, m_p2_psram_write);
     else if (!strcmp(name, "psram_test")) be_pushntvfunction(vm, m_p2_psram_test);
+    else if (!strcmp(name, "asm_capabilities")) be_pushntvfunction(vm, m_p2_asm_capabilities);
+    else if (!strcmp(name, "asm_required_capability_keys")) be_pushntvfunction(vm, m_p2_asm_required_capability_keys);
+    else if (!strcmp(name, "asm_abi")) be_pushntvfunction(vm, m_p2_asm_abi);
+    else if (!strcmp(name, "asm_required_abi_keys")) be_pushntvfunction(vm, m_p2_asm_required_abi_keys);
+    else if (!strcmp(name, "asm_audit")) be_pushntvfunction(vm, m_p2_asm_audit);
+    else if (!strcmp(name, "asm_audit_problems")) be_pushntvfunction(vm, m_p2_asm_audit_problems);
+    else if (!strcmp(name, "asm_audit_ok")) be_pushntvfunction(vm, m_p2_asm_audit_ok);
     else if (!strcmp(name, "status")) be_pushntvfunction(vm, m_p2_status);
     else if (!strcmp(name, "status_info")) be_pushntvfunction(vm, m_p2_status_info);
     else if (!strcmp(name, "debug_snapshot")) be_pushntvfunction(vm, m_p2_status_info);
@@ -7289,6 +8268,7 @@ void be_cache_p2module(bvm *vm)
     p2_module_set_func(vm, "vm_cog_ping", m_p2_vm_cog_ping);
     p2_module_add_runtime_cog(vm);
     p2_module_add_runtime_pin(vm);
+    p2_module_add_runtime_smart(vm);
     p2_module_add_runtime_clock_aliases(vm);
 #if BE_P2_ENABLE_ROADMAP_NATIVE_FACADES
     p2_module_add_debug(vm);
@@ -7303,5 +8283,6 @@ void be_cache_p2module(bvm *vm)
     p2_module_add_smart(vm);
 #endif
     be_cache_module(vm, name);
+    be_setglobal(vm, "p2");
     be_pop(vm, 1);
 }

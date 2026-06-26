@@ -11,5 +11,6 @@ p2.waitms(10)
 print((p2.ticks() - start) / ticks_per_ms)
 
 start = p2.ticks()
-p2.waitms(1000)
+p2.waitms(100)
 print((p2.ticks() - start) / p2.clock_freq())
+print("p2 timing helpers done")

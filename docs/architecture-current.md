@@ -36,8 +36,20 @@ make p2-xmm-flash
 The current verified native macOS Catalina path is:
 
 ```sh
-make p2 TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
+make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 ```
+
+The current non-hardware baseline guard bundle is:
+
+```sh
+make p2-baseline-guards TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+```
+
+It checks build-log pipefail behavior, Edge32/XMM profile invariants, sibling
+Catalina XMM `cx` object/index sync, warning classes, and cleanup-oriented
+SD-write smoke discipline, plus required P2 documentation presence,
+source-module capability metadata contracts, and active Catalina path policy,
+without rebuilding firmware or touching the board.
 
 Important profile split:
 
@@ -113,7 +125,7 @@ Current exposed helpers include:
 | Pins | `p2.pin_output()`, `p2.pin_write()`, `p2.pin_read()`, plus grouped `p2.pin.*` aliases. |
 | Smart pins | `p2.smartpin_write_mode()`, `p2.smartpin_query()`, `p2.smartpin_start()`, plus grouped raw `p2.smart.*` aliases. |
 | CORDIC | `p2.rotxy()`, `p2.xypol()`, `p2.polxy()`, plus grouped `p2.cordic.*` aliases. |
-| Locks/IPC | Current cooperative primitives are primarily under native `task`; low-level lock and cog helpers remain under `p2.*` / `p2.cog`. |
+| Locks/IPC | Current cooperative primitives are under native `task` and the `p2ipc` current-VM facade; low-level lock and cog helpers remain under `p2.*` / `p2.cog`. |
 | Diagnostics | `p2.status_info()`, `p2.debug_snapshot()`, `p2.heap_info()`, `p2.psram_info()`, `p2.fs_info()`, `p2mem.stats()`, `p2mem.modules()`, `p2mem.cache()`, `p2mem.gc()`, `p2mem.evict()` |
 
 Known board pin constraints are enforced more narrowly than early revisions:
@@ -130,6 +142,7 @@ Current P2 smoke support is non-destructive and SD-backed.
 Known test/provisioning commands:
 
 ```sh
+make p2-baseline-guards TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 make test-host
 make test-p2 PORT=/dev/cu.usbserial-P97cvdxp BOARD=p2edge32
 make soak-p2 PORT=/dev/cu.usbserial-P97cvdxp BOARD=p2edge32 HOURS=1
@@ -141,13 +154,13 @@ make p2-smoke-edge32
 
 The smoke suite depends on `/tests/p2` and `/modules` being present on the SD card. The full scripted SD smoke suite still needs a fresh run against the provisioned card, even though manual SD mount and `math.sqrt(81)` checks are now live-verified.
 
-The new `test-host`, `test-p2`, and `soak-p2` targets are repeatable entrypoints. They do not yet prove the full final test matrix from `goal.md`; remaining gaps are tracked in `docs/coverage-matrix.md` and `port/p2/TODO.md`.
+The `p2-baseline-guards`, `test-host`, `test-p2`, and `soak-p2` targets are repeatable entrypoints. They do not yet prove the full final test matrix from `goal.md`; remaining gaps are tracked in `docs/coverage-matrix.md` and `port/p2/TODO.md`.
 
 ## Current examples
 
-Some example-style interactive checks are documented in existing P2 docs and handoffs, including REPL arithmetic, SD-backed module imports, file/os operations, I2C BMP180 access, SPI initialization, PSRAM reads/writes, and RTOS channels/events/timers.
+Some example-style interactive checks are documented in existing P2 docs and handoffs, including REPL arithmetic, SD-backed module imports, file/os operations, I2C BMP180 access, SPI initialization, PSRAM reads/writes, current-VM `p2ipc` channels, and cooperative `task` primitives.
 
-The explicit example files requested in `port/p2/goal.md`, such as `examples/blink.be`, `examples/import_all_libs.be`, `examples/cog_closure.be`, and `examples/task_scheduler.be`, are still roadmap items unless separately added and verified.
+The explicit example files requested in `port/p2/goal.md` now exist for the backed surfaces: LED blink, SD REPL/startup handoff, library import sweep, JSON-on-SD, file I/O, GPIO loopback, smart-pin diagnostics with one-way and bidirectional aggregate jumper summaries, ADC, DAC, PWM, NCO-to-counter, UART, SPI, quadrature, closure-cog native blink, current-VM channel messaging, cooperative task scheduling and primitives, PASM-adjacent intrinsics, CORDIC, PSRAM cache diagnostics, and debug snapshots. VGA and USB examples intentionally report unsupported `p2compat` records instead of faking demos.
 
 ## Current memory map
 
@@ -166,8 +179,8 @@ Current verified image sizes from docs:
 | Target | Image size |
 | --- | --- |
 | `p2` full no-PSRAM RAM image | `494624` bytes |
-| `p2-edge32` | `506080` bytes |
-| `p2-xmm` / standalone XMM flash payload | `726432` bytes |
+| `p2-edge32` | `518304` bytes |
+| `p2-xmm` / standalone XMM flash payload | `1044640` bytes |
 
 ## Current known limitations
 
@@ -175,11 +188,11 @@ Current verified image sizes from docs:
 - Full `.bec` execution and compile-to-cache behavior are not complete; sidecar freshness manifest metadata is staged but does not enable bytecode execution.
 - `libstore` currently proves a source-cache strategy, not a complete compiled bytecode/module cache tier.
 - COMPACT `edge32` still keeps live Berry VM objects in Hub RAM.
-- The low-level grouped `p2.clock`, `p2.cog`, `p2.lock`, `p2.pin`, `p2.smart`, `p2.cordic`, `p2.math`, and `p2.rng` API now exists as aliases over current helpers, but the high-level wrapper API requested in `goal.md` is not complete.
+- The grouped `p2.clock`, `p2.cog`, `p2.lock`, `p2.pin`, `p2.smart`, `p2.cordic`, `p2.math`, `p2.rng`, `p2.asm`, and `p2.debug` APIs now exist over current helpers. High-level `p2smart` wrappers cover GPIO, PWM, ADC, DAC, counter/NCO, pulse/transition, async serial, staged sync serial, and aggregate diagnostics for the documented jumper pairs, but calibrated analog behavior, timing validation, buffered serial behavior, USB, and several smart-pin mode families remain open.
 - Smart pin coverage is partial.
 - VGA/video and USB keyboard/mouse are not complete and must not be faked.
 - PASM2 blob/function bridge support is not complete.
-- Real closure transfer into another cog is not complete; current RTOS child-VM launch supports process-style entry points and intentionally guards unsafe closure transfer.
-- The cooperative task API exists as an SD module experiment, but full scheduler semantics, tests, and integration remain open.
+- Real arbitrary closure transfer into another cog is not complete; the supported default shape is the native-blink closure-cog path, while child-VM copy boundaries remain intentionally narrow.
+- The cooperative task API is the active current-VM scheduler surface. Independent stacks, preemption, true Spin2/PASM task switching, and broader timing stress remain open.
 - Full host, hardware, soak, and performance test systems remain open.
 - The full scripted SD smoke suite still needs a fresh run against the provisioned card.

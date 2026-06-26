@@ -1,21 +1,38 @@
 import task
 
+var caps = task.capabilities()
+var model = task.execution_model()
+
+print("scheduler policy:", caps["scheduler_policy"])
+print("unsupported reason:", caps["unsupported_reason"])
+print("execution model:", model["model"])
+print("max tasks:", caps["max_tasks"])
+
 var log = []
 
 def counter(name, limit, delay_ms)
     var runs = task.task_info(task.current())["runs"]
     log.push(name + str(runs))
-    print(name, runs)
+    print("task run:", name, runs)
     if runs >= limit
         return task.done
     end
     return task.sleep(delay_ms)
 end
 
-a = task.start(counter, "A", 2, 100)
-b = task.start(counter, "B", 3, 150)
+var a = task.start(counter, "A", 2, 1)
+var b = task.start(counter, "B", 3, 2)
 
-task.run(20)
+var steps = task.run(80)
 
-print("tasks", task.list())
-print("log", log)
+print("handles:", a, b)
+print("steps:", steps)
+print("status A:", task.status(a))
+print("status B:", task.status(b))
+print("log size:", log.size())
+var i = 0
+while i < log.size()
+    print("log item:", i, log[i])
+    i += 1
+end
+print("task scheduler example done")

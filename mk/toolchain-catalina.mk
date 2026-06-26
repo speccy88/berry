@@ -1,4 +1,4 @@
-CATALINA_DIR ?= .third_party_cache/catalina
+CATALINA_DIR ?= ../Catalina
 CATALINA_BINDIR ?= $(CATALINA_DIR)/bin
 CATALINA_INCLUDEDIR ?= $(CATALINA_DIR)/include
 CATALINA_TARGETDIR ?= $(CATALINA_DIR)/target
@@ -12,12 +12,15 @@ CATALINA_CONFIG_FLAGS ?= -C $(CATALINA_PLATFORM) -C $(CATALINA_MODEL) -C SIMPLE 
 
 ifeq ($(HOST_OS),windows)
 CATALINA ?= $(CATALINA_BINDIR)/catalina.exe
+CATALINA_LCC ?= $(CATALINA_BINDIR)/lcc.exe
 FLEXSPIN ?= $(FLEXPROP_DIR)/bin/flexspin.exe
 LOADP2 ?= $(FLEXPROP_DIR)/bin/loadp2.exe
 else
 CATALINA ?= $(CATALINA_BINDIR)/catalina
+CATALINA_LCC ?= $(CATALINA_BINDIR)/lcc
 FLEXSPIN ?= $(FLEXPROP_DIR)/bin/flexspin
-LOADP2 ?= $(FLEXPROP_DIR)/bin/loadp2
+LOADP2_DEFAULT := $(or $(shell command -v loadp2 2>/dev/null),$(FLEXPROP_DIR)/bin/loadp2)
+LOADP2 ?= $(LOADP2_DEFAULT)
 endif
 
 P2_IMAGE := $(P2_BUILD_DIR)/berry_p2.binary
@@ -31,7 +34,14 @@ P2_BAUD ?= 230400
 p2-tools-catalina:
 	$(MSG) [Tools] Catalina
 ifeq ($(HOST_OS),windows)
-	$(Q) $(PWSH) tools/p2/bootstrap/fetch-catalina-tools.ps1 -InstallDir "$(CATALINA_DIR)"
+	$(Q) $(PWSH) -Command "foreach ($$p in @('$(CATALINA)', '$(CATALINA_LCC)', '$(CATALINA_INCLUDEDIR)', '$(CATALINA_TARGETDIR)', '$(CATALINA_LIBDIR)')) { if (-not (Test-Path $$p)) { Write-Error \"Catalina component not found at $$p. Set CATALINA_DIR to the sibling Catalina checkout, normally ../Catalina.\" } }"
 else
-	$(Q) bash tools/p2/bootstrap/fetch-catalina-tools.sh "$(CATALINA_DIR)"
+	$(Q) for path in "$(CATALINA)" "$(CATALINA_LCC)" "$(CATALINA_INCLUDEDIR)" "$(CATALINA_TARGETDIR)" "$(CATALINA_LIBDIR)"; do \
+		if [ ! -e "$$path" ]; then \
+			echo "error: Catalina component not found at $$path" >&2; \
+			echo "Set CATALINA_DIR to the sibling Catalina checkout, normally ../Catalina." >&2; \
+			exit 1; \
+		fi; \
+	done
+	$(Q) test -x "$(CATALINA)" && test -x "$(CATALINA_LCC)" || { echo "error: Catalina compiler tools are not executable under $(CATALINA_BINDIR)" >&2; exit 1; }
 endif

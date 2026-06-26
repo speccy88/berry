@@ -295,7 +295,7 @@ P2_SERIAL_PROBE_SRCS := $(P2_TEST_DIR)/serial_probe.c $(P2_RUNTIME_DIR)/berry_po
 P2_SERIAL_PROBE := $(P2_BUILD_DIR)/serial_probe.binary
 P2_PREBUILD_DEPS := $(COC) $(P2_CONFIG) $(P2_CONFIG_SOURCE) scripts/prebuild-p2.sh scripts/prebuild-p2.ps1 $(P2_IMAGE_SIZE_CHECK)
 
-.PHONY: p2 p2-minimal p2-full p2-edge32 p2-edge32-ram p2-edge32-flash p2-edge32-xmm p2-xmm p2-xmm-tools p2-edge32-xmm-run p2-xmm-run p2-xmm-load p2-edge32-xmm-flash p2-xmm-flash p2-xmm-flash-run p2-xmm-flash-load p2-catalina-host p2-run p2-ram p2-flash p2-flash-run p2-attach p2-smoke p2-smoke-quick p2-smoke-edge32 test-p2 soak-p2 p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run p2-sd-modules p2-sd-tests p2-sd-sync p2-sd-berry-dirs p2-sd-berry-lib p2-sd-berry-examples p2-sd-berry-sync spin2 spin2-clean spin2-sd-loader spin2-sd-loader-host spin2-sd-put spin2-sd-sync spin2-load spin2-load-all run configure configure-reset show-config
+.PHONY: p2 p2-minimal p2-full p2-edge32 p2-edge32-ram p2-edge32-flash p2-edge32-xmm p2-xmm p2-xmm-tools p2-edge32-xmm-run p2-xmm-run p2-xmm-load p2-edge32-xmm-flash p2-xmm-flash p2-xmm-flash-run p2-xmm-flash-load p2-catalina-host p2-baseline-guards p2-catalina-build-log-guard-selftest p2-profile-invariants-selftest p2-catalina-xmm-cx-sync-selftest p2-catalina-warning-audit p2-sd-write-smoke-audit p2-docs-audit p2-source-module-metadata-audit p2-catalina-path-audit p2-run p2-ram p2-flash p2-flash-run p2-attach p2-smoke p2-smoke-quick p2-smoke-edge32 p2-smoke-pasm-layout p2-smoke-pasm-policy-min p2-smoke-p2-api p2-smoke-p2compat p2-smoke-libraries-lazy-min p2-smoke-p2mem-policy-min p2-smoke-p2mem-native-cache-min p2-smoke-bec-fallback-min p2-smoke-core-builtins-min p2-smoke-sd-file-min p2-smoke-cog-policy-min p2-smoke-cog-closure p2-smoke-task p2-smoke-task-policy-min p2-smoke-ipc p2-smoke-ipc-policy-min p2-smoke-priority1-staged p2-smoke-priority2-staged p2-smoke-priority3-staged p2-smoke-priority4 p2-smoke-priority1-4-staged p2-smoke-smartpins p2-smoke-smartpins-loopback p2-smoke-smartpins-normal-pin p2-smoke-smartpins-quadrature-static p2-smoke-smartpins-quadrature-motion p2-smoke-smartpins-quadrature-diag p2-smoke-smartpins-counter-modes p2-smoke-smartpins-adc-dac-diag p2-smoke-smartpins-nco-duty-diag p2-smoke-smartpins-async-rx p2-smoke-smartpins-sync-diag test-p2 soak-p2 p2-stop p2-clean p2-prebuild p2-tools p2-serial-probe p2-serial-probe-host p2-serial-probe-run p2-sd-modules p2-sd-tests p2-sd-sync p2-sd-core-builtins-min-smoke p2-sd-pasm-layout-smoke p2-sd-p2-api-smoke p2-sd-p2compat-smoke p2-sd-bec-fallback-min-smoke p2-sd-cog-closure-smoke p2-sd-task-smoke p2-sd-ipc-smoke p2-sd-berry-dirs p2-sd-berry-lib p2-sd-berry-examples p2-sd-berry-sync spin2 spin2-clean spin2-sd-loader spin2-sd-loader-host spin2-sd-put spin2-sd-sync spin2-load spin2-load-all run configure configure-reset show-config
 
 configure:
 	$(MSG) [Configure] $(P2_LOCAL_CONFIG)
@@ -332,6 +332,7 @@ show-config:
 	@echo "PORT=$(PORT)"
 	@echo "P2_SILICON=$(P2_SILICON)"
 	@echo "P2_BOARD=$(P2_BOARD)"
+	@echo "P2_BOARD_HAS_PSRAM=$(P2_BOARD_HAS_PSRAM)"
 	@echo "P2_LED0_PIN=$(P2_LED0_PIN)"
 	@echo "P2_LED1_PIN=$(P2_LED1_PIN)"
 	@echo "P2_PROFILE=$(P2_PROFILE)"
@@ -339,6 +340,9 @@ show-config:
 	@echo "CATALINA_MODEL=$(CATALINA_MODEL)"
 	@echo "CATALINA_CLIB=$(CATALINA_CLIB)"
 	@echo "CATALINA_SERIAL_LIB=$(CATALINA_SERIAL_LIB)"
+	@echo "CATALINA_CONFIG_FLAGS=$(CATALINA_CONFIG_FLAGS)"
+	@echo "P2_IMAGE_LIMIT_NAME=$(P2_IMAGE_LIMIT_NAME)"
+	@echo "P2_IMAGE_MAX_BYTES=$(P2_IMAGE_MAX_BYTES)"
 	@echo "FLEXPROP_DIR=$(FLEXPROP_DIR)"
 	@echo "CATALINA_DIR=$(CATALINA_DIR)"
 	@echo "LOADP2=$(LOADP2)"
@@ -466,6 +470,81 @@ p2-sd-tests:
 p2-sd-sync:
 	$(Q) $(MAKE) p2-sd-modules TOOLCHAIN=catalina PORT="$(PORT)" P2_BAUD="$(P2_BAUD)"
 	$(Q) $(MAKE) p2-sd-tests TOOLCHAIN=catalina PORT="$(PORT)" P2_BAUD="$(P2_BAUD)"
+
+p2-sd-pasm-layout-smoke:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-sd-pasm-layout-smoke TOOLCHAIN=catalina PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" "$(P2_REPL_UPLOAD)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--target-dir "/modules" --file "modules/libstore.be"
+	$(Q) "$(PYTHON)" "$(P2_REPL_UPLOAD)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--target-dir "/tests/p2" --file "tests/p2/smoke_pasm_layout.be"
+
+p2-sd-p2-api-smoke:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-sd-p2-api-smoke TOOLCHAIN=catalina PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" "$(P2_REPL_UPLOAD)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--target-dir "/tests/p2" --file "tests/p2/smoke_p2_api.be"
+
+p2-sd-p2compat-smoke:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-sd-p2compat-smoke TOOLCHAIN=catalina PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" "$(P2_REPL_UPLOAD)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--target-dir "/modules" --file "modules/p2compat.be"
+	$(Q) "$(PYTHON)" "$(P2_REPL_UPLOAD)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--target-dir "/tests/p2" --file "tests/p2/smoke_p2compat.be"
+
+p2-sd-bec-fallback-min-smoke:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-sd-bec-fallback-min-smoke TOOLCHAIN=catalina PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" "$(P2_REPL_UPLOAD)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--target-dir "/modules" --file "modules/libstore.be"
+	$(Q) "$(PYTHON)" "$(P2_REPL_UPLOAD)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--target-dir "/tests/p2" --file "tests/p2/smoke_bec_fallback_min.be"
+
+p2-sd-cog-closure-smoke:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-sd-cog-closure-smoke TOOLCHAIN=catalina PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" "$(P2_REPL_UPLOAD)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--target-dir "/tests/p2" --file "tests/p2/smoke_cog_closure.be"
+
+p2-sd-task-smoke:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-sd-task-smoke TOOLCHAIN=catalina PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" "$(P2_REPL_UPLOAD)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--target-dir "/modules" --file "modules/task.be"
+	$(Q) "$(PYTHON)" "$(P2_REPL_UPLOAD)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--target-dir "/modules" --file "modules/p2ipc.be"
+	$(Q) "$(PYTHON)" "$(P2_REPL_UPLOAD)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--target-dir "/tests/p2" --file "tests/p2/smoke_task.be"
+
+p2-sd-ipc-smoke:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-sd-ipc-smoke TOOLCHAIN=catalina PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" "$(P2_REPL_UPLOAD)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--target-dir "/modules" --file "modules/p2ipc.be"
+	$(Q) "$(PYTHON)" "$(P2_REPL_UPLOAD)" --port "$(PORT)" --baud "$(P2_BAUD)" \
+		--target-dir "/tests/p2" --file "tests/p2/smoke_p2ipc.be"
 
 p2-sd-berry-dirs:
 	@if [ -z "$(PORT)" ]; then \
@@ -602,6 +681,41 @@ p2: p2-tools p2-prebuild $(P2_BUILD_DIR) $(P2_OBJS)
 	$(MSG) done
 endif
 
+p2-baseline-guards: p2-catalina-build-log-guard-selftest p2-profile-invariants-selftest p2-catalina-xmm-cx-sync-selftest p2-catalina-warning-audit p2-sd-write-smoke-audit p2-docs-audit p2-source-module-metadata-audit p2-catalina-path-audit
+	$(MSG) [Audit] P2 baseline guards complete
+
+p2-catalina-build-log-guard-selftest:
+	$(MSG) [Selftest] Catalina build-log guard
+	$(Q) bash scripts/p2/check_catalina_build_log_guard.sh "$(P2_BUILD_DIR)/catalina_pipefail_selftest.log"
+
+p2-profile-invariants-selftest:
+	$(MSG) [Selftest] P2 profile invariants
+	$(Q) bash scripts/p2/check_profile_invariants.sh "$(CURDIR)"
+
+p2-catalina-xmm-cx-sync-selftest:
+	$(MSG) [Selftest] Catalina XMM cx sync
+	$(Q) "$(PYTHON)" scripts/p2/check_catalina_xmm_cx_sync.py --catalina-dir "$(CATALINA_DIR)"
+
+p2-catalina-warning-audit:
+	$(MSG) [Audit] Catalina warnings
+	$(Q) "$(PYTHON)" scripts/p2/audit_catalina_warnings.py
+
+p2-sd-write-smoke-audit:
+	$(MSG) [Audit] P2 SD write smokes
+	$(Q) "$(PYTHON)" scripts/p2/audit_sd_write_smokes.py
+
+p2-docs-audit:
+	$(MSG) [Audit] P2 docs
+	$(Q) "$(PYTHON)" scripts/p2/audit_p2_docs.py
+
+p2-source-module-metadata-audit:
+	$(MSG) [Audit] P2 source module metadata
+	$(Q) "$(PYTHON)" scripts/p2/audit_source_module_metadata.py
+
+p2-catalina-path-audit:
+	$(MSG) [Audit] P2 Catalina paths
+	$(Q) "$(PYTHON)" scripts/p2/audit_catalina_paths.py
+
 p2-minimal:
 	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=minimal P2_BOARD=p2edge CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
 
@@ -609,16 +723,16 @@ p2-full:
 	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=full P2_BOARD=p2edge CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
 
 p2-edge32:
-	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=edge32 P2_BOARD=p2edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=edge32 P2_BOARD=p2edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram CATALINA_DIR="$(CATALINA_DIR)"
 
 p2-edge32-ram:
-	$(Q) $(MAKE) p2-ram TOOLCHAIN=catalina P2_PROFILE=edge32 P2_BOARD=p2edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+	$(Q) $(MAKE) p2-ram TOOLCHAIN=catalina P2_PROFILE=edge32 P2_BOARD=p2edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram CATALINA_DIR="$(CATALINA_DIR)"
 
 p2-edge32-flash:
-	$(Q) $(MAKE) p2-flash TOOLCHAIN=catalina P2_PROFILE=edge32 P2_BOARD=p2edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+	$(Q) $(MAKE) p2-flash TOOLCHAIN=catalina P2_PROFILE=edge32 P2_BOARD=p2edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram CATALINA_DIR="$(CATALINA_DIR)"
 
 p2-edge32-xmm:
-	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=xmm P2_BOARD=p2edge32 CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+	$(Q) $(MAKE) p2 TOOLCHAIN=catalina P2_PROFILE=xmm P2_BOARD=p2edge32 CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram CATALINA_DIR="$(CATALINA_DIR)"
 
 p2-xmm:
 	$(Q) $(MAKE) p2-edge32-xmm
@@ -629,7 +743,7 @@ p2-xmm-tools:
 	$(MSG) done
 
 p2-edge32-xmm-run:
-	$(Q) $(MAKE) p2-xmm-load TOOLCHAIN=catalina P2_PROFILE=xmm P2_BOARD=p2edge32 CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+	$(Q) $(MAKE) p2-xmm-load TOOLCHAIN=catalina P2_PROFILE=xmm P2_BOARD=p2edge32 CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram CATALINA_DIR="$(CATALINA_DIR)"
 
 p2-xmm-run: p2-edge32-xmm-run
 
@@ -652,12 +766,12 @@ $(P2_XMM_FLASH_IMAGE): $(P2_IMAGE) $(P2_XMM_FLASH_SCRIPT) tools/p2/loader/catali
 endif
 
 p2-edge32-xmm-flash:
-	$(Q) $(MAKE) p2-xmm-flash-load TOOLCHAIN=catalina P2_PROFILE=xmm P2_BOARD=p2edge32 CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+	$(Q) $(MAKE) p2-xmm-flash-load TOOLCHAIN=catalina P2_PROFILE=xmm P2_BOARD=p2edge32 CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram CATALINA_DIR="$(CATALINA_DIR)"
 
 p2-xmm-flash: p2-edge32-xmm-flash
 
 p2-xmm-flash-run:
-	$(Q) $(MAKE) p2-xmm-flash-load TOOLCHAIN=catalina P2_PROFILE=xmm P2_BOARD=p2edge32 CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+	$(Q) $(MAKE) p2-xmm-flash-load TOOLCHAIN=catalina P2_PROFILE=xmm P2_BOARD=p2edge32 CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram CATALINA_DIR="$(CATALINA_DIR)"
 
 p2-xmm-flash-load: $(P2_XMM_FLASH_IMAGE)
 	@if [ -z "$(PORT)" ]; then \
@@ -680,6 +794,7 @@ ifeq ($(TOOLCHAIN),catalina)
 $(P2_CATALINA_FLASH_IMAGE): $(P2_IMAGE) tools/p2/loader/build-catalina-flash-image.sh | $(P2_BUILD_DIR)
 	$(MSG) [Flash Image] $(P2_CATALINA_FLASH_IMAGE)
 	$(Q) bash tools/p2/loader/build-catalina-flash-image.sh "$(CATALINA_DIR)" "$(P2_IMAGE)" "$(P2_CATALINA_FLASH_IMAGE)" "$(P2_BUILD_DIR)/flash"
+	$(Q) "$(PYTHON)" "$(P2_IMAGE_SIZE_CHECK)" --image "$(P2_CATALINA_FLASH_IMAGE)" --max-bytes "$(P2_HUB_RAM_MAX_BYTES)" --label "Catalina P2 flash-loader image" --limit-name "P2 Hub RAM limit" --hint "reduce the COMPACT profile image; the Catalina flash wrapper must also fit in Hub RAM."
 	$(MSG) done
 endif
 
@@ -735,8 +850,310 @@ p2-smoke-edge32:
 	fi
 	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite edge32
 
+P2_FOCUSED_SMOKE_TIMEOUT ?= 300
+P2_FOCUSED_SMOKE_STARTUP_TIMEOUT ?= 120
+
+p2-sd-core-builtins-min-smoke:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-sd-core-builtins-min-smoke PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_upload.py --port "$(PORT)" --baud "$(P2_BAUD)" --target-dir "/tests/p2" \
+		--target-file "tests/p2/smoke_call.be=call.be" \
+		--target-file "tests/p2/smoke_vararg.be=vararg.be" \
+		--target-file "tests/p2/smoke_compile_module.be=cmod.be" \
+		--target-file "tests/p2/smoke_conversions.be=conv.be" \
+		--target-file "tests/p2/smoke_list_core.be=listcore.be" \
+		--target-file "tests/p2/smoke_map_core.be=mapcore.be" \
+		--target-file "tests/p2/smoke_map_keys.be=mapkeys.be" \
+		--target-file "tests/p2/smoke_bytes.be=bytes.be"
+
+p2-smoke-core-builtins-min: p2-sd-core-builtins-min-smoke
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-core-builtins-min PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite core-builtins-min --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-sd-file-min:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-sd-file-min PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_upload.py --port "$(PORT)" --baud "$(P2_BAUD)" --target-dir "/tests/p2" --file "tests/p2/smoke_sd.be"
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite sd-file-min --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-pasm-layout: p2-sd-pasm-layout-smoke
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-pasm-layout PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --command 'run_file("/tests/p2/smoke_pasm_layout.be")' --expect 'P2_SMOKE_PASS pasm_layout' --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-pasm-policy-min:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-pasm-policy-min PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_upload.py --port "$(PORT)" --baud "$(P2_BAUD)" --target-dir "/tests/p2" --file "tests/p2/smoke_pasm_policy_min.be"
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite pasm-policy-min --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-p2-api: p2-sd-p2-api-smoke
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-p2-api PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite p2-api --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-p2compat: p2-sd-p2compat-smoke
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-p2compat PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite p2compat --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-libraries-lazy-min:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-libraries-lazy-min PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_upload.py --port "$(PORT)" --baud "$(P2_BAUD)" --chunk-body 160 --target-dir "/modules" --file "modules/libstore.be"
+	$(Q) "$(PYTHON)" scripts/p2/repl_upload.py --port "$(PORT)" --baud "$(P2_BAUD)" --target-dir "/tests/p2" --file "tests/p2/smoke_libraries_lazy_min.be"
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite libraries-lazy-min --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-p2mem-policy-min:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-p2mem-policy-min PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_upload.py --port "$(PORT)" --baud "$(P2_BAUD)" --chunk-body 160 --target-dir "/modules" --file "modules/libstore.be"
+	$(Q) "$(PYTHON)" scripts/p2/repl_upload.py --port "$(PORT)" --baud "$(P2_BAUD)" --chunk-body 160 --target-dir "/modules" --file "modules/p2mem.be"
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite p2mem-policy-min --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-p2mem-native-cache-min:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-p2mem-native-cache-min PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite p2mem-native-cache-min --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)" --wake-start
+
+p2-smoke-bec-fallback-min: p2-sd-bec-fallback-min-smoke
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-bec-fallback-min PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite bec-fallback-min --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-cog-closure: p2-sd-cog-closure-smoke
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-cog-closure PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite cog-closure --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-cog-policy-min:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-cog-policy-min PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_upload.py --port "$(PORT)" --baud "$(P2_BAUD)" --target-dir "/tests/p2" --file "tests/p2/smoke_cog_policy_min.be"
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite cog-policy-min --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-task: p2-sd-task-smoke
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-task PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite task --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-task-policy-min:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-task-policy-min PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_upload.py --port "$(PORT)" --baud "$(P2_BAUD)" --chunk-body 160 --target-dir "/modules" --file "modules/task.be"
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite task-policy-min --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-ipc: p2-sd-ipc-smoke
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-ipc PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite p2ipc --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-ipc-policy-min:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-ipc-policy-min PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_upload.py --port "$(PORT)" --baud "$(P2_BAUD)" --chunk-body 160 --target-dir "/modules" --file "modules/p2ipc.be"
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite ipc-policy-min --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-priority1-staged:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-priority1-staged PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite priority1 --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-priority2-staged:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-priority2-staged PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite priority2 --timeout "$(P2_SMARTPINS_TIMEOUT)" --startup-timeout "$(P2_SMARTPINS_STARTUP_TIMEOUT)"
+
+p2-smoke-priority3-staged:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-priority3-staged PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite priority3 --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-priority4:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-priority4 PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) $(MAKE) p2-smoke-p2compat PORT="$(PORT)" P2_BAUD="$(P2_BAUD)" P2_FOCUSED_SMOKE_TIMEOUT="$(P2_FOCUSED_SMOKE_TIMEOUT)" P2_FOCUSED_SMOKE_STARTUP_TIMEOUT="$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+	$(Q) $(MAKE) p2-smoke-cog-closure PORT="$(PORT)" P2_BAUD="$(P2_BAUD)" P2_FOCUSED_SMOKE_TIMEOUT="$(P2_FOCUSED_SMOKE_TIMEOUT)" P2_FOCUSED_SMOKE_STARTUP_TIMEOUT="$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+	$(Q) $(MAKE) p2-smoke-task PORT="$(PORT)" P2_BAUD="$(P2_BAUD)" P2_FOCUSED_SMOKE_TIMEOUT="$(P2_FOCUSED_SMOKE_TIMEOUT)" P2_FOCUSED_SMOKE_STARTUP_TIMEOUT="$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+	$(Q) $(MAKE) p2-smoke-ipc PORT="$(PORT)" P2_BAUD="$(P2_BAUD)" P2_FOCUSED_SMOKE_TIMEOUT="$(P2_FOCUSED_SMOKE_TIMEOUT)" P2_FOCUSED_SMOKE_STARTUP_TIMEOUT="$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-priority1-4-staged:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-priority1-4-staged PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite priority1-4 --timeout "$(P2_SMARTPINS_TIMEOUT)" --startup-timeout "$(P2_SMARTPINS_STARTUP_TIMEOUT)"
+
+P2_SMARTPINS_TIMEOUT ?= 300
+P2_SMARTPINS_STARTUP_TIMEOUT ?= 120
+
+p2-smoke-smartpins:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-smartpins PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) $(MAKE) p2-smoke-smartpins-loopback PORT="$(PORT)" P2_BAUD="$(P2_BAUD)" P2_SMARTPINS_TIMEOUT="$(P2_SMARTPINS_TIMEOUT)" P2_SMARTPINS_STARTUP_TIMEOUT="$(P2_SMARTPINS_STARTUP_TIMEOUT)"
+	$(Q) $(MAKE) p2-smoke-smartpins-counter-modes PORT="$(PORT)" P2_BAUD="$(P2_BAUD)" P2_SMARTPINS_TIMEOUT="$(P2_SMARTPINS_TIMEOUT)" P2_SMARTPINS_STARTUP_TIMEOUT="$(P2_SMARTPINS_STARTUP_TIMEOUT)"
+	$(Q) $(MAKE) p2-smoke-smartpins-async-rx PORT="$(PORT)" P2_BAUD="$(P2_BAUD)" P2_SMARTPINS_TIMEOUT="$(P2_SMARTPINS_TIMEOUT)" P2_SMARTPINS_STARTUP_TIMEOUT="$(P2_SMARTPINS_STARTUP_TIMEOUT)"
+	$(Q) $(MAKE) p2-smoke-smartpins-sync-diag PORT="$(PORT)" P2_BAUD="$(P2_BAUD)" P2_SMARTPINS_TIMEOUT="$(P2_SMARTPINS_TIMEOUT)" P2_SMARTPINS_STARTUP_TIMEOUT="$(P2_SMARTPINS_STARTUP_TIMEOUT)"
+
+p2-smoke-smartpins-loopback:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-smartpins-loopback PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite smartpins-loopback --timeout "$(P2_SMARTPINS_TIMEOUT)" --startup-timeout "$(P2_SMARTPINS_STARTUP_TIMEOUT)"
+
+p2-smoke-smartpins-normal-pin:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-smartpins-normal-pin PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite smartpins-normal-pin --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-smartpins-quadrature-static:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-smartpins-quadrature-static PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_upload.py --port "$(PORT)" --baud "$(P2_BAUD)" --chunk-body 160 --target-dir "/modules" --file "modules/p2smart.be"
+	$(Q) "$(PYTHON)" scripts/p2/repl_upload.py --port "$(PORT)" --baud "$(P2_BAUD)" --target-dir "/tests/p2" --file "tests/p2/smoke_smartpins_quadrature_static.be"
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite smartpins-quadrature-static --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-smartpins-quadrature-motion:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-smartpins-quadrature-motion PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_upload.py --port "$(PORT)" --baud "$(P2_BAUD)" --chunk-body 160 --target-dir "/modules" --file "modules/p2smart.be"
+	$(Q) "$(PYTHON)" scripts/p2/repl_upload.py --port "$(PORT)" --baud "$(P2_BAUD)" --target-dir "/tests/p2" --file "tests/p2/smoke_smartpins_quadrature_motion.be"
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite smartpins-quadrature-motion --timeout "$(P2_FOCUSED_SMOKE_TIMEOUT)" --startup-timeout "$(P2_FOCUSED_SMOKE_STARTUP_TIMEOUT)"
+
+p2-smoke-smartpins-quadrature-diag:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-smartpins-quadrature-diag PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite smartpins-quadrature-diag --timeout "$(P2_SMARTPINS_TIMEOUT)" --startup-timeout "$(P2_SMARTPINS_STARTUP_TIMEOUT)"
+
+p2-smoke-smartpins-counter-modes:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-smartpins-counter-modes PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite smartpins-counter-modes --timeout "$(P2_SMARTPINS_TIMEOUT)" --startup-timeout "$(P2_SMARTPINS_STARTUP_TIMEOUT)"
+
+p2-smoke-smartpins-adc-dac-diag:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-smartpins-adc-dac-diag PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite smartpins-adc-dac-diag --timeout "$(P2_SMARTPINS_TIMEOUT)" --startup-timeout "$(P2_SMARTPINS_STARTUP_TIMEOUT)"
+
+p2-smoke-smartpins-nco-duty-diag:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-smartpins-nco-duty-diag PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite smartpins-nco-duty-diag --timeout "$(P2_SMARTPINS_TIMEOUT)" --startup-timeout "$(P2_SMARTPINS_STARTUP_TIMEOUT)"
+
+p2-smoke-smartpins-async-rx:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-smartpins-async-rx PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite smartpins-async-rx --timeout "$(P2_SMARTPINS_TIMEOUT)" --startup-timeout "$(P2_SMARTPINS_STARTUP_TIMEOUT)"
+
+p2-smoke-smartpins-sync-diag:
+	@if [ -z "$(PORT)" ]; then \
+		echo "error: PORT is not set"; \
+		echo "usage: make p2-smoke-smartpins-sync-diag PORT=/dev/ttyUSB0"; \
+		exit 1; \
+	fi
+	$(Q) "$(PYTHON)" scripts/p2/repl_upload.py --port "$(PORT)" --baud "$(P2_BAUD)" --chunk-body 160 --target-dir "/modules" --file "modules/p2smart.be"
+	$(Q) "$(PYTHON)" scripts/p2/repl_upload.py --port "$(PORT)" --baud "$(P2_BAUD)" --target-dir "/tests/p2" --file "tests/p2/smoke_smartpins_sync_diag.be"
+	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite smartpins-sync-diag --timeout "$(P2_SMARTPINS_TIMEOUT)" --startup-timeout "$(P2_SMARTPINS_STARTUP_TIMEOUT)"
+
 TEST_P2_BOARD ?= $(if $(BOARD),$(BOARD),$(P2_BOARD))
 TEST_P2_SUITE ?= $(if $(filter p2edge32,$(TEST_P2_BOARD)),edge32,full)
+SOAK_P2_SUITE ?= soak
+SOAK_P2_TIMEOUT ?= 700
+SOAK_P2_STARTUP_TIMEOUT ?= 120
 HOURS ?= 1
 
 test-p2:
@@ -751,10 +1168,10 @@ test-p2:
 soak-p2:
 	@if [ -z "$(PORT)" ]; then \
 		echo "error: PORT is not set"; \
-		echo "usage: make soak-p2 PORT=/dev/ttyUSB0 BOARD=p2edge|p2edge32 HOURS=1"; \
+		echo "usage: make soak-p2 PORT=/dev/ttyUSB0 BOARD=p2edge|p2edge32 HOURS=1 [SOAK_P2_SUITE=soak|soak-smartpins]"; \
 		exit 1; \
 	fi
-	$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite "$(TEST_P2_SUITE)" --duration-sec "$$("$(PYTHON)" -c 'import sys; print(float(sys.argv[1]) * 3600.0)' "$(HOURS)")"
+		$(Q) "$(PYTHON)" scripts/p2/repl_smoke.py --port "$(PORT)" --baud "$(P2_BAUD)" --suite "$(SOAK_P2_SUITE)" --duration-sec "$$("$(PYTHON)" -c 'import sys; print(float(sys.argv[1]) * 3600.0)' "$(HOURS)") --timeout "$(SOAK_P2_TIMEOUT)" --startup-timeout "$(SOAK_P2_STARTUP_TIMEOUT)"
 
 p2-stop:
 ifeq ($(HOST_OS),windows)

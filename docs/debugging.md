@@ -7,7 +7,7 @@ Use structured query APIs instead of noisy boot-time prints where possible:
 - `p2.status_info()` and `p2.debug_snapshot()` for build/runtime overview.
 - `p2.fs_info()` for SD/FAT/path diagnostics.
 - `p2.psram_info()` and `p2.psram_test()` for PSRAM tier diagnostics.
-- `p2mem.stats()`, `p2mem.modules()`, `p2mem.cache()`, `p2mem.gc()`, and `p2mem.evict()` for memory/cache diagnostics.
+- `p2mem.stats()`, `p2mem.stats_result()`, `p2mem.modules()`, `p2mem.modules_result()`, `p2mem.module_result(name)`, `p2mem.cache()`, `p2mem.cache_result()`, `p2mem.gc()`, `p2mem.gc_result()`, and `p2mem.evict()` for memory/cache diagnostics. Use result helpers when tooling needs `ok/error/message` reporting instead of a thrown lower-level diagnostic failure. Cache item diagnostics expose source-cache byte counts, hit/miss counters, `last_used`, and `chunk_count`.
 - `p2.debug.heap()`, `gc()`, `cogs()`, `memory_map()`, `pins()`, `smartpin(pin)`, and `registers(cog=nil)` for backed debug snapshots.
 
 ## Debug build and trace flags

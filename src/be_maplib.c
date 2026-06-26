@@ -189,34 +189,45 @@ static int m_iter(bvm *vm)
     be_return(vm);
 }
 
-static int keys_iter_closure(bvm *vm)
+static int m_keys(bvm *vm)
 {
-    /* for better performance, we operate the upvalues
-     * directly without using by the stack. */
-    bntvclos *func = var_toobj(vm->cf->func);
-    bvalue *uv0 = be_ntvclos_upval(func, 0)->value; /* list value */
-    bvalue *uv1 = be_ntvclos_upval(func, 1)->value; /* iter value */
-    bmapiter iter = var_toobj(uv1);
-    bmapnode *next = be_map_next(var_toobj(uv0), &iter);
-    if (next == NULL) {
-        be_stop_iteration(vm);
-        be_return_nil(vm); /* will not be executed */
+    bmapiter iter;
+    bmap *map;
+    bmapnode *node;
+    be_getmember(vm, 1, ".p");
+    map_check_data(vm, 1);
+    map = var_toobj(vm->top - 1);
+    iter = be_map_iter();
+    be_newobject(vm, "list");
+    while ((node = be_map_next(map, &iter)) != NULL) {
+        var_setobj(vm->top, node->key.type, node->key.v.p);
+        be_incrtop(vm);
+        be_data_push(vm, -2);
+        be_pop(vm, 1);
     }
-    var_setobj(uv1, BE_COMPTR, iter); /* set upvale[1] (iter value) */
-    /* push next value to top */
-    var_setobj(vm->top, next->key.type, next->key.v.p);
-    be_incrtop(vm);
+    be_pop(vm, 1); /* list backing store */
+    be_remove(vm, -2); /* map */
     be_return(vm);
 }
 
-static int m_keys(bvm *vm)
+static int m_values(bvm *vm)
 {
-    be_pushntvclosure(vm, keys_iter_closure, 2);
+    bmapiter iter;
+    bmap *map;
+    bmapnode *node;
     be_getmember(vm, 1, ".p");
-    be_setupval(vm, -2, 0);
-    be_pushiter(vm, -1);
-    be_setupval(vm, -3, 1);
-    be_pop(vm, 2);
+    map_check_data(vm, 1);
+    map = var_toobj(vm->top - 1);
+    iter = be_map_iter();
+    be_newobject(vm, "list");
+    while ((node = be_map_next(map, &iter)) != NULL) {
+        var_setval(vm->top, &node->value);
+        be_incrtop(vm);
+        be_data_push(vm, -2);
+        be_pop(vm, 1);
+    }
+    be_pop(vm, 1); /* list backing store */
+    be_remove(vm, -2); /* map */
     be_return(vm);
 }
 
@@ -236,6 +247,7 @@ void be_load_maplib(bvm *vm)
         { "insert", m_insert },
         { "iter", m_iter },
         { "keys", m_keys },
+        { "values", m_values },
         { "tobool", m_tobool },
         { NULL, NULL }
     };
@@ -256,6 +268,7 @@ class be_class_map (scope: global, name: map) {
     insert, func(m_insert)
     iter, func(m_iter)
     keys, func(m_keys)
+    values, func(m_values)
     tobool, func(m_tobool)
 }
 @const_object_info_end */

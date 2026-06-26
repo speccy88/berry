@@ -21,13 +21,22 @@ Goal: keep the current system understandable and prevent accidental regressions.
 Current progress:
 
 - `docs/architecture-current.md` now snapshots the current architecture.
+- `docs/source-research.md` now summarizes the relevant Berry, Catalina,
+ Propeller 2, smart-pin, PASM, memory, import/cache, and uC/OS-II research
+ implications for this port.
 - `docs/coverage-matrix.md` now tracks current and missing coverage.
 - This roadmap captures the implementation sequence.
 - `port/p2/TODO.md` and `port/p2/DONE.md` are the live progress trackers.
+- `make p2-baseline-guards TOOLCHAIN=catalina CATALINA_DIR=../Catalina` now
+ runs the non-hardware Priority 0 guard bundle for build-log pipefail behavior,
+ profile invariants, Catalina XMM `cx` sync, warning classes, and SD-write
+ smoke discipline, plus required P2 documentation presence and active Catalina
+ path policy.
 
 Remaining work:
 
-- Create `docs/source-research.md` after inspecting the external Berry, Catalina, P2, smart pin, and uC/OS-II references.
+- Keep `docs/source-research.md` refined as deeper Berry, Catalina, P2,
+ smart-pin, PASM, memory, and RTOS implementation choices are made.
 - Run the full scripted SD smoke suite against the provisioned card.
 - Record smoke output for `p2.fs_info("/")`, `import math`, and `math.sqrt(81)`.
 - Keep documentation current after every feature addition.
@@ -121,9 +130,9 @@ Goal: allow safe low-level acceleration without opening unsafe execution by defa
 
 Work:
 
-- Add safe intrinsics.
-- Add PASM blob loading.
-- Add PASM cog launcher.
+- Keep safe intrinsics covered.
+- Keep PASM blob loading through `libstore.pasm_load()` and `p2.asm.load()` covered.
+- Broaden the current `p2.asm.marker_blob()` / `launch_loaded_probe()` exact SD-loaded marker fixture into a public PASM ABI and supported fixture set.
 - Add PASM function bridge.
 - Gate arbitrary assembly behind `BE_P2_ENABLE_UNSAFE_ASM`.
 - Document ABI, clobbers, pointers, stack, cleanup, and PSRAM rules.
@@ -183,8 +192,8 @@ Work:
 - Add debug build flags.
 - Add VGA/video demo or staged implementation notes.
 - Add USB keyboard/mouse/HID demos or staged implementation notes.
-- Create `docs/performance.md`.
-- Measure VM speed, import latency, PSRAM cache, GC pauses, cog spawn, task switch, channel latency, smart-pin overhead, native/PASM speedup, SD throughput, and PSRAM throughput.
+- Keep `docs/performance.md` as the performance-plan document.
+- Add measurement hooks and measured results for VM speed, import latency, PSRAM cache, GC pauses, cog spawn, task switch, channel latency, smart-pin overhead, native/PASM speedup, SD throughput, and PSRAM throughput.
 
 Acceptance evidence:
 
@@ -214,4 +223,3 @@ Completion evidence:
 - Full Berry and P2 API coverage is documented, tested, or explicitly unsupported.
 - Examples and docs are complete.
 - No silent stubs remain.
-

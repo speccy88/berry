@@ -1,7 +1,9 @@
+# P2_SD_WRITE_AUDIT max_write_opens=5
 print("P2_SMOKE_BEGIN import_order")
 
 import os
 import libstore
+import p2
 
 def ensure_dir(path)
     if !os.path.isdir(path)
@@ -12,76 +14,108 @@ def ensure_dir(path)
     end
 end
 
+def wait_source_path(name, path)
+    var tries = 0
+    while tries < 8
+        if libstore.source_path(name) == path
+            return true
+        end
+        p2.clock.waitms(10)
+        tries += 1
+    end
+    return false
+end
+
+def wait_info(name, path)
+    var tries = 0
+    while tries < 8
+        var info = libstore.info(name)
+        if info["exists"] && info["path"] == path && info["source_size"] > 0
+            return info
+        end
+        p2.clock.waitms(10)
+        tries += 1
+    end
+    return libstore.info(name)
+end
+
 ensure_dir("/modules")
 ensure_dir("/berry")
 ensure_dir("/berry/lib")
 ensure_dir("/berry/app")
+print("P2_SMOKE_STAGE import_order dirs")
 
-var name = "p1_import_order"
-var modules_path = "/modules/p1_import_order.be"
-var lib_path = "/berry/lib/p1_import_order.be"
-var app_path = "/berry/app/p1_import_order.be"
-var lib_app_path = "/berry/lib/p1_import_order_lib_app.be"
-var app_only_path = "/berry/app/p1_import_order_lib_app.be"
+var name = "iordmod"
+var lib_app_name = "iordla"
+var modules_path = "/modules/iordmod.be"
+var lib_path = "/berry/lib/iordmod.be"
+var app_path = "/berry/app/iordmod.be"
+var lib_app_path = "/berry/lib/iordla.be"
+var app_only_path = "/berry/app/iordla.be"
 
+print("P2_SMOKE_STAGE import_order preflight")
 assert(!os.path.exists(modules_path))
 assert(!os.path.exists(lib_path))
 assert(!os.path.exists(app_path))
 assert(!os.path.exists(lib_app_path))
 assert(!os.path.exists(app_only_path))
 
+print("P2_SMOKE_STAGE import_order write")
 var mf = open(modules_path, "w")
-mf.write("var p1_import_order = module('p1_import_order')\n")
-mf.write("p1_import_order.origin = 'modules'\n")
-mf.write("return p1_import_order\n")
+mf.write("var iordmod = module('iordmod')\n")
+mf.write("iordmod.origin = 'modules'\n")
+mf.write("return iordmod\n")
 mf.close()
 
 var lf = open(lib_path, "w")
-lf.write("var p1_import_order = module('p1_import_order')\n")
-lf.write("p1_import_order.origin = 'berry-lib'\n")
-lf.write("return p1_import_order\n")
+lf.write("var iordmod = module('iordmod')\n")
+lf.write("iordmod.origin = 'berry-lib'\n")
+lf.write("return iordmod\n")
 lf.close()
 
 var af = open(app_path, "w")
-af.write("var p1_import_order = module('p1_import_order')\n")
-af.write("p1_import_order.origin = 'berry-app'\n")
-af.write("return p1_import_order\n")
+af.write("var iordmod = module('iordmod')\n")
+af.write("iordmod.origin = 'berry-app'\n")
+af.write("return iordmod\n")
 af.close()
 
 var laf = open(lib_app_path, "w")
-laf.write("var p1_import_order_lib_app = module('p1_import_order_lib_app')\n")
-laf.write("p1_import_order_lib_app.origin = 'berry-lib'\n")
-laf.write("return p1_import_order_lib_app\n")
+laf.write("var iordla = module('iordla')\n")
+laf.write("iordla.origin = 'berry-lib'\n")
+laf.write("return iordla\n")
 laf.close()
 
 var aof = open(app_only_path, "w")
-aof.write("var p1_import_order_lib_app = module('p1_import_order_lib_app')\n")
-aof.write("p1_import_order_lib_app.origin = 'berry-app'\n")
-aof.write("return p1_import_order_lib_app\n")
+aof.write("var iordla = module('iordla')\n")
+aof.write("iordla.origin = 'berry-app'\n")
+aof.write("return iordla\n")
 aof.close()
 
-import p1_import_order
-assert(p1_import_order.origin == "modules")
-assert(libstore.source_path("p1_import_order") == modules_path)
-var modules_info = libstore.info("p1_import_order")
+print("P2_SMOKE_STAGE import_order modules")
+import iordmod
+assert(iordmod.origin == "modules")
+assert(wait_source_path(name, modules_path))
+var modules_info = wait_info(name, modules_path)
 assert(modules_info["exists"])
 assert(modules_info["path"] == modules_path)
 assert(modules_info["source_size"] > 0)
-p1_import_order.origin = "modules-cached"
-import p1_import_order as p1_import_order_again
-assert(p1_import_order_again.origin == "modules-cached")
+iordmod.origin = "modules-cached"
+import iordmod as iordmod_again
+assert(iordmod_again.origin == "modules-cached")
 
-import p1_import_order_lib_app
-assert(p1_import_order_lib_app.origin == "berry-lib")
-assert(libstore.source_path("p1_import_order_lib_app") == lib_app_path)
-var lib_app_info = libstore.info("p1_import_order_lib_app")
+print("P2_SMOKE_STAGE import_order lib_app")
+import iordla
+assert(iordla.origin == "berry-lib")
+assert(wait_source_path(lib_app_name, lib_app_path))
+var lib_app_info = wait_info(lib_app_name, lib_app_path)
 assert(lib_app_info["exists"])
 assert(lib_app_info["path"] == lib_app_path)
 assert(lib_app_info["source_size"] > 0)
-p1_import_order_lib_app.origin = "berry-lib-cached"
-import p1_import_order_lib_app as p1_import_order_lib_app_again
-assert(p1_import_order_lib_app_again.origin == "berry-lib-cached")
+iordla.origin = "berry-lib-cached"
+import iordla as iordla_again
+assert(iordla_again.origin == "berry-lib-cached")
 
+print("P2_SMOKE_STAGE import_order cleanup")
 try
     os.remove(modules_path)
 except .. as e, m

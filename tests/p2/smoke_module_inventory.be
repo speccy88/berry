@@ -119,6 +119,7 @@ var expected_names = [
     "p2compat",
     "p2ipc",
     "p2mem",
+    "p2smart",
     "task",
     "wifi"
 ]
@@ -226,10 +227,10 @@ for rec : inventory
         assert(type(rec["compiled_hash"]) == "int")
         assert(type(rec["compiled_fresh"]) == "bool")
         assert(type(rec["compiled_usable"]) == "bool")
-        if rec["compiled_usable"] {
+        if rec["compiled_usable"]
             assert(rec["compiled_loader_supported"])
             assert(rec["compiled_fresh"])
-        }
+        end
         assert(type(rec["compiled_freshness_reason"]) == "string")
     end
     assert(type(rec["compiled_loader_supported"]) == "bool")
@@ -245,16 +246,16 @@ for rec : inventory
     assert(type(rec["compiled_status_reason"]) == "string")
     assert(rec["compiled_status_can_load"] == rec["compiled_load_can"])
     assert(rec["compiled_validation_supported"] == rec["compiled_validator_supported"])
-    if rec["compiled_validation_valid"] {
+    if rec["compiled_validation_valid"]
         assert(rec["compiled_validation_supported"])
-    }
-    if rec["compiled_load_can"] {
+    end
+    if rec["compiled_load_can"]
         assert(rec["compiled_validation_valid"])
         assert(rec["compiled_usable"])
-    }
-    if rec["compiled_loader_supported"] {
+    end
+    if rec["compiled_loader_supported"]
         assert(rec["compiled_bytecode_loader"])
-    }
+    end
     assert(type(rec["compiled_loader_reason"]) == "string")
     assert(type(rec["compile_cache_supported"]) == "bool")
     assert(type(rec["compile_cache_can_emit"]) == "bool")

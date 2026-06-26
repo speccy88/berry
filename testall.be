@@ -1,7 +1,12 @@
 #! ./berry
 import os
 
-os.system('lcov', '-q -c -i -d . -o init.info --ignore-errors gcov,unsupported')
+var have_lcov = os.system('command -v lcov >/dev/null 2>&1') == 0
+var have_genhtml = os.system('command -v genhtml >/dev/null 2>&1') == 0
+
+if have_lcov
+    os.system('lcov', '-q -c -i -d . -o init.info --ignore-errors gcov,unsupported')
+end
 
 var exec = './berry'
 var path = 'tests'
@@ -29,16 +34,20 @@ if failed != 0
     os.exit(-1)
 end
 
-var cmds = [
-    'lcov -q -c -d ./ -o cover.info --ignore-errors gcov,unsupported',
-    'lcov -q -a init.info -a cover.info -o total.info --ignore-errors gcov,unsupported',
-    'lcov --remove total.info */usr/include/* -o final.info --ignore-errors gcov,unsupported',
-    'genhtml -q -o test_report --legend --title "lcov" --prefix=./ final.info',
-    'rm -f init.info cover.info total.info final.info'
-]
+if have_lcov && have_genhtml
+    var cmds = [
+        'lcov -q -c -d ./ -o cover.info --ignore-errors gcov,unsupported',
+        'lcov -q -a init.info -a cover.info -o total.info --ignore-errors gcov,unsupported',
+        'lcov --remove total.info */usr/include/* -o final.info --ignore-errors gcov,unsupported',
+        'genhtml -q -o test_report --legend --title "lcov" --prefix=./ final.info',
+        'rm -f init.info cover.info total.info final.info'
+    ]
 
-for cmd : cmds
-    if os.system(cmd)
-        os.exit(-1)
+    for cmd : cmds
+        if os.system(cmd)
+            os.exit(-1)
+        end
     end
+else
+    print('coverage tools not found; skipping lcov/genhtml report')
 end

@@ -163,6 +163,204 @@ math.accel_info = def()
     }
 end
 
+math.capabilities = def()
+    var accel = math.accel_info()
+    var nan_inf_supported = math.nan != math.nan && math.inf != 0
+    return {
+        "finite_fallbacks": true,
+        "nan_inf": nan_inf_supported,
+        "invalid_domain_nil": true,
+        "non_number_zero": true,
+        "deterministic_host_rand_zero": true,
+        "p2_cordic_available": accel["cordic"],
+        "cordic_backend": accel["backend"],
+        "cordic_trig": accel["cordic"],
+        "cordic_sqrt": false,
+        "cordic_exp_log": false,
+        "constants": true,
+        "rounding": true,
+        "minmax": true,
+        "angle_conversion": true,
+        "audit": true,
+        "audit_policy": "finite_metadata_and_tiny_numeric_self_check"
+    }
+end
+
+math.capability = def(name)
+    if type(name) != "string"
+        return nil
+    end
+    var caps = math.capabilities()
+    if caps.contains(name)
+        return caps[name]
+    end
+    return nil
+end
+
+math.required_capability_keys = def()
+    return [
+        "finite_fallbacks",
+        "nan_inf",
+        "invalid_domain_nil",
+        "non_number_zero",
+        "deterministic_host_rand_zero",
+        "p2_cordic_available",
+        "cordic_backend",
+        "cordic_trig",
+        "cordic_sqrt",
+        "cordic_exp_log",
+        "constants",
+        "rounding",
+        "minmax",
+        "angle_conversion",
+        "audit",
+        "audit_policy"
+    ]
+end
+
+math._near = def(a, b, tolerance)
+    if !math._is_number(a) || !math._is_number(b)
+        return false
+    end
+    return math.abs(a - b) <= tolerance
+end
+
+math.audit = def()
+    var caps = math.capabilities()
+    var accel = math.accel_info()
+    var problems = []
+    var missing_capability_keys = []
+
+    for key : math.required_capability_keys()
+        if !caps.contains(key)
+            missing_capability_keys.push(key)
+        end
+    end
+    if missing_capability_keys.size() != 0
+        problems.push("missing_capability_keys")
+    end
+
+    if !caps["finite_fallbacks"]
+        problems.push("finite_fallbacks_disabled")
+    end
+    if !caps["invalid_domain_nil"]
+        problems.push("invalid_domain_nil_disabled")
+    end
+    if !caps["non_number_zero"]
+        problems.push("non_number_zero_disabled")
+    end
+    if !caps["constants"]
+        problems.push("constants_disabled")
+    end
+    if !caps["rounding"]
+        problems.push("rounding_disabled")
+    end
+    if !caps["minmax"]
+        problems.push("minmax_disabled")
+    end
+    if !caps["angle_conversion"]
+        problems.push("angle_conversion_disabled")
+    end
+    if !caps["audit"]
+        problems.push("audit_capability_disabled")
+    end
+    if caps["audit_policy"] != "finite_metadata_and_tiny_numeric_self_check"
+        problems.push("audit_policy_mismatch")
+    end
+    if caps["p2_cordic_available"] != accel["cordic"]
+        problems.push("cordic_capability_mismatch")
+    end
+    if caps["cordic_backend"] != accel["backend"]
+        problems.push("cordic_backend_mismatch")
+    end
+    if caps["cordic_sqrt"] || caps["cordic_exp_log"]
+        problems.push("unsupported_cordic_capability_claimed")
+    end
+    if math.capability("finite_fallbacks") != caps["finite_fallbacks"]
+        problems.push("finite_fallback_lookup_mismatch")
+    end
+    if math.capability("missing") != nil
+        problems.push("missing_lookup_not_nil")
+    end
+    if math.capability(nil) != nil
+        problems.push("nil_lookup_not_nil")
+    end
+    if !math._near(math.pi, 3.1415927, 0.000001)
+        problems.push("pi_constant_mismatch")
+    end
+    if !math._near(math.e, 2.7182818, 0.000001)
+        problems.push("e_constant_mismatch")
+    end
+    if caps["nan_inf"] && !math.isnan(math.nan)
+        problems.push("nan_check_failed")
+    end
+    if caps["nan_inf"] && !math.isinf(math.inf)
+        problems.push("inf_check_failed")
+    end
+    if math.sqrt(49) != 7
+        problems.push("sqrt_check_failed")
+    end
+    if math.sqrt(-1) != nil
+        problems.push("sqrt_invalid_domain_not_nil")
+    end
+    if math.abs(-3) != 3 || math.abs("x") != 0
+        problems.push("abs_check_failed")
+    end
+    if math.floor(3.7) != 3 || math.ceil(3.2) != 4
+        problems.push("floor_ceil_check_failed")
+    end
+    if math.round(2.5) != 3 || math.round(-2.5) != -3
+        problems.push("round_check_failed")
+    end
+    if math.min(3, 1, 2) != 1 || math.max(3, 1, 2) != 3
+        problems.push("minmax_check_failed")
+    end
+    if math.pow(2, 3) != 8
+        problems.push("pow_int_check_failed")
+    end
+    if !math._near(math.deg(math.pi), 180.0, 0.001)
+        problems.push("deg_check_failed")
+    end
+    if !math._near(math.rad(180), math.pi, 0.001)
+        problems.push("rad_check_failed")
+    end
+    if math.log(-1) != nil || math.asin(2) != nil || math.acos(2) != nil
+        problems.push("invalid_domain_check_failed")
+    end
+    if math.sin("x") != 0 || math.log("x") != 0
+        problems.push("non_number_zero_check_failed")
+    end
+    if math._p2 == nil && math.rand() != 0
+        problems.push("host_rand_zero_check_failed")
+    end
+
+    return {
+        "ok": problems.size() == 0,
+        "problem_count": problems.size(),
+        "problems": problems,
+        "missing_capability_keys": missing_capability_keys,
+        "audit_policy": caps["audit_policy"],
+        "backend": accel["backend"],
+        "cordic": accel["cordic"],
+        "finite_fallbacks": caps["finite_fallbacks"],
+        "nan_inf": caps["nan_inf"],
+        "invalid_domain_nil": caps["invalid_domain_nil"],
+        "non_number_zero": caps["non_number_zero"],
+        "constants": caps["constants"],
+        "rounding": caps["rounding"],
+        "minmax": caps["minmax"],
+        "angle_conversion": caps["angle_conversion"]
+    }
+end
+
+math.audit_problems = def()
+    return math.audit()["problems"]
+end
+
+math.audit_ok = def()
+    return math.audit()["ok"]
+end
+
 math.exp = def(x)
     if !math._is_number(x)
         return 0

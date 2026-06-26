@@ -255,7 +255,8 @@ import p2
 import task
 
 def blink(pin, ms)
-    p2.toggle(pin)
+    p2.pin.dir_high(pin)
+    p2.pin.toggle(pin)
     return task.sleep(ms)
 end
 
@@ -274,9 +275,7 @@ or stopped.
 
 Current helpers:
 
-- `p2.cog.blinker(pin, ms)`: create a native blinker task descriptor.
-- `p2.cog.spawn(function, ...args)`: pass a Berry function entity as the setup function; `spawn()` calls it on the current cog and launches the returned supported descriptor.
-- `p2.cog.spawn(task_descriptor)`: launch an explicit descriptor directly.
+- `p2.cog.spawn(function, ...args)`: pass a Berry function entity as the setup function. The currently supported default shape is `spawn(closure, pin, rate_ms)` for the native p38/p39 blinker path; the function is called once on the current cog and must return a positive integer period.
 - `p2.cog.stop(handle)`: stop a spawned native task.
 - `p2.cog.info(handle)` / `p2.cog.info()`: inspect one handle or all active handles.
 - `p2.cog.capabilities()`: report supported native task-handle features.
@@ -287,7 +286,9 @@ Example for the P2 Edge 32 MB board LEDs on pins `38` and `39`:
 import p2
 
 def blinker(pin, ms)
-    return p2.cog.blinker(pin, ms)
+    p2.pin.dir_high(pin)
+    p2.pin.toggle(pin)
+    return ms
 end
 
 h38 = p2.cog.spawn(blinker, 38, 250)
@@ -298,8 +299,16 @@ p2.cog.stop(h39)
 ```
 
 Arbitrary Berry bytecode closure execution inside another isolated cog VM
-remains future work. The current blinker path runs the actual toggle loop in a
-native/PASM backend after the Berry setup function returns its descriptor.
+remains future work. The current blinker path runs the actual repeated toggle
+loop in a native/PASM backend after the Berry setup function validates the pin
+and returns its period.
+
+Current child-VM value transfer is deliberately limited. Nil, bool, int, and
+bounded string values can be copied by value by the guarded VM-call diagnostics.
+A non-captured parent closure may be accepted only as a function-name selector;
+the child VM must define a function with the same name. Captured closures and
+live object graphs such as lists, maps, instances, native pointers, file
+handles, and hardware resources are rejected rather than shared.
 
 ## Retired `rtos` and `taskspin` APIs
 
@@ -397,6 +406,9 @@ and probes the current SD-first library store:
 - `libstore.module_name(entry) -> string or nil`: normalize an SD directory
   entry such as `MATH.BE` into the import name `math`, or return `nil` for
   non-source files.
+- `libstore.valid_module_name(name) -> bool`: true for deliberate module names
+  such as `math` or dotted packages such as `pkg.mod`; false for nil, empty
+  names, slash-containing names, and `..` path segments.
 - `libstore.scan() -> list`: discover available `.be` source modules under
   `libstore.paths`, preserving known module order and then adding SD entries.
 - `libstore.modules() -> list`: return the currently available SD module names.
@@ -517,11 +529,26 @@ and probes the current SD-first library store:
 - `libstore.load(name)`: load by module name, using the PSRAM source cache when
   available and falling back to `run_file()` from SD otherwise.
 - `libstore.cache_many(name, ...)`: cache a selected set of modules.
+- `libstore.cache_many_report(name, ...)`: cache a selected set of modules and
+  return snapshot `items`, `skipped`, `cached_count`, and `skipped_count`
+  diagnostics. Missing or invalid explicit names are reported in `skipped`
+  instead of aborting the selected preload.
 - `libstore.cache_all()`: cache all currently available modules under
-  `libstore.paths`.
+  `libstore.paths`, returning the modules that were cached successfully.
+  Oversized or unavailable modules are skipped by this bulk helper rather than
+  aborting the whole preload pass.
+- `libstore.cache_all_report()`: cache all currently available modules and
+  return `items`, `skipped`, `cached_count`, and `skipped_count` so constrained
+  PSRAM preload attempts can report exactly which modules did not fit. Report
+  items are snapshots, so callers cannot mutate live cache records through the
+  returned map.
 - `libstore.cache_report() -> map`: return current cache status and per-module
   chunk/address metadata.
 - `libstore.run(path)`: calls `run_file(path)`.
+- `p2mem.evict() -> map`: reset the current `libstore` PSRAM source cache and
+  return `ok`, `before`, `window`, `after`, `error`, and `message` diagnostics;
+  lower-level PSRAM/cache-window failures are reported in the map instead of
+  escaping to the caller.
 
 Example:
 

@@ -26,8 +26,237 @@ SUITES = {
     "cog-closure": [
         ('run_file("/tests/p2/smoke_cog_closure.be")', "P2_SMOKE_PASS cog_closure"),
     ],
+    "cog-policy-min": [
+        ('run_file("/tests/p2/smoke_cog_policy_min.be")', "P2_SMOKE_PASS cog_policy_min"),
+    ],
     "task": [
         ('run_file("/tests/p2/smoke_task.be")', "P2_SMOKE_PASS task"),
+    ],
+    "task-policy-min": [
+        (
+            't=run_file("/modules/task.be"); print(t.execution_model_value("backend"), t.contract_value("scheduler_policy"), t.audit_ok())',
+            "p2_native_cooperative current_vm_callback_step true",
+        ),
+        (
+            'print("P2_SMOKE_PASS task_policy_min")',
+            "P2_SMOKE_PASS task_policy_min",
+        ),
+    ],
+    "p2ipc": [
+        ('run_file("/tests/p2/smoke_p2ipc.be")', "P2_SMOKE_PASS p2ipc"),
+    ],
+    "ipc-policy-min": [
+        (
+            'i=run_file("/modules/p2ipc.be"); print(i.contract_value("model"), i.contract_value("task_wait_integration"), i.attention_policy_value("policy"), i.audit_ok())',
+            "current_vm_cooperative_ipc true native_bounded_wait_available_not_wired_to_ipc true",
+        ),
+        (
+            'print("P2_SMOKE_PASS ipc_policy_min")',
+            "P2_SMOKE_PASS ipc_policy_min",
+        ),
+    ],
+    "p2compat": [
+        ('run_file("/tests/p2/smoke_p2compat.be")', "P2_SMOKE_PASS p2compat"),
+    ],
+    "p2-api": [
+        ('run_file("/tests/p2/smoke_p2_api.be")', "P2_SMOKE_PASS p2_api"),
+    ],
+    "pasm-policy-min": [
+        ('run_file("/tests/p2/smoke_pasm_policy_min.be")', "P2_SMOKE_PASS pasm_policy_min"),
+    ],
+    "import-cache": [
+        ('run_file("/tests/p2/impcache.be")', "P2_SMOKE_PASS import_cache"),
+    ],
+    "import-churn": [
+        ('run_file("/tests/p2/impchurn.be")', "P2_SMOKE_PASS import_churn"),
+    ],
+    "libraries": [
+        ('run_file("/tests/p2/smoke_libraries.be")', "P2_SMOKE_PASS libraries"),
+    ],
+    "libraries-lazy-min": [
+        ('run_file("/tests/p2/smoke_libraries_lazy_min.be")', "P2_SMOKE_PASS libraries_lazy_min"),
+    ],
+    "p2mem-policy-min": [
+        (
+            'm=run_file("/modules/p2mem.be"); g=m.gc_result(); print(m.capability("stats_result"), m.capability("gc_result"), m.audit_ok(), g["ok"])',
+            "true true true true",
+        ),
+        (
+            'print("P2_SMOKE_PASS p2mem_policy_min")',
+            "P2_SMOKE_PASS p2mem_policy_min",
+        ),
+    ],
+    "p2mem-native-cache-min": [
+        (
+            'm=run_file("/modules/p2mem.be"); print(m.native_cache_reset_result()["ok"])',
+            "true",
+        ),
+        (
+            'p=m.native_cache_put_verified("min","abc"); print(p["ok"], p["verified"], p["verify"]["ok"], p["write"]["last_write_checksum"])',
+            "true true true 294",
+        ),
+        (
+            'g=m.native_cache_get_verified("min"); print(g["ok"], g["verify"]["ok"], g["value"])',
+            "true true abc",
+        ),
+        (
+            'print(m.native_cache()["entry_count"])',
+            "1",
+        ),
+        (
+            'print("P2_SMOKE_PASS p2mem_native_cache_min")',
+            "P2_SMOKE_PASS p2mem_native_cache_min",
+        ),
+    ],
+    "bec-fallback-min": [
+        ('run_file("/tests/p2/smoke_bec_fallback_min.be")', "P2_SMOKE_PASS bec_fallback_min"),
+    ],
+    "core-builtins-min": [
+        ('run_file("/tests/p2/call.be")', "P2_SMOKE_PASS call"),
+        ('run_file("/tests/p2/vararg.be")', "P2_SMOKE_PASS vararg"),
+        ('run_file("/tests/p2/cmod.be")', "P2_SMOKE_PASS compile_module"),
+        ('run_file("/tests/p2/conv.be")', "P2_SMOKE_PASS conversions"),
+        ('run_file("/tests/p2/listcore.be")', "P2_SMOKE_PASS list_core"),
+        ('run_file("/tests/p2/mapcore.be")', "P2_SMOKE_PASS map_core"),
+        ('run_file("/tests/p2/mapkeys.be")', "P2_SMOKE_PASS map_keys"),
+        ('run_file("/tests/p2/bytes.be")', "P2_SMOKE_PASS bytes"),
+    ],
+    "sd-file-min": [
+        ('run_file("/tests/p2/smoke_sd.be")', "P2_SMOKE_PASS sd"),
+    ],
+    "priority1": [
+        ('run_file("/tests/p2/impcache.be")', "P2_SMOKE_PASS import_cache"),
+        ('run_file("/tests/p2/impchurn.be")', "P2_SMOKE_PASS import_churn"),
+        ('run_file("/tests/p2/smoke_libraries.be")', "P2_SMOKE_PASS libraries"),
+    ],
+    "priority2": [
+        ('run_file("/tests/p2/smoke_p2_api.be")', "P2_SMOKE_PASS p2_api"),
+        ('run_file("/tests/p2/smoke_smartpins_loopback.be")', "P2_SMOKE_PASS smartpins_loopback"),
+        ('run_file("/tests/p2/smoke_smartpins_counter_modes.be")', "P2_SMOKE_PASS smartpins_counter_modes"),
+        ('run_file("/tests/p2/smoke_smartpins_async_rx.be")', "P2_SMOKE_PASS smartpins_async_rx"),
+        ('run_file("/tests/p2/smoke_smartpins_sync_diag.be")', "P2_SMOKE_PASS smartpins_sync_diag"),
+    ],
+    "priority3": [
+        ('run_file("/tests/p2/smoke_pasm_layout.be")', "P2_SMOKE_PASS pasm_layout"),
+    ],
+    "priority4": [
+        ('run_file("/tests/p2/smoke_p2compat.be")', "P2_SMOKE_PASS p2compat"),
+        ('run_file("/tests/p2/smoke_cog_closure.be")', "P2_SMOKE_PASS cog_closure"),
+        ('run_file("/tests/p2/smoke_task.be")', "P2_SMOKE_PASS task"),
+        ('run_file("/tests/p2/smoke_p2ipc.be")', "P2_SMOKE_PASS p2ipc"),
+    ],
+    "priority1-4": [
+        ('run_file("/tests/p2/impcache.be")', "P2_SMOKE_PASS import_cache"),
+        ('run_file("/tests/p2/impchurn.be")', "P2_SMOKE_PASS import_churn"),
+        ('run_file("/tests/p2/smoke_libraries.be")', "P2_SMOKE_PASS libraries"),
+        ('run_file("/tests/p2/smoke_p2_api.be")', "P2_SMOKE_PASS p2_api"),
+        ('run_file("/tests/p2/smoke_smartpins_loopback.be")', "P2_SMOKE_PASS smartpins_loopback"),
+        ('run_file("/tests/p2/smoke_smartpins_counter_modes.be")', "P2_SMOKE_PASS smartpins_counter_modes"),
+        ('run_file("/tests/p2/smoke_smartpins_async_rx.be")', "P2_SMOKE_PASS smartpins_async_rx"),
+        ('run_file("/tests/p2/smoke_smartpins_sync_diag.be")', "P2_SMOKE_PASS smartpins_sync_diag"),
+        ('run_file("/tests/p2/smoke_pasm_layout.be")', "P2_SMOKE_PASS pasm_layout"),
+        ('run_file("/tests/p2/smoke_p2compat.be")', "P2_SMOKE_PASS p2compat"),
+        ('run_file("/tests/p2/smoke_cog_closure.be")', "P2_SMOKE_PASS cog_closure"),
+        ('run_file("/tests/p2/smoke_task.be")', "P2_SMOKE_PASS task"),
+        ('run_file("/tests/p2/smoke_p2ipc.be")', "P2_SMOKE_PASS p2ipc"),
+    ],
+    "smartpins-loopback": [
+        ('run_file("/tests/p2/smoke_smartpins_loopback.be")', "P2_SMOKE_PASS smartpins_loopback"),
+    ],
+    "smartpins-normal-pin": [
+        ('run_file("/tests/p2/smoke_smartpins_normal_pin.be")', "P2_SMOKE_PASS smartpins_normal_pin"),
+    ],
+    "smartpins-quadrature-static": [
+        ('run_file("/tests/p2/smoke_smartpins_quadrature_static.be")', "P2_SMOKE_PASS smartpins_quadrature_static"),
+    ],
+    "smartpins-quadrature-motion": [
+        ('run_file("/tests/p2/smoke_smartpins_quadrature_motion.be")', "P2_SMOKE_PASS smartpins_quadrature_motion"),
+    ],
+    "smartpins-quadrature-diag": [
+        (
+            'm=run_file("/modules/p2smart.be"); p=m.quadrature_sample_probe(0,1,nil,1000)',
+            "",
+        ),
+        (
+            'assert(p["pin_a"] == 0); assert(p["pin_b"] == 1); assert(p["mode"] == m.smart.quadrature + m.smart.plus1_b); assert(type(p["sample"]["delta"]) == "int")',
+            "",
+        ),
+        (
+            'print("P2_SMOKE_QUADRATURE_DIAG",p["sample"]["before"],p["sample"]["after"],p["sample"]["delta"],p["sample"]["direction"],p["sample"]["moved"],m.status("quadrature"))',
+            "P2_SMOKE_QUADRATURE_DIAG",
+        ),
+        (
+            'print("P2_SMOKE_PASS smartpins_quadrature_diag")',
+            "P2_SMOKE_PASS smartpins_quadrature_diag",
+        ),
+    ],
+    "smartpins-counter-modes": [
+        ('run_file("/tests/p2/smoke_smartpins_counter_modes.be")', "P2_SMOKE_PASS smartpins_counter_modes"),
+    ],
+    "smartpins-adc-dac-diag": [
+        (
+            'm=run_file("/modules/p2smart.be"); p=m.adc_dac_delta_policy(); print(p["ok"], p["supported"], p["status"], p["safe_claim"])',
+            "true false unverified setup_readback_only",
+        ),
+        (
+            'p=m.dac_adc_sampled_probe(0,1,0,255,5000,0,4,250)',
+            "",
+        ),
+        (
+            'assert(p["sample_count"] == 4); assert(type(p["delta"]) == "int"); assert(type(p["abs_delta"]) == "int"); assert(!p["polarity_verified"]); assert(!p["calibrated_voltage"])',
+            "",
+        ),
+        (
+            'print("P2_SMOKE_ADC_DAC_DIAG",p["ok"],p["low"]["avg"],p["high"]["avg"],p["delta"],p["abs_delta"],p["polarity"])',
+            "P2_SMOKE_ADC_DAC_DIAG",
+        ),
+        (
+            'print("P2_SMOKE_PASS smartpins_adc_dac_diag")',
+            "P2_SMOKE_PASS smartpins_adc_dac_diag",
+        ),
+    ],
+    "smartpins-nco-duty-diag": [
+        (
+            'm=run_file("/modules/p2smart.be"); p=m.nco_duty_counter_probe(0,1,16000,4000,2000)',
+            "",
+        ),
+        (
+            'assert(p["nco_duty"]["bit_period"] == 16000); assert(p["nco_duty"]["duty"] == 4000); assert(type(p["counter"]["delta"]) == "int")',
+            "",
+        ),
+        (
+            'print("P2_SMOKE_NCO_DUTY_DIAG",p["ok"],p["counter"]["before"],p["counter"]["after"],p["counter"]["delta"])',
+            "P2_SMOKE_NCO_DUTY_DIAG",
+        ),
+        (
+            'print("P2_SMOKE_PASS smartpins_nco_duty_diag")',
+            "P2_SMOKE_PASS smartpins_nco_duty_diag",
+        ),
+    ],
+    "smartpins-async-rx": [
+        ('run_file("/tests/p2/smoke_smartpins_async_rx.be")', "P2_SMOKE_PASS smartpins_async_rx"),
+    ],
+    "smartpins-sync-diag": [
+        ('run_file("/tests/p2/smoke_smartpins_sync_diag.be")', "P2_SMOKE_PASS smartpins_sync_diag"),
+    ],
+    "soak": [
+        ('run_file("/tests/p2/impcache.be")', "P2_SMOKE_PASS import_cache"),
+        ('run_file("/tests/p2/impchurn.be")', "P2_SMOKE_PASS import_churn"),
+        ('run_file("/tests/p2/smoke_libraries.be")', "P2_SMOKE_PASS libraries"),
+        ('run_file("/tests/p2/smoke_task.be")', "P2_SMOKE_PASS task"),
+        ('run_file("/tests/p2/smoke_cog_closure.be")', "P2_SMOKE_PASS cog_closure"),
+        ('run_file("/tests/p2/smoke_p2_api.be")', "P2_SMOKE_PASS p2_api"),
+        ("import p2; print(type(p2.gc), p2.gc())", "function"),
+    ],
+    "soak-smartpins": [
+        ('run_file("/tests/p2/impcache.be")', "P2_SMOKE_PASS import_cache"),
+        ('run_file("/tests/p2/impchurn.be")', "P2_SMOKE_PASS import_churn"),
+        ('run_file("/tests/p2/smoke_task.be")', "P2_SMOKE_PASS task"),
+        ('run_file("/tests/p2/smoke_p2_api.be")', "P2_SMOKE_PASS p2_api"),
+        ('run_file("/tests/p2/smoke_smartpins_loopback.be")', "P2_SMOKE_PASS smartpins_loopback"),
+        ('run_file("/tests/p2/smoke_smartpins_async_rx.be")', "P2_SMOKE_PASS smartpins_async_rx"),
+        ('run_file("/tests/p2/smoke_smartpins_sync_diag.be")', "P2_SMOKE_PASS smartpins_sync_diag"),
+        ("import p2; print(type(p2.gc), p2.gc())", "function"),
     ],
     "cog-ping": [
         ("import p2", ""),
@@ -383,6 +612,33 @@ def read_until(ser, marker: bytes, timeout: float) -> bytes:
     raise TimeoutError(f"timed out waiting for {marker!r}; saw:\n{decode(bytes(data))}")
 
 
+BERRY_ERROR_PREFIXES = (
+    "assert_failed:",
+    "attribute_error:",
+    "compile_error:",
+    "divzero_error:",
+    "index_error:",
+    "io_error:",
+    "key_error:",
+    "memory_error:",
+    "syntax_error:",
+    "type_error:",
+    "unsupported_error:",
+    "value_error:",
+)
+
+
+def berry_error_text(text: str) -> str:
+    if "stack traceback:" in text:
+        return "stack traceback:"
+    for line in text.splitlines():
+        stripped = line.strip()
+        for prefix in BERRY_ERROR_PREFIXES:
+            if stripped.startswith(prefix):
+                return stripped
+    return ""
+
+
 def run_command(
     ser,
     command: str,
@@ -403,6 +659,9 @@ def run_command(
         ser.flush()
     output = read_until(ser, prompt, timeout)
     text = prefix + decode(output)
+    error = berry_error_text(text)
+    if error:
+        raise RuntimeError(f"Berry command failed ({error}) after {command!r}; saw:\n{text}")
     if expected and expected not in text:
         raise AssertionError(
             f"expected {expected!r} after command {command!r}; saw:\n{text}"
@@ -439,6 +698,11 @@ def main() -> int:
         action="store_true",
         help="send commands immediately instead of waiting for the initial prompt",
     )
+    parser.add_argument(
+        "--wake-start",
+        action="store_true",
+        help="send one line ending before waiting for the initial prompt",
+    )
     args = parser.parse_args()
 
     serial = load_serial_module()
@@ -455,6 +719,9 @@ def main() -> int:
     with ser:
         ser.reset_input_buffer()
         if not args.no_wait_start:
+            if args.wake_start:
+                ser.write(line_ending)
+                ser.flush()
             print(f"[p2-smoke] waiting for {args.prompt!r} on {args.port} at {args.baud}")
             text = decode(read_until(ser, prompt, args.startup_timeout))
             sys.stdout.write(text)

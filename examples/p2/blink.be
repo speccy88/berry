@@ -1,10 +1,15 @@
 import p2
 
-p2.pinmode(56, p2.OUTPUT)
+var led = p2.status_info()["build"]["led0_pin"]
 
-while true
-    p2.high(56)
-    p2.waitms(250)
-    p2.low(56)
-    p2.waitms(250)
+p2.pin.dir_high(led)
+
+for i : 0..5
+    p2.pin.high(led)
+    p2.clock.waitms(250)
+    p2.pin.low(led)
+    p2.clock.waitms(250)
 end
+
+p2.pin.float(led)
+print("p2 blink done")

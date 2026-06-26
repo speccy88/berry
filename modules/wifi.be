@@ -47,6 +47,165 @@ wifi._cfg = {
 wifi._initialized = false
 wifi._last_response = nil
 
+wifi.default_config = def()
+    return wifi._merge_config(nil)
+end
+
+wifi.capabilities = def()
+    return {
+        "transport": "spi",
+        "hardware": "wifinina_airlift",
+        "hardware_deferred": true,
+        "request_requires_init": true,
+        "import_init_noop": true,
+        "firmware_version": true,
+        "connection_status": true,
+        "status_names": true,
+        "default_config": true,
+        "last_response": true,
+        "stop": true,
+        "audit": true,
+        "audit_policy": "metadata_only_no_spi_transaction"
+    }
+end
+
+wifi.capability = def(name)
+    if type(name) != "string"
+        return nil
+    end
+    var caps = wifi.capabilities()
+    if caps.contains(name)
+        return caps[name]
+    end
+    return nil
+end
+
+wifi.required_capability_keys = def()
+    return [
+        "transport",
+        "hardware",
+        "hardware_deferred",
+        "request_requires_init",
+        "import_init_noop",
+        "firmware_version",
+        "connection_status",
+        "status_names",
+        "default_config",
+        "last_response",
+        "stop",
+        "audit",
+        "audit_policy"
+    ]
+end
+
+wifi.audit = def()
+    var caps = wifi.capabilities()
+    var cfg = wifi.default_config()
+    var problems = []
+    var missing_capability_keys = []
+
+    for key : wifi.required_capability_keys()
+        if !caps.contains(key)
+            missing_capability_keys.push(key)
+        end
+    end
+    if missing_capability_keys.size() != 0
+        problems.push("missing_capability_keys")
+    end
+
+    if caps["transport"] != "spi"
+        problems.push("transport_mismatch")
+    end
+    if caps["hardware"] != "wifinina_airlift"
+        problems.push("hardware_mismatch")
+    end
+    if !caps["hardware_deferred"]
+        problems.push("hardware_deferred_disabled")
+    end
+    if !caps["request_requires_init"]
+        problems.push("request_requires_init_disabled")
+    end
+    if !caps["import_init_noop"]
+        problems.push("import_init_noop_disabled")
+    end
+    if !caps["firmware_version"]
+        problems.push("firmware_version_disabled")
+    end
+    if !caps["connection_status"]
+        problems.push("connection_status_disabled")
+    end
+    if !caps["status_names"]
+        problems.push("status_names_disabled")
+    end
+    if !caps["default_config"]
+        problems.push("default_config_disabled")
+    end
+    if !caps["last_response"]
+        problems.push("last_response_disabled")
+    end
+    if !caps["stop"]
+        problems.push("stop_disabled")
+    end
+    if !caps["audit"]
+        problems.push("audit_capability_disabled")
+    end
+    if caps["audit_policy"] != "metadata_only_no_spi_transaction"
+        problems.push("audit_policy_mismatch")
+    end
+    if wifi.capability("transport") != "spi"
+        problems.push("transport_lookup_mismatch")
+    end
+    if wifi.capability("missing") != nil
+        problems.push("missing_lookup_not_nil")
+    end
+    if wifi.capability(nil) != nil
+        problems.push("nil_lookup_not_nil")
+    end
+    if wifi.START_CMD != 0xE0 || wifi.END_CMD != 0xEE || wifi.ERR_CMD != 0xEF
+        problems.push("frame_constant_mismatch")
+    end
+    if wifi.REPLY_FLAG != 0x80 || wifi.DUMMY != 0xFF
+        problems.push("byte_constant_mismatch")
+    end
+    if wifi.GET_CONN_STATUS_CMD != 0x20 || wifi.GET_FW_VERSION_CMD != 0x37
+        problems.push("command_constant_mismatch")
+    end
+    if wifi.STATUS[3] != "connected" || wifi.STATUS[255] != "no_shield"
+        problems.push("status_name_mismatch")
+    end
+    if cfg["sck"] != 16 || cfg["mosi"] != 17 || cfg["miso"] != 18 || cfg["cs"] != 19
+        problems.push("default_spi_pin_mismatch")
+    end
+    if cfg["busy"] != 20 || cfg["reset"] != 21 || cfg["irq"] != 22
+        problems.push("default_control_pin_mismatch")
+    end
+    if cfg["khz"] != 1000 || cfg["mode"] != 0
+        problems.push("default_spi_mode_mismatch")
+    end
+
+    return {
+        "ok": problems.size() == 0,
+        "problem_count": problems.size(),
+        "problems": problems,
+        "missing_capability_keys": missing_capability_keys,
+        "transport": caps["transport"],
+        "hardware": caps["hardware"],
+        "hardware_deferred": caps["hardware_deferred"],
+        "request_requires_init": caps["request_requires_init"],
+        "import_init_noop": caps["import_init_noop"],
+        "audit_policy": caps["audit_policy"],
+        "default_config": cfg
+    }
+end
+
+wifi.audit_problems = def()
+    return wifi.audit()["problems"]
+end
+
+wifi.audit_ok = def()
+    return wifi.audit()["ok"]
+end
+
 wifi._byte = def(v)
     return v & 0xFF
 end

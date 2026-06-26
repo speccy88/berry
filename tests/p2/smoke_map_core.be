@@ -20,8 +20,7 @@ assert(type(api.keys) == "function")
 assert(type(api.values) == "function")
 
 var m = {"a": 1, "b": 3.5, "c": "foo", 0: 1}
-assert(type(m) == "instance")
-assert(classname(m) == "map")
+assert(type(m) == "map")
 assert(m["a"] == 1)
 assert(m["b"] == 3.5)
 assert(m["c"] == "foo")

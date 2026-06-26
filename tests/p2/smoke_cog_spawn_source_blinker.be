@@ -3,13 +3,13 @@
 
 import p2
 
-source = "import p2\n" \
-         "def blinker(pin, ms)\n" \
-         "  p2.low(pin)\n" \
-         "  while true\n" \
-         "    p2.toggle(pin)\n" \
-         "    p2.waitms(ms)\n" \
-         "  end\n" \
+source = "import p2\n" +
+         "def blinker(pin, ms)\n" +
+         "  p2.pin.low(pin)\n" +
+         "  while true\n" +
+         "    p2.pin.toggle(pin)\n" +
+         "    p2.clock.waitms(ms)\n" +
+         "  end\n" +
          "end\n"
 
 print("cap", p2.cog.capabilities()["spawn_source"], p2.cog.capabilities()["isolated_child_vm_cog"], p2.cog.capabilities()["berry_closure"])

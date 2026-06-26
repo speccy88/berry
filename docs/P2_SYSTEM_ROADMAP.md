@@ -126,7 +126,8 @@ import p2
 import task
 
 def blink(pin, ms)
-  p2.toggle(pin)
+  p2.pin.dir_high(pin)
+  p2.pin.toggle(pin)
   return task.sleep(ms)
 end
 
@@ -134,7 +135,13 @@ h = task.start(blink, 38, 250)
 task.run(100)
 task.stop(h)
 
-ch = p2.cog.spawn(p2.cog.blinker, 38, 250)
+def native_blink(pin, ms)
+  p2.pin.dir_high(pin)
+  p2.pin.toggle(pin)
+  return ms
+end
+
+ch = p2.cog.spawn(native_blink, 38, 250)
 print(p2.cog.info(ch))
 p2.cog.stop(ch)
 ```
@@ -142,7 +149,8 @@ p2.cog.stop(ch)
 Current implementation:
 
 - `task` runs cooperative same-VM tasks one scheduler step at a time.
-- `p2.cog` returns native handles for supported cog-backed work such as blinkers.
+- `p2.cog` returns native handles for supported cog-backed work such as the
+  p38/p39 native-blink closure shape.
 - arbitrary Berry closure execution in an isolated cog remains future work until
   VM, heap, GC, capture, error, and ownership semantics are proven safe.
 - the older `rtos` worker API and SD `taskspin` facade are retired from the

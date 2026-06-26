@@ -1,23 +1,24 @@
 import p2
 
-var led = 56
+var led = p2.status_info()["build"]["led0_pin"]
 
-p2.pin_output(led)
-p2.pin_write(led, 1)
-p2.waitms(250)
+p2.pin.dir_high(led)
+p2.pin.write(led, 1)
+p2.clock.waitms(250)
 
-p2.pin_low(led)
-p2.waitms(250)
+p2.pin.low(led)
+p2.clock.waitms(250)
 
-p2.pin_high(led)
-p2.waitms(250)
+p2.pin.high(led)
+p2.clock.waitms(250)
 
-p2.pin_toggle(led)
-print(p2.pin_read(led))
-p2.waitms(250)
+p2.pin.toggle(led)
+print(p2.pin.read(led))
+p2.clock.waitms(250)
 
-p2.pin_randomize(led)
-print(p2.pin_read(led))
-p2.waitms(250)
+p2.pin.float(led)
+print(p2.pin.read(led))
+p2.clock.waitms(250)
 
-p2.pin_float(led)
+p2.pin.float(led)
+print("p2 pin helpers done")

@@ -1,3 +1,4 @@
+# P2_SD_WRITE_AUDIT max_write_opens=1
 print("P2_SMOKE_BEGIN sd_main")
 
 import os
@@ -17,8 +18,8 @@ assert(!os.path.exists("/berry/main.be"))
 
 var f = open("/berry/main.be", "w")
 f.write("import json\n")
-f.write("var p1_main_data = json.load('{\"answer\":42}')\n")
-f.write("return p1_main_data['answer']\n")
+f.write("var sd_main_data = json.load('{\"answer\":42}')\n")
+f.write("return sd_main_data['answer']\n")
 f.close()
 
 assert(os.path.exists("/berry/main.be"))

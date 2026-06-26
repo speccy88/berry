@@ -7,6 +7,9 @@
 ********************************************************************/
 #include "be_object.h"
 #include "be_gc.h"
+#include "be_string.h"
+#include "be_module.h"
+#include "berry.h"
 
 #if defined(BE_P2_TRACE_GC_MODULE) && BE_P2_TRACE_GC_MODULE
 extern void p2_serial_puts(const char *s);
@@ -16,6 +19,15 @@ extern void p2_serial_puts(const char *s);
 #endif
 
 #if BE_USE_GC_MODULE
+
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+static void gc_module_set_func(bvm *vm, const char *name, bntvfunc func)
+{
+    be_pushntvfunction(vm, func);
+    be_setmember(vm, -2, name);
+    be_pop(vm, 1);
+}
+#endif
 
 static int m_allocated(bvm *vm)
 {
@@ -44,6 +56,18 @@ static int m_collect(bvm *vm)
     GC_MODULE_TRACE("[gcmod] collect return\n");
     be_return_nil(vm);
 }
+
+#if defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS
+void be_cache_gcmodule(bvm *vm)
+{
+    bstring *name = be_newstr(vm, "gc");
+    be_newmodule(vm);
+    gc_module_set_func(vm, "allocated", m_allocated);
+    gc_module_set_func(vm, "collect", m_collect);
+    be_cache_module(vm, name);
+    be_pop(vm, 1);
+}
+#endif
 
 #if !BE_USE_PRECOMPILED_OBJECT || (defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
 be_native_module_attr_table(gc){

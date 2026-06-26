@@ -36,7 +36,7 @@
         be_writestring(__lbuf);         \
     } while (0)
 
-#if BE_USE_DEBUG_MODULE
+#if BE_USE_DEBUG_MODULE || BE_USE_SOLIDIFY_MODULE
 static const char* opc2str(bopcode op)
 {
     static const char* const opc_tab[] = {

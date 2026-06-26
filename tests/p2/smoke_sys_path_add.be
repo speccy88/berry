@@ -1,7 +1,7 @@
 print("P2_SMOKE_BEGIN sys_path_add")
 
 import os
-import sys
+import introspect
 import libstore
 
 def ensure_dir(path)
@@ -33,17 +33,22 @@ def count_path(items, path)
 end
 
 var root = "/berry/sys_path"
-var name = "p1_sys_path_probe"
+var name = "sys_path_probe"
 var file = root + "/" + name + ".be"
+var sys = introspect.module("sys")
+
+if sys == nil
+    print("P2_SMOKE_SKIP sys_path_add")
+else
 
 ensure_dir("/berry")
 ensure_dir(root)
 assert(!os.path.exists(file))
 
 var f = open(file, "w")
-f.write("var p1_sys_path_probe = module('p1_sys_path_probe')\n")
-f.write("p1_sys_path_probe.answer = 42\n")
-f.write("return p1_sys_path_probe\n")
+f.write("var sys_path_probe = module('sys_path_probe')\n")
+f.write("sys_path_probe.answer = 42\n")
+f.write("return sys_path_probe\n")
 f.close()
 
 var before_count = count_path(sys.path(), root)
@@ -62,12 +67,14 @@ assert(info["exists"])
 assert(info["path"] == file)
 assert(info["source_size"] > 0)
 
-import p1_sys_path_probe
-assert(p1_sys_path_probe.answer == 42)
+import sys_path_probe
+assert(sys_path_probe.answer == 42)
 
 try
     os.remove(file)
 except .. as e, m
+end
+
 end
 
 print("P2_SMOKE_PASS sys_path_add")

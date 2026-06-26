@@ -152,7 +152,9 @@ an app is absent.
 
 `libstore.example_path(name)`, `libstore.example_exists(name)`, and
 `libstore.run_example(name)` provide the same source-file helper pattern for
-`.be` examples under `/berry/examples`.
+`.be` examples under `/berry/examples`. For example, `run_example("smartpin_diagnostics")`
+runs `/berry/examples/smartpin_diagnostics.be` when the examples tree has been
+provisioned to SD.
 
 `libstore.pasm_path(name)`, `libstore.pasm_exists(name)`, and
 `libstore.pasm_info(name)` detect staged `/berry/pasm/*.bin` files without

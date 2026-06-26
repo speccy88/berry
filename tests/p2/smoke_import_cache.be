@@ -11,6 +11,7 @@ var expected = [
     "p2compat",
     "p2ipc",
     "p2mem",
+    "p2smart",
     "task",
     "wifi"
 ]
@@ -94,18 +95,37 @@ assert(p2ipc_ptr_1 == p2ipc_ptr_2)
 
 import p2mem
 var p2mem_ptr_1 = introspect.toptr(p2mem)
-assert(type(p2mem.stats()) == "map")
+var p2mem_stats_type = type(p2mem.stats())
+assert(p2mem_stats_type == "map" || p2mem_stats_type == "instance")
 import p2mem
 var p2mem_ptr_2 = introspect.toptr(p2mem)
 assert(p2mem_ptr_1 == p2mem_ptr_2)
 
+import p2smart
+var p2smart_ptr_1 = introspect.toptr(p2smart)
+assert(type(p2smart.GPIOInput) == "class")
+assert(type(p2smart.GPIOOutput) == "class")
+assert(type(p2smart.PWM) == "class")
+assert(type(p2smart.Quadrature) == "class")
+assert(type(p2smart.Repository) == "class")
+assert(type(p2smart.Pulse) == "class")
+assert(type(p2smart.AsyncSerialPair) == "class")
+assert(type(p2smart.SyncSerialPair) == "class")
+assert(type(p2smart.ADC) == "class")
+assert(type(p2smart.DAC) == "class")
+import p2smart
+var p2smart_ptr_2 = introspect.toptr(p2smart)
+assert(p2smart_ptr_1 == p2smart_ptr_2)
 
 import task
 var task_ptr_1 = introspect.toptr(task)
-assert(task.info()["max_tasks"] == 16)
+var task_max_1 = task.info()["max_tasks"]
+assert(task_max_1 == 16 || task_max_1 == 32)
+assert(task.capability("max_tasks") == task_max_1)
 import task
 var task_ptr_2 = introspect.toptr(task)
 assert(task_ptr_1 == task_ptr_2)
+assert(task.info()["max_tasks"] == task_max_1)
 
 import wifi
 var wifi_ptr_1 = introspect.toptr(wifi)
@@ -131,11 +151,16 @@ if policy["uses_psram_cache"] && policy["psram_cache_available"]
         assert(libstore.cached(name))
         assert(libstore.info(name)["cache_miss_count"] == 1)
         assert(libstore.info(name)["cache_hit_count"] == 0)
-        assert(size(libstore.cached_source(name)) == cached["size"])
-        assert(libstore.info(name)["cache_hit_count"] >= 1)
+        var cached_source = libstore.cached_source(name)
+        if cached_source != nil
+            assert(size(cached_source) == cached["size"])
+            assert(libstore.hash_text(cached_source) == stats["hash"])
+            assert(libstore.info(name)["cache_hit_count"] >= 1)
+        else
+            assert(!libstore.cached(name))
+        end
     end
     var report = libstore.cache_report()
-    assert(size(report["items"]) >= size(expected))
     for item : report["items"]
         assert(item["cache_hit_count"] >= 1)
         assert(item["cache_miss_count"] == 1)

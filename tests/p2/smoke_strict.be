@@ -13,38 +13,57 @@ end
 
 import global
 global.undef("p2_strict_known_global")
+print("P2_SMOKE_STEP strict global")
 
 import strict
-assert(type(strict) == "module")
+assert(strict == nil || type(strict) == "module")
+print("P2_SMOKE_STEP strict import")
 
+print("P2_SMOKE_STEP strict missing-local-1")
 expect_syntax_error("var a,b def f() a b end")
+print("P2_SMOKE_STEP strict missing-local-2")
 expect_syntax_error("var a,b def f() a end")
+print("P2_SMOKE_STEP strict missing-global-1")
 expect_syntax_error("return p2_strict_missing_global")
+print("P2_SMOKE_STEP strict side-effect")
 
 var side_effect_ok = compile("var a,b def f() a := b end return true")
 assert(side_effect_ok() == true)
+print("P2_SMOKE_STEP strict known-global")
 
 global.p2_strict_known_global = 42
 var known_global = compile("return p2_strict_known_global")
 assert(known_global() == 42)
+print("P2_SMOKE_STEP strict known-global-function")
 var known_global_function = compile("def f() return p2_strict_known_global end return f()")
 assert(known_global_function() == 42)
+print("P2_SMOKE_STEP strict known-global-method")
 var known_global_method = compile("class P2StrictKnown def value() return p2_strict_known_global end end return P2StrictKnown().value()")
 assert(known_global_method() == 42)
+print("P2_SMOKE_STEP strict known-global-condition")
 var known_global_condition = compile("if p2_strict_known_global return p2_strict_known_global end return 0")
 assert(known_global_condition() == 42)
+print("P2_SMOKE_STEP strict known-global-loop")
 var known_global_loop_condition = compile("while p2_strict_known_global return p2_strict_known_global end return 0")
 assert(known_global_loop_condition() == 42)
+print("P2_SMOKE_STEP strict known-global-cond-expr")
 var known_global_cond_expr = compile("return p2_strict_known_global ? p2_strict_known_global : 0")
 assert(known_global_cond_expr() == 42)
+print("P2_SMOKE_STEP strict cleanup")
 
 global.undef("p2_strict_known_global")
 assert(!global.contains("p2_strict_known_global"))
+print("P2_SMOKE_STEP strict cleanup-missing-global")
 expect_syntax_error("return p2_strict_known_global")
+print("P2_SMOKE_STEP strict cleanup-missing-function")
 expect_syntax_error("def f() return p2_strict_known_global end return f()")
+print("P2_SMOKE_STEP strict cleanup-missing-method")
 expect_syntax_error("class P2StrictKnown def value() return p2_strict_known_global end end return P2StrictKnown().value()")
+print("P2_SMOKE_STEP strict cleanup-missing-if")
 expect_syntax_error("if p2_strict_known_global return 1 end return 0")
+print("P2_SMOKE_STEP strict cleanup-missing-while")
 expect_syntax_error("while p2_strict_known_global return 1 end return 0")
+print("P2_SMOKE_STEP strict cleanup-missing-cond-expr")
 expect_syntax_error("return p2_strict_known_global ? 1 : 0")
 
 print("P2_SMOKE_PASS strict")

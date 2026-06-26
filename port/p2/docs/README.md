@@ -55,15 +55,15 @@ Current hardware verification examples:
 
 - `import p2; print(p2.cogid())` -> `0`
 - `p2.status()` prints the current P2 runtime status table
-- `p2.pinmode(56,p2.OUTPUT); p2.low(56); print(p2.read(56))` -> `0`
-- `p2.high(56); print(p2.read(56))` -> `1`
+- `p2.pin.dir_high(56); p2.pin.low(56); print(p2.pin.read(56))` -> `0`
+- `p2.pin.high(56); print(p2.pin.read(56))` -> `1`
 - `import i2c; i2c.init(25, 24, 400); print(i2c.scan())` -> `[119]`
 - `print(i2c.writeread(0x77, "\xD0", 1))` -> `U` (`0x55`, BMP180 chip id)
 - `import spi; spi.init(10, 11, 12, 13, 0, 1000)` is live-verified
 - `import os; print(os.listdir('/'))` lists the current SD root after filtering stale/non-printable DOSFS entries
 - `f=open('/BERRYTMP.TXT','w'); f.write('sd ok'); f.close(); print(open('/BERRYTMP.TXT','r').read()); os.remove('/BERRYTMP.TXT')` is live-verified
 - `import task; print(task.info())` reports the native cooperative scheduler
-- `import p2; h=p2.cog.spawn(p2.cog.blinker, 38, 250); print(p2.cog.info(h)); p2.cog.stop(h)` starts and stops a supported native cog-backed blinker
+- `import p2; def blinker(pin, ms) p2.pin.dir_high(pin); p2.pin.toggle(pin); return ms end; h=p2.cog.spawn(blinker, 38, 250); print(p2.cog.info(h)); p2.cog.stop(h)` starts and stops a supported native cog-backed blinker
 - `run_file("/examples/core/qsort.be")` runs a `.be` file from the current VM, including from the REPL
 - `import spin2; print(spin2.path()); print(spin2.list())` -> `/spin2` and `[]` on the current SD-visible path
 
@@ -89,7 +89,7 @@ import p2
 import task
 
 def blink(pin, ms)
-    p2.toggle(pin)
+    p2.pin.toggle(pin)
     return task.sleep(ms)
 end
 
@@ -97,7 +97,13 @@ h38 = task.start(blink, 38, 250)
 h39 = task.start(blink, 39, 700)
 task.run(100)
 
-ch = p2.cog.spawn(p2.cog.blinker, 38, 250)
+def blinker(pin, ms)
+    p2.pin.dir_high(pin)
+    p2.pin.toggle(pin)
+    return ms
+end
+
+ch = p2.cog.spawn(blinker, 38, 250)
 print(p2.cog.info(ch))
 p2.cog.stop(ch)
 ```
@@ -126,8 +132,9 @@ compatibility submodules over the current native helpers:
 - `p2.cog.id()`, `p2.cog.check(cog_id)`, `p2.cog.stop(cog_id)`,
   `p2.cog.spawn(closure, ...primitive_args)`,
   `p2.cog.stop(handle)`, `p2.cog.info(handle)`, `p2.cog.info()`,
-  `p2.cog.attention(mask)`, `p2.cog.poll_attention()`, and
-  `p2.cog.wait_attention()`
+  `p2.cog.attention(mask)`, `p2.cog.poll_attention()`,
+  `p2.cog.wait_attention()`, and bounded
+  `p2.cog.wait_attention_result(timeout_us)`
 - `p2.lock.new()`, `p2.lock.ret(lock_id)`, `p2.lock.try(lock_id)`,
   `p2.lock.release(lock_id)`, and `p2.lock.check(lock_id)`
 - `p2.pin.dir_low(pin)`, `p2.pin.dir_high(pin)`, `p2.pin.write(pin, value)`,

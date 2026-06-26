@@ -61,6 +61,11 @@ static unsigned long p2_task_millis_now(void)
     return (unsigned long)(_cnt() / (hz / 1000u));
 }
 
+static int p2_task_time_reached(unsigned long now, unsigned long deadline)
+{
+    return (long)(now - deadline) >= 0;
+}
+
 static const char *p2_task_status_name(int status)
 {
     switch (status) {
@@ -271,8 +276,9 @@ static void p2_task_wake_waiting(void)
         }
         slot->woke_timeout = 0;
         slot->woke_event[0] = '\0';
-        if (slot->wait_kind == P2_TASK_WAIT_SLEEP && now >= slot->deadline) {
+        if (slot->wait_kind == P2_TASK_WAIT_SLEEP && p2_task_time_reached(now, slot->deadline)) {
             slot->status = P2_TASK_READY;
+            slot->woke_timeout = 1;
             ++slot->wakeups;
         } else if (slot->wait_kind == P2_TASK_WAIT_EVENT &&
                 slot->wait_event[0] &&
@@ -282,7 +288,7 @@ static void p2_task_wake_waiting(void)
             ++slot->wakeups;
         } else if (slot->wait_kind == P2_TASK_WAIT_EVENT &&
                 slot->deadline != 0 &&
-                now >= slot->deadline) {
+                p2_task_time_reached(now, slot->deadline)) {
             slot->status = P2_TASK_READY;
             slot->woke_timeout = 1;
             ++slot->wakeups;
@@ -352,15 +358,20 @@ static void p2_task_interpret_result(bvm *vm, int id, int result_index)
     } else if (wait_kind) {
         bmap *map = var_toobj(rv);
         if (!strcmp(wait_kind, "sleep")) {
+            bint ms = p2_task_map_int_or(vm, map, "ms", 0);
+            if (ms < 0) {
+                ms = 0;
+            }
             slot->status = P2_TASK_WAITING;
             slot->wait_kind = P2_TASK_WAIT_SLEEP;
-            slot->deadline = (unsigned long)p2_task_map_int_or(vm, map, "deadline", (bint)p2_task_millis_now());
+            slot->deadline = p2_task_millis_now() + (unsigned long)ms;
         } else {
             const char *event = p2_task_map_str_or(vm, map, "event", wait_kind);
+            bint timeout = p2_task_map_int_or(vm, map, "timeout", -1);
             slot->status = P2_TASK_WAITING;
             slot->wait_kind = P2_TASK_WAIT_EVENT;
             p2_task_copy_event(slot->wait_event, event);
-            slot->deadline = (unsigned long)p2_task_map_int_or(vm, map, "deadline", 0);
+            slot->deadline = timeout >= 0 ? p2_task_millis_now() + (unsigned long)timeout : 0;
         }
     } else {
         slot->status = P2_TASK_READY;
@@ -400,6 +411,7 @@ static int p2_task_call_slot(bvm *vm, int id)
         be_incrtop(vm);
     }
     be_call(vm, argc);
+    be_pop(vm, argc);
     return 1;
 }
 
@@ -454,7 +466,6 @@ static int m_task_sleep(bvm *vm)
     be_newobject(vm, "map");
     p2_task_map_set_string(vm, -1, "_task_wait", "sleep");
     p2_task_map_set_int(vm, -1, "ms", ms);
-    p2_task_map_set_int(vm, -1, "deadline", (bint)(p2_task_millis_now() + (unsigned long)ms));
     be_return(vm);
 }
 
@@ -466,7 +477,7 @@ static int m_task_wait(bvm *vm)
     p2_task_map_set_string(vm, -1, "_task_wait", "event");
     p2_task_map_set_string(vm, -1, "event", event);
     if (timeout >= 0) {
-        p2_task_map_set_int(vm, -1, "deadline", (bint)(p2_task_millis_now() + (unsigned long)timeout));
+        p2_task_map_set_int(vm, -1, "timeout", timeout);
     }
     be_return(vm);
 }

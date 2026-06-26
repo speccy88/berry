@@ -76,7 +76,7 @@ Current note: the older `rtos`, `worker`, `threads`, and `taskspin` direction ha
 - Keep `bmapkey` bit-fields C-standard compatible for Cake 0.13.24.
 - Add a documented command for building against a source-built Catalina cache:
  ```sh
- make p2 TOOLCHAIN=catalina CATALINA_DIR=/Users/fred/Documents/Code/catalina-speccy88
+ make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
  ```
 - Add a repeatable helper script for building Catalina `v8.8.9` binaries and P2 COMPACT libraries from source, if we decide this should become supported workflow.
 

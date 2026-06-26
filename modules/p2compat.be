@@ -162,11 +162,64 @@ p2compat._items = [
         "summary": "host threads are not exposed; future multicog Berry work must use isolated VM/cog ownership"
     },
     {
+        "name": "video_output",
+        "status": p2compat.UNSUPPORTED,
+        "summary": "VGA, streamer video, and framebuffer output are not exposed by the current default P2 build"
+    },
+    {
+        "name": "vga_demo",
+        "status": p2compat.UNSUPPORTED,
+        "summary": "no backed VGA test-pattern demo is shipped yet; examples report this explicitly instead of drawing a fake pattern"
+    },
+    {
+        "name": "usb_hid",
+        "status": p2compat.UNSUPPORTED,
+        "summary": "USB keyboard, mouse, and HID host/device helpers are not exposed by the current default P2 build"
+    },
+    {
+        "name": "usb_demo",
+        "status": p2compat.UNSUPPORTED,
+        "summary": "no backed USB keyboard/mouse demo is shipped yet; examples report this explicitly instead of faking input"
+    },
+    {
         "name": "psram_heap",
         "status": p2compat.PARTIAL,
         "summary": "XMM uses a pointer-safe lower PSRAM heap; upper PSRAM is explicit cache/block storage"
+    },
+    {
+        "name": "child_vm_primitive_transfer",
+        "status": p2compat.PARTIAL,
+        "summary": "child VM probes copy nil, bool, int, and bounded string values by value across the VM boundary"
+    },
+    {
+        "name": "child_vm_named_closure_bridge",
+        "status": p2compat.STAGED,
+        "summary": "non-captured parent closures can be used only as validated function-name selectors for child VM calls; closure objects are not transferred"
+    },
+    {
+        "name": "child_vm_captured_closure_transfer",
+        "status": p2compat.UNSUPPORTED,
+        "summary": "captured closures are rejected because live closure/proto/upvalue/GC state is not serializable across VMs"
+    },
+    {
+        "name": "child_vm_live_object_transfer",
+        "status": p2compat.UNSUPPORTED,
+        "summary": "list, map, instance, function, native pointer, file handle, and hardware-resource object graphs are not copied across child VM boundaries"
+    },
+    {
+        "name": "child_vm_transfer_policy",
+        "status": p2compat.STAGED,
+        "summary": "structured child-VM transfer policy reports copyable primitive types, staged closure-name bridge behavior, and rejected live-object categories"
     }
 ]
+
+p2compat._copy_list = def(values)
+    var out = []
+    for value : values
+        out.push(value)
+    end
+    return out
+end
 
 p2compat._copy_item = def(item)
     return {
@@ -187,9 +240,11 @@ end
 p2compat.build = def()
     try
         var status = p2.status_info()
-        if type(status) == "map" && status.contains("build") && type(status["build"]) == "map" {
-            return status["build"]
-        }
+        if type(status) == "map"
+            if status.contains("build") && type(status["build"]) == "map"
+                return status["build"]
+            end
+        end
     except .. as e, m
     end
     return {}
@@ -208,6 +263,137 @@ p2compat.bytecode = def()
         "execution": loader && validator,
         "default_source_fallback": !(loader && validator)
     }
+end
+
+p2compat.child_vm_transfer_policy = def()
+    return {
+        "model": "isolated_child_vm_transfer_policy",
+        "primitive_copy": p2compat.PARTIAL,
+        "copyable_types": p2compat._copy_list(["nil", "bool", "int", "string"]),
+        "bounded_string_copy": true,
+        "string_policy": "bounded_copy_by_value",
+        "closure_name_bridge": p2compat.STAGED,
+        "closure_name_policy": "validated_selector_only_no_closure_object_transfer",
+        "captured_closure_transfer": p2compat.UNSUPPORTED,
+        "live_object_transfer": p2compat.UNSUPPORTED,
+        "rejected_live_types": p2compat._copy_list(["list", "map", "instance", "function", "native_pointer", "file_handle", "hardware_resource"]),
+        "ownership_transfer": false,
+        "shared_mutable_state": false,
+        "resource_transfer": false,
+        "default_policy": "reject_unlisted_values",
+        "serialization_policy": "explicit_copy_policy_required",
+        "ipc_policy": "use_explicit_p2ipc_primitives_for_sharing",
+        "status_capabilities": p2compat._copy_list([
+            "child_vm_primitive_transfer",
+            "child_vm_named_closure_bridge",
+            "child_vm_captured_closure_transfer",
+            "child_vm_live_object_transfer"
+        ])
+    }
+end
+
+p2compat.required_capability_names = def()
+    return p2compat._copy_list([
+        "sd_filesystem",
+        "sd_source_import",
+        "package_import",
+        "sys_module",
+        "sd_main",
+        "compiled_bytecode",
+        "bytecode_cache_emit",
+        "bytecode_bulk_emit",
+        "bytecode_bulk_plan_exports",
+        "bytecode_emit_reason_summary",
+        "bytecode_emit_provision_plan",
+        "bytecode_emit_candidate_lists",
+        "bytecode_emit_candidate_exports",
+        "bytecode_validator",
+        "bytecode_load_api",
+        "bytecode_status_api",
+        "bytecode_inventory_api",
+        "bytecode_summary_api",
+        "bytecode_reason_summary",
+        "bytecode_candidate_lists",
+        "bytecode_candidate_exports",
+        "bytecode_provision_plan",
+        "bec_manifest",
+        "sys_path",
+        "environment",
+        "subprocess",
+        "network_sockets",
+        "native_threads",
+        "video_output",
+        "vga_demo",
+        "usb_hid",
+        "usb_demo",
+        "psram_heap",
+        "child_vm_primitive_transfer",
+        "child_vm_named_closure_bridge",
+        "child_vm_captured_closure_transfer",
+        "child_vm_live_object_transfer",
+        "child_vm_transfer_policy"
+    ])
+end
+
+p2compat.required_child_vm_policy_keys = def()
+    return p2compat._copy_list([
+        "model",
+        "primitive_copy",
+        "copyable_types",
+        "bounded_string_copy",
+        "string_policy",
+        "closure_name_bridge",
+        "closure_name_policy",
+        "captured_closure_transfer",
+        "live_object_transfer",
+        "rejected_live_types",
+        "ownership_transfer",
+        "shared_mutable_state",
+        "resource_transfer",
+        "default_policy",
+        "serialization_policy",
+        "ipc_policy",
+        "status_capabilities"
+    ])
+end
+
+p2compat.child_vm_copyable_type = def(name)
+    if type(name) != "string"
+        return false
+    end
+    for item : p2compat.child_vm_transfer_policy()["copyable_types"]
+        if item == name
+            return true
+        end
+    end
+    return false
+end
+
+p2compat.child_vm_rejected_type = def(name)
+    if type(name) != "string"
+        return false
+    end
+    for item : p2compat.child_vm_transfer_policy()["rejected_live_types"]
+        if item == name
+            return true
+        end
+    end
+    return false
+end
+
+p2compat.child_vm_policy = def(name)
+    if type(name) != "string"
+        return nil
+    end
+    var policy = p2compat.child_vm_transfer_policy()
+    if !policy.contains(name)
+        return nil
+    end
+    var value = policy[name]
+    if type(value) == "list"
+        return p2compat._copy_list(value)
+    end
+    return value
 end
 
 p2compat.find = def(name)
@@ -263,6 +449,16 @@ p2compat.names_by_status = def(status)
     return out
 end
 
+p2compat.status_report = def(status)
+    var names = p2compat.names_by_status(status)
+    return {
+        "status": status,
+        "known": p2compat.status_known(status),
+        "count": size(names),
+        "names": names
+    }
+end
+
 p2compat.report = def()
     var status_names = p2compat.statuses()
     var by_status = {}
@@ -283,6 +479,8 @@ p2compat.audit = def()
     var seen = {}
     var duplicates = []
     var unknown_statuses = []
+    var missing_capability_names = []
+    var missing_child_vm_policy_keys = []
     var counted = {
         "supported": 0,
         "partial": 0,
@@ -303,19 +501,38 @@ p2compat.audit = def()
             unknown_statuses.push(status)
         end
     end
+    for name : p2compat.required_capability_names()
+        if !seen.contains(name)
+            missing_capability_names.push(name)
+        end
+    end
     var summary = p2compat.summary()
-    var counts_match = (
-        counted[p2compat.SUPPORTED] == summary[p2compat.SUPPORTED] &&
-        counted[p2compat.PARTIAL] == summary[p2compat.PARTIAL] &&
-        counted[p2compat.STAGED] == summary[p2compat.STAGED] &&
-        counted[p2compat.UNSUPPORTED] == summary[p2compat.UNSUPPORTED]
-    )
+    var counts_match = counted[p2compat.SUPPORTED] == summary[p2compat.SUPPORTED]
+    counts_match = counts_match && counted[p2compat.PARTIAL] == summary[p2compat.PARTIAL]
+    counts_match = counts_match && counted[p2compat.STAGED] == summary[p2compat.STAGED]
+    counts_match = counts_match && counted[p2compat.UNSUPPORTED] == summary[p2compat.UNSUPPORTED]
+    var child_policy = p2compat.child_vm_transfer_policy()
+    for key : p2compat.required_child_vm_policy_keys()
+        if !child_policy.contains(key)
+            missing_child_vm_policy_keys.push(key)
+        end
+    end
+    var child_policy_match = child_policy["primitive_copy"] == p2compat.status("child_vm_primitive_transfer")
+    child_policy_match = child_policy_match && child_policy["closure_name_bridge"] == p2compat.status("child_vm_named_closure_bridge")
+    child_policy_match = child_policy_match && child_policy["captured_closure_transfer"] == p2compat.status("child_vm_captured_closure_transfer")
+    child_policy_match = child_policy_match && child_policy["live_object_transfer"] == p2compat.status("child_vm_live_object_transfer")
+    child_policy_match = child_policy_match && !child_policy["ownership_transfer"]
+    child_policy_match = child_policy_match && !child_policy["shared_mutable_state"]
+    child_policy_match = child_policy_match && !child_policy["resource_transfer"]
     return {
-        "ok": size(duplicates) == 0 && size(unknown_statuses) == 0 && counts_match,
+        "ok": size(duplicates) == 0 && size(unknown_statuses) == 0 && size(missing_capability_names) == 0 && size(missing_child_vm_policy_keys) == 0 && counts_match && child_policy_match,
         "count": size(p2compat._items),
         "summary": summary,
         "counted": counted,
         "counts_match": counts_match,
+        "child_vm_transfer_policy_match": child_policy_match,
+        "missing_capability_names": missing_capability_names,
+        "missing_child_vm_policy_keys": missing_child_vm_policy_keys,
         "duplicates": duplicates,
         "unknown_statuses": unknown_statuses
     }
@@ -330,8 +547,17 @@ p2compat.audit_problems = def()
     if size(audit["unknown_statuses"]) > 0
         out.push("unknown_capability_statuses")
     end
+    if size(audit["missing_capability_names"]) > 0
+        out.push("missing_capability_names")
+    end
+    if size(audit["missing_child_vm_policy_keys"]) > 0
+        out.push("missing_child_vm_policy_keys")
+    end
     if !audit["counts_match"]
         out.push("summary_count_mismatch")
+    end
+    if !audit["child_vm_transfer_policy_match"]
+        out.push("child_vm_transfer_policy_mismatch")
     end
     return out
 end

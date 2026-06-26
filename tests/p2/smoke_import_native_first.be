@@ -1,3 +1,4 @@
+# P2_SD_WRITE_AUDIT max_write_opens=2
 print("P2_SMOKE_BEGIN import_native_first")
 
 import os
@@ -36,13 +37,13 @@ end
 import json
 var decoded = json.load('{"native":true}')
 assert(decoded["native"])
-assert(!json.contains("shadowed"))
+assert(!introspect.contains(json, "shadowed"))
 var json_ptr = introspect.toptr(json)
 
 import json as json_again
 var decoded_again = json_again.load('{"native_again":true}')
 assert(decoded_again["native_again"])
-assert(!json_again.contains("shadowed"))
+assert(!introspect.contains(json_again, "shadowed"))
 assert(introspect.toptr(json_again) == json_ptr)
 
 for shadow : created

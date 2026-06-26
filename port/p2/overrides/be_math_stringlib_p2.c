@@ -1,5 +1,6 @@
 #include "berry.h"
 #include "be_module.h"
+#include "be_strlib.h"
 #include "be_string.h"
 
 #include <ctype.h>
@@ -27,6 +28,38 @@ static void p2_module_set_real(bvm *vm, const char *name, breal value)
     be_pushreal(vm, value);
     be_setmember(vm, -2, name);
     be_pop(vm, 1);
+}
+
+static void p2_math_map_set_bool(bvm *vm, const char *name, int value)
+{
+    be_pushstring(vm, name);
+    be_pushbool(vm, value ? btrue : bfalse);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+}
+
+static void p2_math_map_set_int(bvm *vm, const char *name, bint value)
+{
+    be_pushstring(vm, name);
+    be_pushint(vm, value);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+}
+
+static void p2_math_map_set_real(bvm *vm, const char *name, breal value)
+{
+    be_pushstring(vm, name);
+    be_pushreal(vm, value);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+}
+
+static void p2_math_map_set_string(bvm *vm, const char *name, const char *value)
+{
+    be_pushstring(vm, name);
+    be_pushstring(vm, value);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
 }
 
 static const char *p2_find_bounded(const char *s, size_t slen, const char *p, size_t plen)
@@ -127,7 +160,12 @@ static breal p2_math_inf_value(void)
 
 static breal p2_math_nan_value(void)
 {
-    return P2_MATH_NAN_SENTINEL;
+    union {
+        uint32_t u;
+        breal f;
+    } v;
+    v.u = 0x7FC00000UL;
+    return v.f;
 }
 
 static bint p2_math_floor_int(breal x)
@@ -155,13 +193,18 @@ static bint p2_math_round_int(breal x)
 
 static uint32_t p2_math_rad_to_turn(breal rad)
 {
-    while (rad >= P2_MATH_PI) {
+    breal scaled;
+    while (rad > P2_MATH_PI) {
         rad -= P2_MATH_TWO_PI;
     }
     while (rad < -P2_MATH_PI) {
         rad += P2_MATH_TWO_PI;
     }
-    return (uint32_t)((int32_t)(rad * (P2_MATH_TURN / P2_MATH_TWO_PI)));
+    scaled = rad * (P2_MATH_TURN / P2_MATH_TWO_PI);
+    if (scaled >= (breal)2147483647.0 || scaled <= (breal)-2147483648.0) {
+        return 0x80000000UL;
+    }
+    return (uint32_t)((int32_t)scaled);
 }
 
 static breal p2_math_turn_to_rad(uint32_t turn)
@@ -379,12 +422,21 @@ static int p2_math_abs(bvm *vm)
 
 static int p2_math_sqrt(bvm *vm)
 {
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (be_top(vm) >= 1 && be_isint(vm, 1)) {
         bint x = be_toint(vm, 1);
         if (x < 0) {
             be_pushnil(vm);
         } else {
-            be_pushint(vm, (bint)p2_math_isqrt_ulong((unsigned long)x));
+            unsigned long root = p2_math_isqrt_ulong((unsigned long)x);
+            if (root * root == (unsigned long)x) {
+                be_pushint(vm, (bint)root);
+            } else {
+                be_pushreal(vm, p2_math_sqrt_real((breal)x));
+            }
         }
     } else if (be_top(vm) >= 1 && be_isreal(vm, 1)) {
         breal x = be_toreal(vm, 1);
@@ -417,8 +469,7 @@ static int p2_math_minmax(bvm *vm, int is_min)
     for (i = 2; i <= top; ++i) {
         breal v_real;
         if (!p2_math_arg_real(vm, i, &v_real)) {
-            be_pushnil(vm);
-            be_return(vm);
+            be_raise(vm, "type_error", "min/max arguments must be numbers");
         }
         if (be_isreal(vm, i)) {
             any_real = 1;
@@ -467,6 +518,10 @@ static int p2_math_isinf(bvm *vm)
 static int p2_math_floor(bvm *vm)
 {
     breal x;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x)) {
         be_return_nil(vm);
     }
@@ -477,6 +532,10 @@ static int p2_math_floor(bvm *vm)
 static int p2_math_ceil(bvm *vm)
 {
     breal x;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x)) {
         be_return_nil(vm);
     }
@@ -487,6 +546,10 @@ static int p2_math_ceil(bvm *vm)
 static int p2_math_round(bvm *vm)
 {
     breal x;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x)) {
         be_return_nil(vm);
     }
@@ -497,6 +560,10 @@ static int p2_math_round(bvm *vm)
 static int p2_math_sin(bvm *vm)
 {
     breal x, s, c;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x)) {
         be_return_nil(vm);
     }
@@ -508,6 +575,10 @@ static int p2_math_sin(bvm *vm)
 static int p2_math_cos(bvm *vm)
 {
     breal x, s, c;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x)) {
         be_return_nil(vm);
     }
@@ -519,6 +590,10 @@ static int p2_math_cos(bvm *vm)
 static int p2_math_tan(bvm *vm)
 {
     breal x, s, c;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x)) {
         be_return_nil(vm);
     }
@@ -534,6 +609,10 @@ static int p2_math_tan(bvm *vm)
 static int p2_math_atan2_func(bvm *vm)
 {
     breal y, x;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &y) || !p2_math_arg_real(vm, 2, &x)) {
         be_return_nil(vm);
     }
@@ -544,6 +623,10 @@ static int p2_math_atan2_func(bvm *vm)
 static int p2_math_atan(bvm *vm)
 {
     breal x;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x)) {
         be_return_nil(vm);
     }
@@ -554,6 +637,10 @@ static int p2_math_atan(bvm *vm)
 static int p2_math_asin(bvm *vm)
 {
     breal x, root;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x) || x < (breal)-1.0 || x > (breal)1.0) {
         be_return_nil(vm);
     }
@@ -565,6 +652,10 @@ static int p2_math_asin(bvm *vm)
 static int p2_math_acos(bvm *vm)
 {
     breal x, root;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x) || x < (breal)-1.0 || x > (breal)1.0) {
         be_return_nil(vm);
     }
@@ -576,6 +667,10 @@ static int p2_math_acos(bvm *vm)
 static int p2_math_exp(bvm *vm)
 {
     breal x;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x)) {
         be_return_nil(vm);
     }
@@ -586,6 +681,10 @@ static int p2_math_exp(bvm *vm)
 static int p2_math_log(bvm *vm)
 {
     breal x;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x) || x <= (breal)0.0) {
         be_return_nil(vm);
     }
@@ -596,6 +695,10 @@ static int p2_math_log(bvm *vm)
 static int p2_math_log10(bvm *vm)
 {
     breal x;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x) || x <= (breal)0.0) {
         be_return_nil(vm);
     }
@@ -612,7 +715,17 @@ static int p2_math_pow(bvm *vm)
     bint result_int = 1;
     int neg_exp = 0;
 
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &base_real) || !p2_math_arg_real(vm, 2, &exp_real)) {
+        be_return_nil(vm);
+    }
+
+    exp_int = p2_math_round_int(exp_real);
+    if (base_real < (breal)0.0 &&
+            p2_math_abs_real(exp_real - (breal)exp_int) >= (breal)0.001) {
         be_return_nil(vm);
     }
 
@@ -638,7 +751,6 @@ static int p2_math_pow(bvm *vm)
         be_return(vm);
     }
 
-    exp_int = p2_math_round_int(exp_real);
     if (p2_math_abs_real(exp_real - (breal)exp_int) < (breal)0.001 &&
             exp_int > (bint)-64 && exp_int < (bint)64) {
         bint n = exp_int;
@@ -675,6 +787,10 @@ static int p2_math_pow(bvm *vm)
 static int p2_math_sinh(bvm *vm)
 {
     breal x, ep, em;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x)) {
         be_return_nil(vm);
     }
@@ -687,6 +803,10 @@ static int p2_math_sinh(bvm *vm)
 static int p2_math_cosh(bvm *vm)
 {
     breal x, ep, em;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x)) {
         be_return_nil(vm);
     }
@@ -699,6 +819,10 @@ static int p2_math_cosh(bvm *vm)
 static int p2_math_tanh(bvm *vm)
 {
     breal x, ep, em;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x)) {
         be_return_nil(vm);
     }
@@ -711,6 +835,10 @@ static int p2_math_tanh(bvm *vm)
 static int p2_math_deg(bvm *vm)
 {
     breal x;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x)) {
         be_return_nil(vm);
     }
@@ -721,6 +849,10 @@ static int p2_math_deg(bvm *vm)
 static int p2_math_rad(bvm *vm)
 {
     breal x;
+    if (be_top(vm) < 1) {
+        be_pushint(vm, 0);
+        be_return(vm);
+    }
     if (!p2_math_arg_real(vm, 1, &x)) {
         be_return_nil(vm);
     }
@@ -751,6 +883,28 @@ static int p2_math_rand(bvm *vm)
         p2_math_rand_state = (bint)7919;
     }
     be_pushint(vm, p2_math_rand_state);
+    be_return(vm);
+}
+
+static int p2_math_accel_info(bvm *vm)
+{
+    be_newobject(vm, "map");
+    p2_math_map_set_bool(vm, "p2", 1);
+    p2_math_map_set_bool(vm, "cordic", 1);
+    p2_math_map_set_string(vm, "backend", "p2_cordic");
+    p2_math_map_set_string(vm, "reason", "P2 CORDIC-backed trig and inverse trig");
+    p2_math_map_set_int(vm, "scale", (bint)P2_MATH_CORDIC_SCALE);
+    p2_math_map_set_real(vm, "turn", P2_MATH_TURN);
+    p2_math_map_set_bool(vm, "sin", 1);
+    p2_math_map_set_bool(vm, "cos", 1);
+    p2_math_map_set_bool(vm, "tan", 1);
+    p2_math_map_set_bool(vm, "atan2", 1);
+    p2_math_map_set_bool(vm, "asin", 1);
+    p2_math_map_set_bool(vm, "acos", 1);
+    p2_math_map_set_bool(vm, "sqrt", 0);
+    p2_math_map_set_bool(vm, "exp", 0);
+    p2_math_map_set_bool(vm, "log", 0);
+    be_pop(vm, 1);
     be_return(vm);
 }
 
@@ -913,45 +1067,6 @@ static int p2_string_replace(bvm *vm)
     be_return_nil(vm);
 }
 
-static int p2_string_format(bvm *vm)
-{
-    if (be_top(vm) >= 1 && be_isstring(vm, 1)) {
-        const char *fmt = be_tostring(vm, 1);
-        char out[256];
-        size_t oi = 0;
-        int arg = 2;
-        while (*fmt && oi + 1 < sizeof(out)) {
-            if (*fmt != '%' || fmt[1] == '\0') {
-                out[oi++] = *fmt++;
-                continue;
-            }
-            ++fmt;
-            if (*fmt == '%') {
-                out[oi++] = *fmt++;
-            } else if ((*fmt == 'd' || *fmt == 'i') && arg <= be_top(vm) && be_isint(vm, arg)) {
-                char tmp[24];
-                snprintf(tmp, sizeof(tmp), "%ld", (long)be_toint(vm, arg++));
-                for (const char *p = tmp; *p && oi + 1 < sizeof(out); ++p) {
-                    out[oi++] = *p;
-                }
-                ++fmt;
-            } else if (*fmt == 's' && arg <= be_top(vm)) {
-                const char *v = be_tostring(vm, arg++);
-                while (*v && oi + 1 < sizeof(out)) {
-                    out[oi++] = *v++;
-                }
-                ++fmt;
-            } else {
-                out[oi++] = '%';
-            }
-        }
-        out[oi] = '\0';
-        be_pushstring(vm, out);
-        be_return(vm);
-    }
-    be_return_nil(vm);
-}
-
 static int p2_string_hex(bvm *vm)
 {
     if (be_top(vm) >= 1 && be_isint(vm, 1)) {
@@ -1016,6 +1131,58 @@ static int p2_string_toupper(bvm *vm)
     return p2_string_case(vm, 1);
 }
 
+static int p2_string_tr(bvm *vm)
+{
+    if (be_top(vm) == 3 && be_isstring(vm, 1) && be_isstring(vm, 2) && be_isstring(vm, 3)) {
+        const char *s = be_tostring(vm, 1);
+        const char *from = be_tostring(vm, 2);
+        const char *to = be_tostring(vm, 3);
+        bint len = be_strlen(vm, 1);
+        int buffer_index = be_top(vm) + 1;
+        char *buf = be_pushbuffer(vm, (size_t)len);
+        char *dst = buf;
+        for (bint i = 0; i < len; ++i) {
+            const char *match = strchr(from, s[i]);
+            if (match) {
+                size_t idx = (size_t)(match - from);
+                size_t to_len = strlen(to);
+                if (idx < to_len) {
+                    *dst++ = to[idx];
+                }
+            } else {
+                *dst++ = s[i];
+            }
+        }
+        be_pushnstring(vm, buf, (size_t)(dst - buf));
+        be_remove(vm, buffer_index);
+        be_return(vm);
+    }
+    be_return_nil(vm);
+}
+
+static int p2_string_escape(bvm *vm)
+{
+    int top = be_top(vm);
+    if (top >= 1 && be_isstring(vm, 1)) {
+        int quote = 'u';
+        if (top >= 2 && be_isbool(vm, 2) && be_tobool(vm, 2)) {
+            quote = 'x';
+        }
+        be_toescape(vm, 1, quote);
+        be_pushvalue(vm, 1);
+        be_return(vm);
+    }
+    be_return_nil(vm);
+}
+
+static int p2_char_equal(char a, char b, int case_insensitive)
+{
+    if (case_insensitive) {
+        return tolower((unsigned char)a) == tolower((unsigned char)b);
+    }
+    return a == b;
+}
+
 static int p2_string_startswith(bvm *vm)
 {
     int ok = 0;
@@ -1024,7 +1191,11 @@ static int p2_string_startswith(bvm *vm)
         const char *p = be_tostring(vm, 2);
         bint slen = be_strlen(vm, 1);
         bint plen = be_strlen(vm, 2);
-        ok = plen <= slen && p2_find_bounded(s, (size_t)plen, p, (size_t)plen) == s;
+        int case_insensitive = be_top(vm) >= 3 && be_isbool(vm, 3) && be_tobool(vm, 3);
+        ok = plen <= slen;
+        for (bint i = 0; ok && i < plen; ++i) {
+            ok = p2_char_equal(s[i], p[i], case_insensitive);
+        }
     }
     be_pushbool(vm, ok ? btrue : bfalse);
     be_return(vm);
@@ -1038,7 +1209,11 @@ static int p2_string_endswith(bvm *vm)
         const char *p = be_tostring(vm, 2);
         bint slen = be_strlen(vm, 1);
         bint plen = be_strlen(vm, 2);
-        ok = plen <= slen && p2_find_bounded(s + slen - plen, (size_t)plen, p, (size_t)plen) == s + slen - plen;
+        int case_insensitive = be_top(vm) >= 3 && be_isbool(vm, 3) && be_tobool(vm, 3);
+        ok = plen <= slen;
+        for (bint i = 0; ok && i < plen; ++i) {
+            ok = p2_char_equal(s[slen - plen + i], p[i], case_insensitive);
+        }
     }
     be_pushbool(vm, ok ? btrue : bfalse);
     be_return(vm);
@@ -1073,17 +1248,18 @@ static void p2_install_math_attrs(bvm *vm)
     p2_module_set_func(vm, "srand", p2_math_srand);
     p2_module_set_func(vm, "rand", p2_math_rand);
     p2_module_set_func(vm, "pow", p2_math_pow);
+    p2_module_set_func(vm, "accel_info", p2_math_accel_info);
     p2_module_set_real(vm, "pi", P2_MATH_PI);
     p2_module_set_real(vm, "e", P2_MATH_E);
     p2_module_set_real(vm, "inf", p2_math_inf_value());
-    p2_module_set_int(vm, "nan", (bint)-1234567);
+    p2_module_set_real(vm, "nan", p2_math_nan_value());
     p2_module_set_int(vm, "imax", (bint)2147483647);
     p2_module_set_int(vm, "imin", (bint)(-2147483647 - 1));
 }
 
 static void p2_install_string_attrs(bvm *vm)
 {
-    p2_module_set_func(vm, "format", p2_string_format);
+    p2_module_set_func(vm, "format", be_str_format);
     p2_module_set_func(vm, "count", p2_string_count);
     p2_module_set_func(vm, "split", p2_string_split);
     p2_module_set_func(vm, "find", p2_string_find);
@@ -1092,8 +1268,8 @@ static void p2_install_string_attrs(bvm *vm)
     p2_module_set_func(vm, "char", p2_string_char);
     p2_module_set_func(vm, "tolower", p2_string_tolower);
     p2_module_set_func(vm, "toupper", p2_string_toupper);
-    p2_module_set_func(vm, "tr", p2_math_nil);
-    p2_module_set_func(vm, "escape", p2_math_nil);
+    p2_module_set_func(vm, "tr", p2_string_tr);
+    p2_module_set_func(vm, "escape", p2_string_escape);
     p2_module_set_func(vm, "replace", p2_string_replace);
     p2_module_set_func(vm, "startswith", p2_string_startswith);
     p2_module_set_func(vm, "endswith", p2_string_endswith);

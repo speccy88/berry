@@ -52,7 +52,7 @@ class P2SolidifyChild : P2SolidifyBase
     end
 
     def value()
-        return super().value() + 23
+        return super(self).value() + 23
     end
 end
 

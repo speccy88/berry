@@ -1,5 +1,15 @@
 print("P2_SMOKE_BEGIN list_core")
 
+def expect_stop_iteration(f)
+    var caught = false
+    try
+        f()
+    except .. as e, m
+        caught = e == "stop_iteration"
+    end
+    assert(caught)
+end
+
 var api = []
 assert(type(api.size) == "function")
 assert(type(api.iter) == "function")
@@ -22,7 +32,7 @@ assert(it() == 2)
 assert(it() == 3)
 assert(it() == 4)
 assert(it() == 5)
-assert(it() == nil)
+expect_stop_iteration(it)
 
 var t = [0, 1, 2, 3]
 var copy = t.copy()

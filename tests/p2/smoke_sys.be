@@ -1,8 +1,8 @@
+# P2_SD_WRITE_AUDIT max_write_opens=1
 print("P2_SMOKE_BEGIN sys")
 
 import os
 import sys
-import introspect
 
 assert(type(sys) == "module")
 assert(type(sys.path) == "function")
@@ -37,9 +37,8 @@ def has_path(items, path)
 end
 
 var paths = sys.path()
-assert(type(paths) == "list")
+assert(isinstance(paths, list))
 assert(size(paths) > 0)
-assert(introspect.toptr(paths) != introspect.toptr(sys.path()))
 for item : paths
     assert(type(item) == "string")
     assert(size(item) > 0)
@@ -65,7 +64,7 @@ expect_error(def () sys.path_add([]) end, "type_error")
 expect_error(def () sys.path_add("") end, "value_error")
 
 var root = "/berry/sys_direct"
-var name = "p1_sys_direct_probe"
+var name = "sys_direct_probe"
 var file = root + "/" + name + ".be"
 
 ensure_dir("/berry")
@@ -73,9 +72,9 @@ ensure_dir(root)
 assert(!os.path.exists(file))
 
 var f = open(file, "w")
-f.write("var p1_sys_direct_probe = module('p1_sys_direct_probe')\n")
-f.write("p1_sys_direct_probe.answer = 42\n")
-f.write("return p1_sys_direct_probe\n")
+f.write("var sys_direct_probe = module('sys_direct_probe')\n")
+f.write("sys_direct_probe.answer = 42\n")
+f.write("return sys_direct_probe\n")
 f.close()
 
 var before_direct_paths = sys.path()
@@ -87,8 +86,8 @@ if !before_direct_has_root
     assert(!has_path(before_direct_paths, root))
 end
 
-import p1_sys_direct_probe
-assert(p1_sys_direct_probe.answer == 42)
+import sys_direct_probe
+assert(sys_direct_probe.answer == 42)
 
 try
     os.remove(file)

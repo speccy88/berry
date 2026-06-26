@@ -695,6 +695,23 @@ static void p2_fs_info_capture_volinfo(berry_p2_fs_info *info)
 }
 #endif
 
+static void p2_fs_info_capture_mounted(berry_p2_fs_info *info)
+{
+    if (!info || !p2_fs_mounted) {
+        return;
+    }
+    info->mount_result = 0;
+    info->volinfo_result = DFS_OK;
+    info->filesystem_type = (int)__vi.filesystem;
+    if (__pstart != (uint32_t)-1) {
+        info->partition_start = (int)__pstart;
+        info->partition_size = (int)__vi.numsecs;
+    }
+#if BE_P2_ENABLE_SD_DIAGNOSTICS
+    p2_fs_info_capture_volinfo(info);
+#endif
+}
+
 static int p2_fs_sector_signature(const uint8_t *scratch)
 {
     return ((int)scratch[511] << 8) | (int)scratch[510];
@@ -915,13 +932,7 @@ static int p2_fs_mount_fallback(berry_p2_fs_info *info)
 static int p2_fs_mount_core(berry_p2_fs_info *info)
 {
     if (p2_fs_mounted) {
-        if (info) {
-            info->mount_result = 0;
-            info->filesystem_type = (int)__vi.filesystem;
-#if BE_P2_ENABLE_SD_DIAGNOSTICS
-            p2_fs_info_capture_volinfo(info);
-#endif
-        }
+        p2_fs_info_capture_mounted(info);
         return 0;
     }
 
@@ -1038,8 +1049,7 @@ void p2_fs_info(const char *path, int write_probe, berry_p2_fs_info *info)
         }
     } else {
         info->sd_init_result = 0;
-        info->mount_result = 0;
-        info->filesystem_type = (int)__vi.filesystem;
+        p2_fs_info_capture_mounted(info);
     }
     info->mounted = p2_fs_mounted ? 1 : 0;
     if (info->mount_result != 0) {
@@ -1607,7 +1617,15 @@ BERRY_API void be_writebuffer(const char *buffer, size_t length)
 
 BERRY_API char *be_readstring(char *buffer, size_t size)
 {
-    return serial_readline(buffer, size, NULL);
+    char *result = serial_readline(buffer, size, NULL);
+    if (result && size > 0) {
+        size_t len = strlen(buffer);
+        if (len + 1 < size) {
+            buffer[len] = '\n';
+            buffer[len + 1] = '\0';
+        }
+    }
+    return result;
 }
 
 char *p2_readline(const char *prompt)

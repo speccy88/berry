@@ -48,7 +48,7 @@ BERRY_LOCAL const bntvmodule_t * const be_module_table[] = {
 #if BE_USE_GC_MODULE
     &be_native_module(gc),
 #endif
-#if BE_USE_SOLIDIFY_MODULE
+#if BE_USE_SOLIDIFY_MODULE && !(defined(BE_P2_CUSTOM_PRECOMPILED_BUILTINS) && BE_P2_CUSTOM_PRECOMPILED_BUILTINS)
     &be_native_module(solidify),
 #endif
 #if BE_USE_INTROSPECT_MODULE

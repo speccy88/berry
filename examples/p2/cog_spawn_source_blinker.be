@@ -1,22 +1,33 @@
 # Source-backed P2 cog blinker example.
-# This path runs real Berry source in an isolated child VM on another cog and
-# returns the same kind of p2.cog handle that can be stopped later.
+# This path is experimental. It reports the capability state before attempting
+# source-backed cog launch, because normal builds only guarantee the native
+# closure blinker shape.
 
 import p2
 
-source = "import p2\n" \
-         "def blinker(pin, ms)\n" \
-         "  p2.low(pin)\n" \
-         "  while true\n" \
-         "    p2.toggle(pin)\n" \
-         "    p2.waitms(ms)\n" \
-         "  end\n" \
-         "end\n"
+var caps = p2.cog.capabilities()
+print("spawn_source supported", caps["spawn_source"])
 
-h38 = p2.cog.spawn_source(source, "blinker", 38, 250)
-h39 = p2.cog.spawn_source(source, "blinker", 39, 700)
+if !caps["spawn_source"]
+    print("source-backed cog spawning is not supported on this build")
+else
+    var source = "import p2\n" +
+             "def blinker(pin, ms)\n" +
+             "  p2.pin.dir_high(pin)\n" +
+             "  while true\n" +
+             "    p2.pin.toggle(pin)\n" +
+             "    p2.clock.waitms(ms)\n" +
+             "  end\n" +
+             "end\n"
 
-print("handles", h38, h39)
-print("info", p2.cog.info())
-print("stop later with:")
-print("p2.cog.stop(h38); p2.cog.stop(h39)")
+    var h38 = p2.cog.spawn_source(source, "blinker", 38, 250)
+    var h39 = p2.cog.spawn_source(source, "blinker", 39, 700)
+
+    print("handles", h38, h39)
+    p2.clock.waitms(750)
+    print("stop h38", p2.cog.stop(h38)["running"])
+    print("stop h39", p2.cog.stop(h39)["running"])
+    p2.pin.float(38)
+    p2.pin.float(39)
+end
+print("p2 source blinker done")

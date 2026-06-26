@@ -38,24 +38,26 @@ def f() a := b end
 def id(x) return x end
 var a = 1
 import global
-def f() return id(global.a := 42) end
-assert(f() == 42)
-# bug: returns <module: global>
+if type(global) == "module"
+    def walrus_global_member_value() return id(global.a := 42) end
+    assert(walrus_global_member_value() == 42)
+    # bug: returns <module: global>
 
-def concat(x, y, z) return str(x)+str(y)+str(z) end
-var a = 1
-import global
-def f() return concat(global.a := 1, global.a := 42, global.a := 0) end
-assert(f() == "1420")
-# bug: returns '1<module: global>42'
+    def concat(x, y, z) return str(x)+str(y)+str(z) end
+    var a = 1
+    def walrus_global_member_args() return concat(global.a := 1, global.a := 42, global.a := 0) end
+    assert(walrus_global_member_args() == "1420")
+    # bug: returns '1<module: global>42'
 
-# same bug when using index
-def id(x) return x end
-l = [10,11]
-import global
-def f() return id(global.l[0] := 42) end
-assert(f() == 42)
-# bug: returns [42, 11]
+    # same bug when using index
+    def id(x) return x end
+    l = [10,11]
+    def walrus_global_index_value() return id(global.l[0] := 42) end
+    assert(walrus_global_index_value() == 42)
+    # bug: returns [42, 11]
+else
+    print("skip walrus global-module member checks")
+end
 
 # bug when using member for self
 class confused_walrus
