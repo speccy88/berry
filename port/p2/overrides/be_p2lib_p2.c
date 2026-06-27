@@ -11,6 +11,7 @@
 #include "be_string.h"
 #include "be_sys.h"
 #include "be_var.h"
+#include "be_vector.h"
 #include "be_vm.h"
 #include "berry_conf_p2.h"
 #include "berry_port.h"
@@ -228,6 +229,8 @@ enum {
 };
 
 #define P2_CLOSURE_COG_SOURCE_RUNTIME_SUPPORTED 0
+#define P2_CLOSURE_COG_ISOLATED_POLICY "unsupported_catalina_xmm_c_cog_runtime_not_safe"
+#define P2_CLOSURE_COG_ISOLATED_REASON "Catalina XMM C cog startup does not currently provide a safe independent Berry VM runtime"
 
 static void p2_module_set_func(bvm *vm, const char *name, bntvfunc func)
 {
@@ -307,10 +310,20 @@ static void p2_push_string_list(bvm *vm, const char *const *items, size_t count)
     }
 }
 
+static void p2_map_set_string_list(bvm *vm, const char *key, const char *const *items, size_t count)
+{
+    be_pushstring(vm, key);
+    p2_push_string_list(vm, items, count);
+    be_pop(vm, 1);
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+}
+
 static void p2_map_set_empty_list(bvm *vm, const char *key)
 {
     be_pushstring(vm, key);
     be_newobject(vm, "list");
+    be_pop(vm, 1);
     be_setindex(vm, -3);
     be_pop(vm, 2);
 }
@@ -700,6 +713,9 @@ static int m_p2_cog_stop(bvm *vm)
     }
     if (cog < 0 || cog > 7) {
         be_raise(vm, "value_error", "cog_id must be between 0 and 7");
+    }
+    if (cog == _cogid()) {
+        be_raise(vm, "value_error", "refusing to stop the current cog");
     }
     _cogstop((int)cog);
     be_return_nil(vm);
@@ -1241,6 +1257,17 @@ static const uint32_t p2_cog_marker_pasm[] = {
     0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u
 };
 
+static const uint32_t p2_asm_fixture_add_pasm[] = {
+    0xf60035f8u, 0xf1043404u, 0xfb00361au, 0xf1043404u,
+    0xfb00381au, 0xf1043404u, 0xfb003a1au, 0xf20c3602u,
+    0xa180381du, 0xf20c3603u, 0xa560381du, 0xf20c3604u,
+    0xa500381du, 0xf20c3605u, 0xa540381du, 0xf20c3601u,
+    0xa100381du, 0xf1043404u, 0xfc60381au, 0xfd603c01u,
+    0xf1043404u, 0xfc603c1au, 0xf60035f8u, 0xf6043801u,
+    0xfc60381au, 0xfd9ffffcu, 0x00000000u, 0x00000000u,
+    0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u
+};
+
 static int p2_cog_marker_probe_blob(const void *blob, size_t length,
     int target_cog, uint32_t *marker_out, uint32_t *cog_out)
 {
@@ -1307,8 +1334,17 @@ static const char *P2_ASM_INLINE_ASSEMBLER_REASON = "assembly parser, code gener
 static const char *P2_ASM_UNSAFE_GATE = "BE_P2_ENABLE_UNSAFE_ASM";
 static const char *P2_ASM_UNSAFE_MODULE = "none";
 static const char *P2_ASM_LAUNCH_POLICY = "exact_marker_fixture_only";
-static const char *P2_ASM_ABI_STATUS = "marker_fixture_only";
+static const char *P2_ASM_FIXTURE_CALL_POLICY = "fixed_named_operation_fixture_mailbox_only";
+static const char *P2_ASM_ABI_STATUS = "marker_and_fixture_call_only";
 static const char *P2_ASM_UNSUPPORTED_REASON = "PASM ABI and arbitrary-code safety are not complete";
+
+static const char *const P2_ASM_FIXTURE_OPS[] = {
+    "add",
+    "sub",
+    "xor",
+    "and",
+    "or"
+};
 
 static const char *const P2_ASM_REQUIRED_CAPABILITY_KEYS[] = {
     "safe_intrinsics",
@@ -1318,6 +1354,9 @@ static const char *const P2_ASM_REQUIRED_CAPABILITY_KEYS[] = {
     "raw_cognew_reason",
     "marker_probe",
     "sd_marker_probe",
+    "fixture_call",
+    "fixture_call_policy",
+    "fixture_call_ops",
     "arbitrary_sd_launch_supported",
     "arbitrary_blob_policy",
     "arbitrary_blob_reason",
@@ -1342,6 +1381,9 @@ static const char *const P2_ASM_REQUIRED_ABI_KEYS[] = {
     "argument",
     "return_value",
     "cleanup",
+    "fixture_call_abi",
+    "fixture_call_policy",
+    "fixture_call_ops",
     "hub_pointer_rule",
     "psram_pointer_rule",
     "cog_lut_rule",
@@ -1387,6 +1429,10 @@ static int m_p2_asm_capabilities(bvm *vm)
     p2_map_set_string(vm, "raw_cognew_reason", P2_ASM_RAW_COGNEW_REASON);
     p2_map_set_bool(vm, "marker_probe", 1);
     p2_map_set_bool(vm, "sd_marker_probe", 1);
+    p2_map_set_bool(vm, "fixture_call", 1);
+    p2_map_set_string(vm, "fixture_call_policy", P2_ASM_FIXTURE_CALL_POLICY);
+    p2_map_set_string_list(vm, "fixture_call_ops", P2_ASM_FIXTURE_OPS,
+        sizeof(P2_ASM_FIXTURE_OPS) / sizeof(P2_ASM_FIXTURE_OPS[0]));
     p2_map_set_bool(vm, "arbitrary_sd_launch_supported", 0);
     p2_map_set_string(vm, "arbitrary_blob_policy", P2_ASM_ARBITRARY_BLOB_POLICY);
     p2_map_set_string(vm, "arbitrary_blob_reason", P2_ASM_ARBITRARY_BLOB_REASON);
@@ -1406,6 +1452,48 @@ static int m_p2_asm_capabilities(bvm *vm)
     be_return(vm);
 }
 
+static int m_p2_asm_capability(bvm *vm)
+{
+    const char *name;
+
+    if (be_top(vm) < 1 || !be_isstring(vm, 1)) {
+        be_return_nil(vm);
+    }
+    name = be_tostring(vm, 1);
+
+    if (!strcmp(name, "safe_intrinsics")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "sd_load")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "raw_cognew")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "raw_cognew_policy")) be_pushstring(vm, P2_ASM_RAW_COGNEW_POLICY);
+    else if (!strcmp(name, "raw_cognew_reason")) be_pushstring(vm, P2_ASM_RAW_COGNEW_REASON);
+    else if (!strcmp(name, "marker_probe")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "sd_marker_probe")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "fixture_call")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "fixture_call_policy")) be_pushstring(vm, P2_ASM_FIXTURE_CALL_POLICY);
+    else if (!strcmp(name, "fixture_call_ops")) {
+        p2_push_string_list(vm, P2_ASM_FIXTURE_OPS,
+            sizeof(P2_ASM_FIXTURE_OPS) / sizeof(P2_ASM_FIXTURE_OPS[0]));
+        be_pop(vm, 1);
+    }
+    else if (!strcmp(name, "arbitrary_sd_launch_supported")) be_pushbool(vm, 0);
+    else if (!strcmp(name, "arbitrary_blob_policy")) be_pushstring(vm, P2_ASM_ARBITRARY_BLOB_POLICY);
+    else if (!strcmp(name, "arbitrary_blob_reason")) be_pushstring(vm, P2_ASM_ARBITRARY_BLOB_REASON);
+    else if (!strcmp(name, "function_bridge")) be_pushbool(vm, 0);
+    else if (!strcmp(name, "function_bridge_policy")) be_pushstring(vm, P2_ASM_FUNCTION_BRIDGE_POLICY);
+    else if (!strcmp(name, "function_bridge_reason")) be_pushstring(vm, P2_ASM_FUNCTION_BRIDGE_REASON);
+    else if (!strcmp(name, "inline_assembler")) be_pushbool(vm, 0);
+    else if (!strcmp(name, "inline_assembler_policy")) be_pushstring(vm, P2_ASM_INLINE_ASSEMBLER_POLICY);
+    else if (!strcmp(name, "inline_assembler_reason")) be_pushstring(vm, P2_ASM_INLINE_ASSEMBLER_REASON);
+    else if (!strcmp(name, "unsafe_asm")) be_pushbool(vm, 0);
+    else if (!strcmp(name, "unsafe_gate")) be_pushstring(vm, P2_ASM_UNSAFE_GATE);
+    else if (!strcmp(name, "unsafe_default")) be_pushbool(vm, 0);
+    else if (!strcmp(name, "unsafe_module")) be_pushstring(vm, P2_ASM_UNSAFE_MODULE);
+    else if (!strcmp(name, "launch_policy")) be_pushstring(vm, P2_ASM_LAUNCH_POLICY);
+    else if (!strcmp(name, "unsupported_reason")) be_pushstring(vm, P2_ASM_UNSUPPORTED_REASON);
+    else be_pushnil(vm);
+    be_return(vm);
+}
+
 static int m_p2_asm_abi(bvm *vm)
 {
     be_newobject(vm, "map");
@@ -1413,8 +1501,12 @@ static int m_p2_asm_abi(bvm *vm)
     p2_map_set_string(vm, "entry", "_cogstart_PASM(cog, program, mailbox)");
     p2_map_set_string(vm, "raw_cognew_policy", P2_ASM_RAW_COGNEW_POLICY);
     p2_map_set_string(vm, "argument", "mailbox pointer in PTRA");
-    p2_map_set_string(vm, "return_value", "mailbox marker/cog id; no function return ABI yet");
+    p2_map_set_string(vm, "return_value", "marker fixture returns marker/cog id; fixed operation fixture returns one integer result");
     p2_map_set_string(vm, "cleanup", "caller stops child cog after marker or timeout");
+    p2_map_set_bool(vm, "fixture_call_abi", 1);
+    p2_map_set_string(vm, "fixture_call_policy", P2_ASM_FIXTURE_CALL_POLICY);
+    p2_map_set_string_list(vm, "fixture_call_ops", P2_ASM_FIXTURE_OPS,
+        sizeof(P2_ASM_FIXTURE_OPS) / sizeof(P2_ASM_FIXTURE_OPS[0]));
     p2_map_set_string(vm, "hub_pointer_rule", "fixture executes from copied hub buffer");
     p2_map_set_string(vm, "psram_pointer_rule", "no PSRAM pointers passed to fixture");
     p2_map_set_string(vm, "cog_lut_rule", "no caller-visible cog/LUT state contract yet");
@@ -1436,15 +1528,55 @@ static int m_p2_asm_abi(bvm *vm)
     be_return(vm);
 }
 
+static int m_p2_asm_abi_value(bvm *vm)
+{
+    const char *name;
+
+    if (be_top(vm) < 1 || !be_isstring(vm, 1)) {
+        be_return_nil(vm);
+    }
+    name = be_tostring(vm, 1);
+
+    if (!strcmp(name, "status")) be_pushstring(vm, P2_ASM_ABI_STATUS);
+    else if (!strcmp(name, "entry")) be_pushstring(vm, "_cogstart_PASM(cog, program, mailbox)");
+    else if (!strcmp(name, "raw_cognew_policy")) be_pushstring(vm, P2_ASM_RAW_COGNEW_POLICY);
+    else if (!strcmp(name, "argument")) be_pushstring(vm, "mailbox pointer in PTRA");
+    else if (!strcmp(name, "return_value")) be_pushstring(vm, "marker fixture returns marker/cog id; fixed operation fixture returns one integer result");
+    else if (!strcmp(name, "cleanup")) be_pushstring(vm, "caller stops child cog after marker or timeout");
+    else if (!strcmp(name, "fixture_call_abi")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "fixture_call_policy")) be_pushstring(vm, P2_ASM_FIXTURE_CALL_POLICY);
+    else if (!strcmp(name, "fixture_call_ops")) {
+        p2_push_string_list(vm, P2_ASM_FIXTURE_OPS,
+            sizeof(P2_ASM_FIXTURE_OPS) / sizeof(P2_ASM_FIXTURE_OPS[0]));
+        be_pop(vm, 1);
+    }
+    else if (!strcmp(name, "hub_pointer_rule")) be_pushstring(vm, "fixture executes from copied hub buffer");
+    else if (!strcmp(name, "psram_pointer_rule")) be_pushstring(vm, "no PSRAM pointers passed to fixture");
+    else if (!strcmp(name, "cog_lut_rule")) be_pushstring(vm, "no caller-visible cog/LUT state contract yet");
+    else if (!strcmp(name, "interrupt_rule")) be_pushstring(vm, "no interrupt contract yet");
+    else if (!strcmp(name, "stack_rule")) be_pushstring(vm, "no stack is provided to marker fixture");
+    else if (!strcmp(name, "arbitrary_blob_abi")) be_pushbool(vm, 0);
+    else if (!strcmp(name, "arbitrary_blob_policy")) be_pushstring(vm, P2_ASM_ARBITRARY_BLOB_POLICY);
+    else if (!strcmp(name, "arbitrary_blob_required")) be_pushstring(vm, "entry address, blob layout, arguments, returns, clobbers, hub and PSRAM pointer ownership, cog/LUT rules, interrupts, stack, cleanup, timeout, and child failure handling");
+    else if (!strcmp(name, "function_bridge_abi")) be_pushbool(vm, 0);
+    else if (!strcmp(name, "function_bridge_policy")) be_pushstring(vm, P2_ASM_FUNCTION_BRIDGE_POLICY);
+    else if (!strcmp(name, "function_bridge_required")) be_pushstring(vm, "argument marshalling, return values, timeout behavior, cog reuse, resource cleanup, and error propagation");
+    else if (!strcmp(name, "inline_assembler_abi")) be_pushbool(vm, 0);
+    else if (!strcmp(name, "inline_assembler_policy")) be_pushstring(vm, P2_ASM_INLINE_ASSEMBLER_POLICY);
+    else if (!strcmp(name, "inline_assembler_required")) be_pushstring(vm, "assembly parser, code generation, ABI, register clobbers, labels, relocation, source mapping, optimizer interaction, and safety checks");
+    else if (!strcmp(name, "unsafe_gate")) be_pushstring(vm, P2_ASM_UNSAFE_GATE);
+    else if (!strcmp(name, "unsafe_default")) be_pushbool(vm, 0);
+    else if (!strcmp(name, "unsafe_module")) be_pushstring(vm, P2_ASM_UNSAFE_MODULE);
+    else be_pushnil(vm);
+    be_return(vm);
+}
+
 static int m_p2_asm_audit(bvm *vm)
 {
     be_newobject(vm, "map");
     p2_map_set_bool(vm, "ok", 1);
     p2_map_set_int(vm, "problem_count", 0);
-    be_pushstring(vm, "problems");
-    be_newobject(vm, "list");
-    be_setindex(vm, -3);
-    be_pop(vm, 2);
+    p2_map_set_empty_list(vm, "problems");
     p2_map_set_empty_list(vm, "missing_capability_keys");
     p2_map_set_empty_list(vm, "missing_abi_keys");
     p2_map_set_bool(vm, "raw_cognew_policy_match", 1);
@@ -1455,6 +1587,7 @@ static int m_p2_asm_audit(bvm *vm)
     p2_map_set_string(vm, "status", P2_ASM_ABI_STATUS);
     p2_map_set_string(vm, "launch_policy", P2_ASM_LAUNCH_POLICY);
     p2_map_set_string(vm, "raw_cognew_policy", P2_ASM_RAW_COGNEW_POLICY);
+    p2_map_set_string(vm, "fixture_call_policy", P2_ASM_FIXTURE_CALL_POLICY);
     p2_map_set_string(vm, "arbitrary_blob_policy", P2_ASM_ARBITRARY_BLOB_POLICY);
     p2_map_set_string(vm, "function_bridge_policy", P2_ASM_FUNCTION_BRIDGE_POLICY);
     p2_map_set_string(vm, "inline_assembler_policy", P2_ASM_INLINE_ASSEMBLER_POLICY);
@@ -1558,6 +1691,143 @@ static int m_p2_asm_launch_loaded_probe(bvm *vm)
     p2_map_set_bool(vm, "stopped", cog >= 0 && !running_after);
     be_pop(vm, 1);
     be_return(vm);
+}
+
+static int p2_asm_fixture_op_code(const char *op)
+{
+    if (op == NULL) {
+        return 0;
+    }
+    if (!strcmp(op, "add")) {
+        return 1;
+    }
+    if (!strcmp(op, "sub")) {
+        return 2;
+    }
+    if (!strcmp(op, "xor")) {
+        return 3;
+    }
+    if (!strcmp(op, "and")) {
+        return 4;
+    }
+    if (!strcmp(op, "or")) {
+        return 5;
+    }
+    return 0;
+}
+
+static int p2_asm_fixture_execute(bvm *vm, const char *op, int op_code,
+    bint lhs, bint rhs, int target_cog)
+{
+    uint32_t *program;
+    uint32_t *mailbox;
+    int cog;
+    int wait_ms;
+    int running_after = 0;
+
+    program = (uint32_t *)p2_hub_mem_alloc(sizeof(p2_asm_fixture_add_pasm));
+    mailbox = (uint32_t *)p2_hub_mem_alloc(6u * sizeof(uint32_t));
+    if (program == NULL || mailbox == NULL) {
+        if (program != NULL) {
+            p2_hub_mem_free(program);
+        }
+        if (mailbox != NULL) {
+            p2_hub_mem_free(mailbox);
+        }
+        be_raise(vm, "memory_error", "failed to allocate PASM fixture memory");
+    }
+
+    memcpy(program, p2_asm_fixture_add_pasm, sizeof(p2_asm_fixture_add_pasm));
+    mailbox[0] = 0u;
+    mailbox[1] = (uint32_t)op_code;
+    mailbox[2] = (uint32_t)lhs;
+    mailbox[3] = (uint32_t)rhs;
+    mailbox[4] = 0u;
+    mailbox[5] = 0xffffffffu;
+
+    cog = _cogstart_PASM(target_cog, program, mailbox);
+    for (wait_ms = 0; cog >= 0 && wait_ms < 50 && mailbox[0] == 0u; ++wait_ms) {
+        _waitms(1);
+    }
+    if (cog >= 0 && cog < 8) {
+        running_after = _cogchk(cog) != 0;
+        if (running_after) {
+            _cogstop(cog);
+            running_after = _cogchk(cog) != 0;
+        }
+    }
+
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "ok", cog >= 0 && mailbox[0] == 1u &&
+        mailbox[5] == (uint32_t)cog && !running_after);
+    p2_map_set_string(vm, "operation", op);
+    p2_map_set_int(vm, "operation_code", (bint)op_code);
+    p2_map_set_int(vm, "target_cog", (bint)target_cog);
+    p2_map_set_int(vm, "cog", (bint)cog);
+    p2_map_set_int(vm, "lhs", lhs);
+    p2_map_set_int(vm, "rhs", rhs);
+    p2_map_set_int(vm, "result", (bint)(int32_t)mailbox[4]);
+    p2_map_set_int(vm, "cog_seen", (bint)mailbox[5]);
+    p2_map_set_bool(vm, "done", mailbox[0] == 1u);
+    p2_map_set_bool(vm, "cog_seen_matches", cog >= 0 && mailbox[5] == (uint32_t)cog);
+    p2_map_set_bool(vm, "stopped", cog >= 0 && !running_after);
+    p2_map_set_string(vm, "policy", P2_ASM_FIXTURE_CALL_POLICY);
+    p2_hub_mem_free(mailbox);
+    p2_hub_mem_free(program);
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_asm_fixture_call(bvm *vm)
+{
+    const char *op;
+    int op_code;
+    bint lhs;
+    bint rhs;
+    int target_cog = ANY_COG;
+
+    if (be_top(vm) < 3) {
+        be_raise(vm, "value_error", "fixture_call requires operation and two integer arguments");
+    }
+    if (!be_isstring(vm, 1)) {
+        be_raise(vm, "type_error", "fixture operation must be a string");
+    }
+    op = be_tostring(vm, 1);
+    op_code = p2_asm_fixture_op_code(op);
+    if (op_code == 0) {
+        be_raise(vm, "value_error", "unsupported PASM fixture operation");
+    }
+    lhs = p2_require_int_arg(vm, 2, "lhs must be an int");
+    rhs = p2_require_int_arg(vm, 3, "rhs must be an int");
+    if (be_top(vm) >= 4 && !be_isnil(vm, 4)) {
+        bint requested = p2_require_int_arg(vm, 4, "cog must be an int");
+        if (requested < 0 || requested > 7) {
+            be_raise(vm, "value_error", "cog must be between 0 and 7");
+        }
+        target_cog = (int)requested;
+    }
+    return p2_asm_fixture_execute(vm, op, op_code, lhs, rhs, target_cog);
+}
+
+static int m_p2_asm_fixture_add(bvm *vm)
+{
+    bint lhs;
+    bint rhs;
+    int target_cog = ANY_COG;
+
+    if (be_top(vm) < 2) {
+        be_raise(vm, "value_error", "fixture_add requires two integer arguments");
+    }
+    lhs = p2_require_int_arg(vm, 1, "lhs must be an int");
+    rhs = p2_require_int_arg(vm, 2, "rhs must be an int");
+    if (be_top(vm) >= 3 && !be_isnil(vm, 3)) {
+        bint requested = p2_require_int_arg(vm, 3, "cog must be an int");
+        if (requested < 0 || requested > 7) {
+            be_raise(vm, "value_error", "cog must be between 0 and 7");
+        }
+        target_cog = (int)requested;
+    }
+    return p2_asm_fixture_execute(vm, "add", 1, lhs, rhs, target_cog);
 }
 
 static int p2_cog_large_marker_probe(int target_cog, uint32_t *marker_out, uint32_t *cog_out)
@@ -3708,12 +3978,105 @@ static int m_p2_closure_cog_kill(bvm *vm)
     return m_p2_closure_cog_stop(vm);
 }
 
+static int m_p2_closure_cog_cleanup_result(bvm *vm)
+{
+    int i;
+    int active_before = 0;
+    int released = 0;
+    int stopped_raw = 0;
+    int pins_floated = 0;
+    int stacks_released = 0;
+    int mailboxes_released = 0;
+    int source_partitions_released = 0;
+    int source_jobs_released = 0;
+
+    for (i = 0; i < P2_CLOSURE_COG_MAX; ++i) {
+        p2_closure_cog_slot *slot = &p2_closure_cog_slots[i];
+        int raw_running = 0;
+
+        if (!slot->used) {
+            continue;
+        }
+        ++active_before;
+        p2_closure_cog_sync_native_blink(slot);
+        p2_closure_cog_sync_isolated_source(slot);
+        if (slot->cog_id >= 0 && slot->cog_id < 8 && _cogchk(slot->cog_id)) {
+            raw_running = 1;
+        }
+        slot->stop = 1;
+        if (slot->native_blink) {
+#if defined(__CATALINA_LARGE)
+            if (slot->native_mailbox != NULL) {
+                slot->native_mailbox[P2_NATIVE_BLINK_STOP] = 1;
+            }
+#else
+            slot->native_mailbox[P2_NATIVE_BLINK_STOP] = 1;
+#endif
+        }
+        if (slot->isolated_source && slot->source_job != NULL) {
+            slot->source_job->status = 3;
+        }
+        if (raw_running) {
+            _cogstop(slot->cog_id);
+            ++stopped_raw;
+        }
+        if (slot->native_blink && slot->native_pin >= 0 && slot->native_pin <= 63) {
+            _pinf(slot->native_pin);
+            ++pins_floated;
+        }
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+        p2_closure_cog_registry_clear(vm, i);
+#endif
+        if (slot->stack != NULL) {
+            p2_cog_stack_free(slot->stack);
+            ++stacks_released;
+        }
+#if defined(__CATALINA_LARGE)
+        if (slot->native_mailbox != NULL) {
+            p2_hub_mem_free((void *)slot->native_mailbox);
+            ++mailboxes_released;
+        }
+#endif
+        if (slot->isolated_source) {
+            (void)p2_heap_vm_partition_release(i);
+            ++source_partitions_released;
+            if (slot->source_job != NULL) {
+                p2_hub_mem_free(slot->source_job);
+                ++source_jobs_released;
+            }
+        }
+        memset(slot, 0, sizeof(*slot));
+        ++released;
+    }
+
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "ok", 1);
+    p2_map_set_bool(vm, "cleanup_attempted", 1);
+    p2_map_set_string(vm, "cleanup_policy", "stop_releases_all_spawned_closure_cog_slots");
+    p2_map_set_int(vm, "active_before", (bint)active_before);
+    p2_map_set_int(vm, "released_handles", (bint)released);
+    p2_map_set_int(vm, "stopped_raw_cogs", (bint)stopped_raw);
+    p2_map_set_int(vm, "pins_floated", (bint)pins_floated);
+    p2_map_set_int(vm, "stacks_released", (bint)stacks_released);
+    p2_map_set_int(vm, "mailboxes_released", (bint)mailboxes_released);
+    p2_map_set_int(vm, "source_partitions_released", (bint)source_partitions_released);
+    p2_map_set_int(vm, "source_jobs_released", (bint)source_jobs_released);
+    p2_map_set_int(vm, "active_after", 0);
+    p2_map_set_bool(vm, "registry_empty", 1);
+    p2_map_set_nil(vm, "error");
+    p2_map_set_nil(vm, "message");
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
 static const char *const P2_COG_REQUIRED_CAPABILITY_KEYS[] = {
     "spawn",
     "spawn_task",
     "spawn_source",
     "berry_closure",
     "isolated_child_vm_cog",
+    "isolated_child_vm_cog_policy",
+    "isolated_child_vm_cog_reason",
     "blinker_descriptor",
     "task_descriptor",
     "function_entity_spawn",
@@ -3741,6 +4104,8 @@ static const char *const P2_COG_REQUIRED_CAPABILITY_KEYS[] = {
     "handle_join_result_policy",
     "handle_kill_policy",
     "handle_cleanup_policy",
+    "cleanup_all",
+    "cleanup_all_policy",
     "handle_result_policy",
     "handle_error_policy",
     "handle_unsupported_reason",
@@ -3771,6 +4136,9 @@ static int m_p2_closure_cog_audit(bvm *vm)
     p2_map_set_string(vm, "handle_model", "native_blink_info_stop_only");
     p2_map_set_string(vm, "handle_join_policy", "nonblocking_status_snapshot");
     p2_map_set_string(vm, "handle_cleanup_policy", "stop_releases_stack_mailbox_source_slot");
+    p2_map_set_string(vm, "cleanup_all_policy", "stop_releases_all_spawned_closure_cog_slots");
+    p2_map_set_string(vm, "isolated_child_vm_cog_policy", P2_CLOSURE_COG_ISOLATED_POLICY);
+    p2_map_set_string(vm, "isolated_child_vm_cog_reason", P2_CLOSURE_COG_ISOLATED_REASON);
     p2_map_set_bool(vm, "unsafe_shared_vm",
 #if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
         1
@@ -3810,6 +4178,8 @@ static int m_p2_closure_cog_capabilities(bvm *vm)
     p2_map_set_bool(vm, "spawn_source", P2_CLOSURE_COG_SOURCE_RUNTIME_SUPPORTED);
     p2_map_set_bool(vm, "berry_closure", 0);
     p2_map_set_bool(vm, "isolated_child_vm_cog", P2_CLOSURE_COG_SOURCE_RUNTIME_SUPPORTED);
+    p2_map_set_string(vm, "isolated_child_vm_cog_policy", P2_CLOSURE_COG_ISOLATED_POLICY);
+    p2_map_set_string(vm, "isolated_child_vm_cog_reason", P2_CLOSURE_COG_ISOLATED_REASON);
     p2_map_set_bool(vm, "blinker_descriptor", 1);
     p2_map_set_bool(vm, "task_descriptor", 1);
     p2_map_set_bool(vm, "function_entity_spawn", 1);
@@ -3843,6 +4213,8 @@ static int m_p2_closure_cog_capabilities(bvm *vm)
     p2_map_set_string(vm, "handle_join_result_policy", "result_and_error_fields_in_join_snapshot");
     p2_map_set_string(vm, "handle_kill_policy", "force_stop_cleanup_alias");
     p2_map_set_string(vm, "handle_cleanup_policy", "stop_releases_stack_mailbox_source_slot");
+    p2_map_set_bool(vm, "cleanup_all", 1);
+    p2_map_set_string(vm, "cleanup_all_policy", "stop_releases_all_spawned_closure_cog_slots");
     p2_map_set_string(vm, "handle_result_policy", "last_result_value_nonblocking");
     p2_map_set_string(vm, "handle_error_policy", "last_error_string_nonblocking");
     p2_map_set_string(vm, "handle_unsupported_reason", "blocking result waits and cross-cog exception propagation are not defined for the interim native_blink handle model");
@@ -3870,6 +4242,95 @@ static int m_p2_closure_cog_capabilities(bvm *vm)
     be_return(vm);
 }
 
+static int m_p2_closure_cog_capability(bvm *vm)
+{
+    const char *name;
+
+    if (be_top(vm) < 1 || !be_isstring(vm, 1)) {
+        be_return_nil(vm);
+    }
+    name = be_tostring(vm, 1);
+
+    if (!strcmp(name, "spawn")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "spawn_task")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "spawn_source")) be_pushbool(vm, P2_CLOSURE_COG_SOURCE_RUNTIME_SUPPORTED);
+    else if (!strcmp(name, "berry_closure")) be_pushbool(vm, 0);
+    else if (!strcmp(name, "isolated_child_vm_cog")) be_pushbool(vm, P2_CLOSURE_COG_SOURCE_RUNTIME_SUPPORTED);
+    else if (!strcmp(name, "isolated_child_vm_cog_policy")) be_pushstring(vm, P2_CLOSURE_COG_ISOLATED_POLICY);
+    else if (!strcmp(name, "isolated_child_vm_cog_reason")) be_pushstring(vm, P2_CLOSURE_COG_ISOLATED_REASON);
+    else if (!strcmp(name, "blinker_descriptor")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "task_descriptor")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "function_entity_spawn")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "function_entity_setup_call")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "function_entity_descriptor_return")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "task_kinds")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "task_release")) {
+#if defined(__CATALINA_LARGE)
+        be_pushbool(vm, 1);
+#else
+        be_pushbool(vm, 0);
+#endif
+    }
+    else if (!strcmp(name, "task_descriptor_info")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "task_max_args")) be_pushint(vm, (bint)P2_CLOSURE_COG_ARGS_MAX);
+    else if (!strcmp(name, "native_blink")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "native_blink_stack")) be_pushint(vm, (bint)P2_CLOSURE_COG_STACK_NATIVE_BLINK);
+    else if (!strcmp(name, "handle_base")) be_pushint(vm, (bint)P2_CLOSURE_COG_HANDLE_BASE);
+    else if (!strcmp(name, "max_handles")) be_pushint(vm, (bint)P2_CLOSURE_COG_MAX);
+    else if (!strcmp(name, "handle_model")) be_pushstring(vm, "native_blink_info_stop_only");
+    else if (!strcmp(name, "handle_id")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "handle_info")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "handle_status")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "handle_stop")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "handle_result")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "handle_error")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "handle_join")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "handle_kill")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "handle_status_policy")) be_pushstring(vm, "status_aliases_info_map");
+    else if (!strcmp(name, "handle_join_policy")) be_pushstring(vm, "nonblocking_status_snapshot");
+    else if (!strcmp(name, "handle_join_result_policy")) be_pushstring(vm, "result_and_error_fields_in_join_snapshot");
+    else if (!strcmp(name, "handle_kill_policy")) be_pushstring(vm, "force_stop_cleanup_alias");
+    else if (!strcmp(name, "handle_cleanup_policy")) be_pushstring(vm, "stop_releases_stack_mailbox_source_slot");
+    else if (!strcmp(name, "cleanup_all")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "cleanup_all_policy")) be_pushstring(vm, "stop_releases_all_spawned_closure_cog_slots");
+    else if (!strcmp(name, "handle_result_policy")) be_pushstring(vm, "last_result_value_nonblocking");
+    else if (!strcmp(name, "handle_error_policy")) be_pushstring(vm, "last_error_string_nonblocking");
+    else if (!strcmp(name, "handle_unsupported_reason")) be_pushstring(vm, "blocking result waits and cross-cog exception propagation are not defined for the interim native_blink handle model");
+    else if (!strcmp(name, "unsafe_shared_vm")) {
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+        be_pushbool(vm, 1);
+#else
+        be_pushbool(vm, 0);
+#endif
+    }
+    else if (!strcmp(name, "reject_unsupported")) {
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+        be_pushbool(vm, 0);
+#else
+        be_pushbool(vm, 1);
+#endif
+    }
+    else if (!strcmp(name, "isolated_vm_closure")) be_pushbool(vm, 0);
+    else if (!strcmp(name, "isolated_source_vm")) be_pushbool(vm, 1);
+    else if (!strcmp(name, "literal_closure_transfer")) be_pushbool(vm, 0);
+    else if (!strcmp(name, "bytecode_loader")) {
+#if BE_USE_BYTECODE_LOADER
+        be_pushbool(vm, 1);
+#else
+        be_pushbool(vm, 0);
+#endif
+    }
+    else if (!strcmp(name, "bytecode_saver")) {
+#if BE_USE_BYTECODE_SAVER
+        be_pushbool(vm, 1);
+#else
+        be_pushbool(vm, 0);
+#endif
+    }
+    else be_pushnil(vm);
+    be_return(vm);
+}
+
 static int m_p2_closure_cog_stop(bvm *vm)
 {
     int slot_index;
@@ -3879,6 +4340,9 @@ static int m_p2_closure_cog_stop(bvm *vm)
     int had_source_job;
     int mailbox_released = 0;
     p2_closure_cog_slot *slot = p2_closure_cog_require_handle(vm, 1, &slot_index);
+    int handle = slot->handle;
+    int cog_id = (int)slot->cog_id;
+    int native_blink = slot->native_blink;
 
     had_stack = slot->stack != NULL;
     had_source_partition = slot->isolated_source ? 1 : 0;
@@ -3921,7 +4385,6 @@ static int m_p2_closure_cog_stop(bvm *vm)
         p2_cog_stack_free(slot->stack);
         slot->stack = NULL;
     }
-    p2_closure_cog_push_info_map(vm, slot_index, slot);
 #if defined(__CATALINA_LARGE)
     if (slot->native_mailbox != NULL) {
         p2_hub_mem_free((void *)slot->native_mailbox);
@@ -3936,6 +4399,14 @@ static int m_p2_closure_cog_stop(bvm *vm)
             slot->source_job = NULL;
         }
     }
+    be_newobject(vm, "map");
+    p2_map_set_int(vm, "slot", (bint)slot_index);
+    p2_map_set_int(vm, "handle", (bint)handle);
+    p2_map_set_int(vm, "cog", (bint)cog_id);
+    p2_map_set_int(vm, "status", 2);
+    p2_map_set_bool(vm, "running", 0);
+    p2_map_set_bool(vm, "raw_running", 0);
+    p2_map_set_bool(vm, "native_blink", native_blink);
     p2_map_set_bool(vm, "cleanup_attempted", 1);
     p2_map_set_string(vm, "cleanup_policy", "stop_releases_stack_mailbox_source_slot");
     p2_map_set_bool(vm, "stack_released", had_stack);
@@ -3944,6 +4415,7 @@ static int m_p2_closure_cog_stop(bvm *vm)
     p2_map_set_bool(vm, "source_job_released", had_source_job);
     p2_map_set_bool(vm, "slot_released", 1);
     p2_map_set_bool(vm, "handle_valid_after_stop", 0);
+    be_pop(vm, 1);
     memset(slot, 0, sizeof(*slot));
     be_return(vm);
 }
@@ -4318,6 +4790,14 @@ static int m_p2_vm_probe_many(bvm *vm)
     be_return(vm);
 }
 
+typedef struct p2_vm_copyable_info {
+    int ok;
+    const char *kind;
+    const char *reason;
+} p2_vm_copyable_info;
+
+static p2_vm_copyable_info p2_vm_copyable_classify(bvm *vm, int index);
+
 static const char *p2_vm_closure_name_or_raise(bvm *vm, int index)
 {
     bvalue *value = be_indexof(vm, index);
@@ -4354,12 +4834,19 @@ static int p2_vm_call_impl(bvm *vm, int auto_release)
     int arg_bool_count = 0;
     int arg_nil_count = 0;
     int arg_string_count = 0;
+    int args_copyable = 1;
+    int arg_rejected_count = 0;
+    int first_arg_rejected_index = -1;
+    const char *first_arg_rejected_kind = "";
+    const char *first_arg_rejected_reason = "";
     int previous_slot;
     int i;
     int created;
     int selected = 0;
     int child_created = 0;
     int child_deleted = 0;
+    int ok = 0;
+    const char *status = "not_run";
     int source_result = BE_OK;
     int call_result = BE_OK;
     int function_found = 0;
@@ -4437,11 +4924,22 @@ static int p2_vm_call_impl(bvm *vm, int auto_release)
     }
     for (i = 0; i < argc; ++i) {
         int index = i + 5;
+        p2_vm_copyable_info copy_info = p2_vm_copyable_classify(vm, index);
 
         arg_type[i] = 0;
         arg_int[i] = 0;
         arg_bool[i] = 0;
         arg_string[i][0] = '\0';
+        if (!copy_info.ok) {
+            args_copyable = 0;
+            ++arg_rejected_count;
+            if (first_arg_rejected_index < 0) {
+                first_arg_rejected_index = i + 1;
+                first_arg_rejected_kind = copy_info.kind;
+                first_arg_rejected_reason = copy_info.reason;
+            }
+            continue;
+        }
         if (be_isint(vm, index)) {
             arg_type[i] = 1;
             arg_int[i] = be_toint(vm, index);
@@ -4462,9 +4960,52 @@ static int p2_vm_call_impl(bvm *vm, int auto_release)
                 arg_string[i][sizeof(arg_string[i]) - 1] = '\0';
             }
             ++arg_string_count;
-        } else {
-            be_raise(vm, "type_error", "child VM call args must be int, bool, nil, or string");
         }
+    }
+
+    if (!args_copyable) {
+        be_newobject(vm, "map");
+        p2_map_set_int(vm, "slot", slot);
+        p2_map_set_int(vm, "bytes", bytes);
+        p2_map_set_int(vm, "argc", (bint)argc);
+        p2_map_set_int(vm, "arg_int_count", (bint)arg_int_count);
+        p2_map_set_int(vm, "arg_bool_count", (bint)arg_bool_count);
+        p2_map_set_int(vm, "arg_nil_count", (bint)arg_nil_count);
+        p2_map_set_int(vm, "arg_string_count", (bint)arg_string_count);
+        p2_map_set_bool(vm, "args_copyable", 0);
+        p2_map_set_int(vm, "arg_rejected_count", (bint)arg_rejected_count);
+        p2_map_set_int(vm, "first_arg_rejected_index", (bint)first_arg_rejected_index);
+        p2_map_set_string(vm, "first_arg_rejected_kind", first_arg_rejected_kind);
+        p2_map_set_string(vm, "first_arg_rejected_reason", first_arg_rejected_reason);
+        p2_map_set_bool(vm, "ok", 0);
+        p2_map_set_string(vm, "status", "args_rejected");
+        p2_map_set_bool(vm, "partition_ready", 0);
+        p2_map_set_bool(vm, "selected", 0);
+        p2_map_set_bool(vm, "child_created", 0);
+        p2_map_set_bool(vm, "child_deleted", 0);
+        p2_map_set_bool(vm, "function_found", 0);
+        p2_map_set_int(vm, "source_result", (bint)BE_OK);
+        p2_map_set_int(vm, "call_result", (bint)BE_SYNTAX_ERROR);
+        p2_map_set_int(vm, "result_type", 0);
+        p2_map_set_int(vm, "result_int", 0);
+        p2_map_set_bool(vm, "result_bool", 0);
+        p2_map_set_string(vm, "result_string", "");
+        p2_map_set_int(vm, "child_stack_top", 0);
+        p2_map_set_int(vm, "wrong_free_delta", 0);
+        p2_map_set_int(vm, "wrong_realloc_delta", 0);
+        p2_map_set_int(vm, "vm_partition_current", (bint)p2_heap_vm_partition_current());
+        p2_map_set_bool(vm, "release_attempted", 0);
+        p2_map_set_bool(vm, "released", 0);
+        p2_map_set_bool(vm, "partition_ready_after", p2_heap_vm_partition_ready((int)slot));
+        p2_map_set_bool(vm, "runtime_locked", 0);
+        p2_map_set_int(vm, "release_before_main", 0);
+        p2_map_set_int(vm, "release_after_main", 0);
+        p2_map_set_int(vm, "release_before_total", 0);
+        p2_map_set_int(vm, "release_after_total", 0);
+        p2_map_set_int(vm, "release_before_created", 0);
+        p2_map_set_int(vm, "release_after_created", 0);
+        be_pop(vm, 1);
+        be_return(vm);
     }
 
     runtime_locked = p2_child_vm_runtime_lock_enter();
@@ -4561,6 +5102,27 @@ static int p2_vm_call_impl(bvm *vm, int auto_release)
     }
     p2_child_vm_runtime_lock_leave(runtime_locked);
 
+    if (!created) {
+        status = "partition_create_failed";
+    } else if (!selected) {
+        status = "partition_select_failed";
+    } else if (!child_created) {
+        status = "child_create_failed";
+    } else if (source_result != BE_OK) {
+        status = "source_error";
+    } else if (!function_found) {
+        status = "function_missing";
+    } else if (call_result != BE_OK) {
+        status = "call_error";
+    } else if (child_stack_top != 0) {
+        status = "child_stack_dirty";
+    } else if (auto_release && !release_result) {
+        status = "release_failed";
+    } else {
+        ok = 1;
+        status = "ok";
+    }
+
     be_newobject(vm, "map");
     p2_map_set_int(vm, "slot", slot);
     p2_map_set_int(vm, "bytes", bytes);
@@ -4569,6 +5131,13 @@ static int p2_vm_call_impl(bvm *vm, int auto_release)
     p2_map_set_int(vm, "arg_bool_count", (bint)arg_bool_count);
     p2_map_set_int(vm, "arg_nil_count", (bint)arg_nil_count);
     p2_map_set_int(vm, "arg_string_count", (bint)arg_string_count);
+    p2_map_set_bool(vm, "args_copyable", args_copyable);
+    p2_map_set_int(vm, "arg_rejected_count", (bint)arg_rejected_count);
+    p2_map_set_int(vm, "first_arg_rejected_index", (bint)first_arg_rejected_index);
+    p2_map_set_string(vm, "first_arg_rejected_kind", first_arg_rejected_kind);
+    p2_map_set_string(vm, "first_arg_rejected_reason", first_arg_rejected_reason);
+    p2_map_set_bool(vm, "ok", ok);
+    p2_map_set_string(vm, "status", status);
     p2_map_set_bool(vm, "partition_ready", created);
     p2_map_set_bool(vm, "selected", selected);
     p2_map_set_bool(vm, "child_created", child_created);
@@ -4617,6 +5186,8 @@ static int m_p2_vm_open(bvm *vm)
     int selected = 0;
     int child_created = 0;
     int already_active = 0;
+    int ok = 0;
+    const char *status = "not_run";
     int runtime_locked = 0;
     size_t wrong_free_before;
     size_t wrong_realloc_before;
@@ -4668,9 +5239,25 @@ static int m_p2_vm_open(bvm *vm)
     wrong_realloc_after = p2_heap_wrong_realloc_count();
     p2_child_vm_runtime_lock_leave(runtime_locked);
 
+    if (already_active) {
+        ok = 1;
+        status = "already_active";
+    } else if (!created) {
+        status = "partition_create_failed";
+    } else if (!selected) {
+        status = "partition_select_failed";
+    } else if (!child_created) {
+        status = "child_create_failed";
+    } else {
+        ok = 1;
+        status = "ok";
+    }
+
     be_newobject(vm, "map");
     p2_map_set_int(vm, "slot", slot);
     p2_map_set_int(vm, "bytes", bytes);
+    p2_map_set_bool(vm, "ok", ok);
+    p2_map_set_string(vm, "status", status);
     p2_map_set_bool(vm, "partition_ready", created);
     p2_map_set_bool(vm, "selected", selected);
     p2_map_set_bool(vm, "child_created", child_created);
@@ -4693,6 +5280,8 @@ static int m_p2_vm_eval(bvm *vm)
     int selected = 0;
     int run_result = BE_SYNTAX_ERROR;
     int stack_top = 0;
+    int ok = 0;
+    const char *status = "not_run";
     int runtime_locked = 0;
     size_t wrong_free_before;
     size_t wrong_realloc_before;
@@ -4739,8 +5328,23 @@ static int m_p2_vm_eval(bvm *vm)
     wrong_realloc_after = p2_heap_wrong_realloc_count();
     p2_child_vm_runtime_lock_leave(runtime_locked);
 
+    if (!p2_child_vm_handles[slot].active) {
+        status = "inactive";
+    } else if (!selected) {
+        status = "partition_select_failed";
+    } else if (run_result != BE_OK) {
+        status = "source_error";
+    } else if (stack_top != 0) {
+        status = "child_stack_dirty";
+    } else {
+        ok = 1;
+        status = "ok";
+    }
+
     be_newobject(vm, "map");
     p2_map_set_int(vm, "slot", slot);
+    p2_map_set_bool(vm, "ok", ok);
+    p2_map_set_string(vm, "status", status);
     p2_map_set_bool(vm, "active", p2_child_vm_handles[slot].active);
     p2_map_set_bool(vm, "selected", selected);
     p2_map_set_bool(vm, "runtime_locked", runtime_locked);
@@ -4764,6 +5368,8 @@ static int m_p2_vm_get(bvm *vm)
     int result_type = 0;
     bint result_int = 0;
     int result_bool = 0;
+    int ok = 0;
+    const char *status = "not_run";
     int runtime_locked = 0;
     char result_string[96];
 
@@ -4820,8 +5426,23 @@ static int m_p2_vm_get(bvm *vm)
     }
     p2_child_vm_runtime_lock_leave(runtime_locked);
 
+    if (!p2_child_vm_handles[slot].active) {
+        status = "inactive";
+    } else if (!selected) {
+        status = "partition_select_failed";
+    } else if (!found) {
+        status = "missing";
+    } else if (result_type == 0) {
+        status = "unsupported_result";
+    } else {
+        ok = 1;
+        status = "ok";
+    }
+
     be_newobject(vm, "map");
     p2_map_set_int(vm, "slot", slot);
+    p2_map_set_bool(vm, "ok", ok);
+    p2_map_set_string(vm, "status", status);
     p2_map_set_bool(vm, "active", p2_child_vm_handles[slot].active);
     p2_map_set_bool(vm, "selected", selected);
     p2_map_set_bool(vm, "runtime_locked", runtime_locked);
@@ -4849,9 +5470,16 @@ static int m_p2_vm_invoke(bvm *vm)
     int arg_bool_count = 0;
     int arg_nil_count = 0;
     int arg_string_count = 0;
+    int args_copyable = 1;
+    int arg_rejected_count = 0;
+    int first_arg_rejected_index = -1;
+    const char *first_arg_rejected_kind = "";
+    const char *first_arg_rejected_reason = "";
     int previous_slot;
     int selected = 0;
     int function_found = 0;
+    int ok = 0;
+    const char *status = "not_run";
     int call_result = BE_SYNTAX_ERROR;
     int result_type = 0;
     bint result_int = 0;
@@ -4899,11 +5527,22 @@ static int m_p2_vm_invoke(bvm *vm)
     }
     for (i = 0; i < argc; ++i) {
         int index = i + 3;
+        p2_vm_copyable_info copy_info = p2_vm_copyable_classify(vm, index);
 
         arg_type[i] = 0;
         arg_int[i] = 0;
         arg_bool[i] = 0;
         arg_string[i][0] = '\0';
+        if (!copy_info.ok) {
+            args_copyable = 0;
+            ++arg_rejected_count;
+            if (first_arg_rejected_index < 0) {
+                first_arg_rejected_index = i + 1;
+                first_arg_rejected_kind = copy_info.kind;
+                first_arg_rejected_reason = copy_info.reason;
+            }
+            continue;
+        }
         if (be_isint(vm, index)) {
             arg_type[i] = 1;
             arg_int[i] = be_toint(vm, index);
@@ -4924,9 +5563,39 @@ static int m_p2_vm_invoke(bvm *vm)
                 arg_string[i][sizeof(arg_string[i]) - 1] = '\0';
             }
             ++arg_string_count;
-        } else {
-            be_raise(vm, "type_error", "child VM call args must be int, bool, nil, or string");
         }
+    }
+
+    if (!args_copyable) {
+        be_newobject(vm, "map");
+        p2_map_set_int(vm, "slot", slot);
+        p2_map_set_int(vm, "argc", (bint)argc);
+        p2_map_set_int(vm, "arg_int_count", (bint)arg_int_count);
+        p2_map_set_int(vm, "arg_bool_count", (bint)arg_bool_count);
+        p2_map_set_int(vm, "arg_nil_count", (bint)arg_nil_count);
+        p2_map_set_int(vm, "arg_string_count", (bint)arg_string_count);
+        p2_map_set_bool(vm, "args_copyable", 0);
+        p2_map_set_int(vm, "arg_rejected_count", (bint)arg_rejected_count);
+        p2_map_set_int(vm, "first_arg_rejected_index", (bint)first_arg_rejected_index);
+        p2_map_set_string(vm, "first_arg_rejected_kind", first_arg_rejected_kind);
+        p2_map_set_string(vm, "first_arg_rejected_reason", first_arg_rejected_reason);
+        p2_map_set_bool(vm, "ok", 0);
+        p2_map_set_string(vm, "status", "args_rejected");
+        p2_map_set_bool(vm, "active", p2_child_vm_handles[slot].active);
+        p2_map_set_bool(vm, "selected", 0);
+        p2_map_set_bool(vm, "runtime_locked", 0);
+        p2_map_set_bool(vm, "function_found", 0);
+        p2_map_set_int(vm, "call_result", (bint)BE_SYNTAX_ERROR);
+        p2_map_set_int(vm, "result_type", 0);
+        p2_map_set_int(vm, "result_int", 0);
+        p2_map_set_bool(vm, "result_bool", 0);
+        p2_map_set_string(vm, "result_string", "");
+        p2_map_set_int(vm, "child_stack_top", 0);
+        p2_map_set_int(vm, "wrong_free_delta", 0);
+        p2_map_set_int(vm, "wrong_realloc_delta", 0);
+        p2_map_set_int(vm, "current", (bint)p2_heap_vm_partition_current());
+        be_pop(vm, 1);
+        be_return(vm);
     }
 
     runtime_locked = p2_child_vm_runtime_lock_enter();
@@ -4995,6 +5664,21 @@ static int m_p2_vm_invoke(bvm *vm)
     wrong_realloc_after = p2_heap_wrong_realloc_count();
     p2_child_vm_runtime_lock_leave(runtime_locked);
 
+    if (!p2_child_vm_handles[slot].active || child == NULL) {
+        status = "inactive";
+    } else if (!selected) {
+        status = "partition_select_failed";
+    } else if (!function_found) {
+        status = "function_missing";
+    } else if (call_result != BE_OK) {
+        status = "call_error";
+    } else if (child_stack_top != 0) {
+        status = "child_stack_dirty";
+    } else {
+        ok = 1;
+        status = "ok";
+    }
+
     be_newobject(vm, "map");
     p2_map_set_int(vm, "slot", slot);
     p2_map_set_int(vm, "argc", (bint)argc);
@@ -5002,6 +5686,13 @@ static int m_p2_vm_invoke(bvm *vm)
     p2_map_set_int(vm, "arg_bool_count", (bint)arg_bool_count);
     p2_map_set_int(vm, "arg_nil_count", (bint)arg_nil_count);
     p2_map_set_int(vm, "arg_string_count", (bint)arg_string_count);
+    p2_map_set_bool(vm, "args_copyable", args_copyable);
+    p2_map_set_int(vm, "arg_rejected_count", (bint)arg_rejected_count);
+    p2_map_set_int(vm, "first_arg_rejected_index", (bint)first_arg_rejected_index);
+    p2_map_set_string(vm, "first_arg_rejected_kind", first_arg_rejected_kind);
+    p2_map_set_string(vm, "first_arg_rejected_reason", first_arg_rejected_reason);
+    p2_map_set_bool(vm, "ok", ok);
+    p2_map_set_string(vm, "status", status);
     p2_map_set_bool(vm, "active", p2_child_vm_handles[slot].active);
     p2_map_set_bool(vm, "selected", selected);
     p2_map_set_bool(vm, "runtime_locked", runtime_locked);
@@ -5569,6 +6260,8 @@ static int m_p2_vm_close(bvm *vm)
     int was_active;
     int child_deleted = 0;
     int released = 0;
+    int ok = 0;
+    const char *status = "not_run";
     size_t release_before_main;
     size_t release_after_main;
     size_t release_before_total;
@@ -5594,6 +6287,8 @@ static int m_p2_vm_close(bvm *vm)
         p2_child_vm_runtime_lock_leave(runtime_locked);
         be_newobject(vm, "map");
         p2_map_set_int(vm, "slot", slot);
+        p2_map_set_bool(vm, "ok", 0);
+        p2_map_set_string(vm, "status", "cog_running");
         p2_map_set_bool(vm, "was_active", was_active);
         p2_map_set_bool(vm, "selected", 0);
         p2_map_set_bool(vm, "child_deleted", 0);
@@ -5641,8 +6336,23 @@ static int m_p2_vm_close(bvm *vm)
     }
     p2_child_vm_runtime_lock_leave(runtime_locked);
 
+    if (!was_active) {
+        status = "inactive";
+    } else if (!selected) {
+        status = "partition_select_failed";
+    } else if (!child_deleted) {
+        status = "child_delete_failed";
+    } else if (!released) {
+        status = "release_failed";
+    } else {
+        ok = 1;
+        status = "ok";
+    }
+
     be_newobject(vm, "map");
     p2_map_set_int(vm, "slot", slot);
+    p2_map_set_bool(vm, "ok", ok);
+    p2_map_set_string(vm, "status", status);
     p2_map_set_bool(vm, "was_active", was_active);
     p2_map_set_bool(vm, "selected", selected);
     p2_map_set_bool(vm, "child_deleted", child_deleted);
@@ -5687,6 +6397,71 @@ static int m_p2_vm_partition_info(bvm *vm)
     p2_map_set_int(vm, "low", (bint)p2_heap_vm_partition_low_address((int)slot));
     p2_map_set_int(vm, "high", (bint)p2_heap_vm_partition_high_address((int)slot));
     p2_map_set_int(vm, "current", (bint)p2_heap_vm_partition_current());
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_vm_info(bvm *vm)
+{
+    bint slot;
+    int runtime_locked;
+    int active;
+    int has_child;
+    int cog_running;
+    int cog_status;
+    int cog_id;
+    int has_cog_stack;
+    size_t cog_stack_size;
+    size_t bytes;
+    size_t free_bytes;
+    const char *status;
+
+    p2_child_vm_handles_init();
+    if (be_top(vm) < 1 || !be_isint(vm, 1)) {
+        be_raise(vm, "type_error", "slot must be int");
+    }
+    slot = be_toint(vm, 1);
+    if (slot < 0 || slot >= BE_P2_VM_HEAP_MAX_PARTITIONS) {
+        be_raise(vm, "value_error", "slot out of range");
+    }
+
+    runtime_locked = p2_child_vm_runtime_lock_enter();
+    active = p2_child_vm_handles[slot].active;
+    has_child = p2_child_vm_handles[slot].child != NULL;
+    cog_status = p2_child_vm_handles[slot].cog_status;
+    cog_id = p2_child_vm_handles[slot].cog_id;
+    cog_running = (cog_status == 1 || (cog_id >= 0 && _cogchk(cog_id)));
+    has_cog_stack = p2_child_vm_handles[slot].cog_stack != NULL;
+    cog_stack_size = p2_child_vm_handles[slot].cog_stack_size;
+    bytes = p2_heap_vm_partition_bytes((int)slot);
+    free_bytes = p2_heap_vm_partition_free_bytes((int)slot);
+    p2_child_vm_runtime_lock_leave(runtime_locked);
+
+    if (cog_running) {
+        status = "cog_running";
+    } else if (active && has_child) {
+        status = "active";
+    } else {
+        status = "inactive";
+    }
+
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "ok", 1);
+    p2_map_set_string(vm, "status", status);
+    p2_map_set_int(vm, "slot", slot);
+    p2_map_set_bool(vm, "active", active);
+    p2_map_set_bool(vm, "has_child", has_child);
+    p2_map_set_bool(vm, "partition_ready", p2_heap_vm_partition_ready((int)slot));
+    p2_map_set_int(vm, "bytes", (bint)bytes);
+    p2_map_set_int(vm, "free", (bint)free_bytes);
+    p2_map_set_int(vm, "used", (bint)(bytes > free_bytes ? bytes - free_bytes : 0));
+    p2_map_set_int(vm, "current", (bint)p2_heap_vm_partition_current());
+    p2_map_set_bool(vm, "cog_running", cog_running);
+    p2_map_set_int(vm, "cog_status", (bint)cog_status);
+    p2_map_set_int(vm, "cog_id", (bint)cog_id);
+    p2_map_set_bool(vm, "has_cog_stack", has_cog_stack);
+    p2_map_set_int(vm, "cog_stack_size", (bint)cog_stack_size);
+    p2_map_set_bool(vm, "runtime_locked", runtime_locked);
     be_pop(vm, 1);
     be_return(vm);
 }
@@ -5740,47 +6515,100 @@ static int m_p2_vm_partition_release(bvm *vm)
     be_return(vm);
 }
 
+static p2_vm_copyable_info p2_vm_copyable_classify(bvm *vm, int index)
+{
+    p2_vm_copyable_info info;
+
+    info.ok = 0;
+    info.kind = "unsupported";
+    info.reason = "live object transfer is not supported";
+
+    if (be_isnil(vm, index)) {
+        info.ok = 1;
+        info.kind = "nil";
+        info.reason = "copy as nil";
+    } else if (be_isbool(vm, index)) {
+        info.ok = 1;
+        info.kind = "bool";
+        info.reason = "copy by value";
+    } else if (be_isint(vm, index)) {
+        info.ok = 1;
+        info.kind = "int";
+        info.reason = "copy by value";
+    } else if (be_isstring(vm, index)) {
+        info.ok = 1;
+        info.kind = "string";
+        info.reason = "bounded copy";
+    } else if (be_isfunction(vm, index)) {
+        info.kind = "function";
+        info.reason = "closure/function transfer needs explicit child VM launch support";
+    } else if (be_islist(vm, index) || be_islistinstance(vm, index)) {
+        info.kind = "list";
+        info.reason = "list object graph transfer is not supported";
+    } else if (be_ismap(vm, index) || be_ismapinstance(vm, index)) {
+        info.kind = "map";
+        info.reason = "map object graph transfer is not supported";
+    }
+
+    return info;
+}
+
 static int m_p2_vm_copyable(bvm *vm)
 {
-    const char *kind = "unsupported";
-    const char *reason = "live object transfer is not supported";
-    int ok = 0;
+    p2_vm_copyable_info info;
 
     if (be_top(vm) < 1) {
         be_raise(vm, "value_error", "expected value");
     }
 
-    if (be_isnil(vm, 1)) {
-        ok = 1;
-        kind = "nil";
-        reason = "copy as nil";
-    } else if (be_isbool(vm, 1)) {
-        ok = 1;
-        kind = "bool";
-        reason = "copy by value";
-    } else if (be_isint(vm, 1)) {
-        ok = 1;
-        kind = "int";
-        reason = "copy by value";
-    } else if (be_isstring(vm, 1)) {
-        ok = 1;
-        kind = "string";
-        reason = "bounded copy";
-    } else if (be_isfunction(vm, 1)) {
-        kind = "function";
-        reason = "closure/function transfer needs explicit child VM launch support";
-    } else if (be_islist(vm, 1) || be_islistinstance(vm, 1)) {
-        kind = "list";
-        reason = "list object graph transfer is not supported";
-    } else if (be_ismap(vm, 1) || be_ismapinstance(vm, 1)) {
-        kind = "map";
-        reason = "map object graph transfer is not supported";
+    info = p2_vm_copyable_classify(vm, 1);
+
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "ok", info.ok);
+    p2_map_set_string(vm, "kind", info.kind);
+    p2_map_set_string(vm, "reason", info.reason);
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_vm_copyable_args(bvm *vm)
+{
+    int argc = be_top(vm);
+    int copyable_count = 0;
+    int rejected_count = 0;
+    int first_rejected_index = -1;
+    const char *first_rejected_kind = "";
+    const char *first_rejected_reason = "";
+    int i;
+
+    for (i = 1; i <= argc; ++i) {
+        p2_vm_copyable_info info = p2_vm_copyable_classify(vm, i);
+        if (info.ok) {
+            ++copyable_count;
+        } else {
+            ++rejected_count;
+            if (first_rejected_index < 0) {
+                first_rejected_index = i;
+                first_rejected_kind = info.kind;
+                first_rejected_reason = info.reason;
+            }
+        }
     }
 
     be_newobject(vm, "map");
-    p2_map_set_bool(vm, "ok", ok);
-    p2_map_set_string(vm, "kind", kind);
-    p2_map_set_string(vm, "reason", reason);
+    p2_map_set_bool(vm, "ok", rejected_count == 0);
+    p2_map_set_int(vm, "count", argc);
+    p2_map_set_int(vm, "copyable_count", copyable_count);
+    p2_map_set_int(vm, "rejected_count", rejected_count);
+    p2_map_set_int(vm, "first_rejected_index", first_rejected_index);
+    p2_map_set_string(vm, "first_rejected_kind", first_rejected_kind);
+    p2_map_set_string(vm, "first_rejected_reason", first_rejected_reason);
+    p2_map_set_string(vm, "policy", "primitive_copy_only");
+    p2_map_set_string(vm, "serialization_policy", "explicit_copy_policy_required");
+    p2_map_set_bool(vm, "bounded_string_copy", 1);
+    p2_map_set_bool(vm, "ownership_transfer", 0);
+    p2_map_set_bool(vm, "shared_mutable_state", 0);
+    p2_map_set_bool(vm, "resource_transfer", 0);
     be_pop(vm, 1);
     be_return(vm);
 }
@@ -7173,6 +8001,8 @@ static int m_p2_status(bvm *vm)
 
 static void p2_status_info_build(bvm *vm)
 {
+    bint bytecode_sizeinfo = (sizeof(bint) == 8) | ((sizeof(breal) == 8) << 1);
+
     be_newobject(vm, "map");
     p2_map_set_string(vm, "date", P2_BUILD_DATE_STR);
     p2_map_set_string(vm, "time", P2_BUILD_TIME_STR);
@@ -7192,6 +8022,8 @@ static void p2_status_info_build(bvm *vm)
     p2_map_set_int(vm, "bytecode_saver", (bint)BE_USE_BYTECODE_SAVER);
     p2_map_set_int(vm, "bytecode_loader", (bint)BE_USE_BYTECODE_LOADER);
     p2_map_set_int(vm, "bytecode_execution", (bint)BE_P2_ENABLE_BYTECODE_EXECUTION);
+    p2_map_set_int(vm, "bytecode_sizeinfo", bytecode_sizeinfo);
+    p2_map_set_int(vm, "builtin_count", (bint)(be_builtin_count(vm)));
     be_pop(vm, 1);
 }
 
@@ -7598,9 +8430,76 @@ static int m_p2_debug_registers(bvm *vm)
     be_return(vm);
 }
 
+static void p2_debug_push_capabilities(bvm *vm)
+{
+    be_newobject(vm, "map");
+    p2_map_set_bool(vm, "snapshot", 1);
+    p2_map_set_bool(vm, "heap", 1);
+    p2_map_set_bool(vm, "gc", 1);
+    p2_map_set_bool(vm, "cogs", 1);
+    p2_map_set_bool(vm, "memory_map", 1);
+    p2_map_set_bool(vm, "pins", 1);
+    p2_map_set_bool(vm, "smartpin", 1);
+    p2_map_set_bool(vm, "registers", 1);
+    p2_map_set_bool(vm, "breakpoints", 0);
+    p2_map_set_bool(vm, "trace_controls", 0);
+    p2_map_set_bool(vm, "source_stack_traces", 0);
+    p2_map_set_bool(vm, "native_error_detail", 0);
+    p2_map_set_bool(vm, "module_cache_internals", 0);
+    p2_map_set_bool(vm, "task_internals", 0);
+    p2_map_set_bool(vm, "lock_internals", 0);
+    p2_map_set_bool(vm, "channel_internals", 0);
+    p2_map_set_bool(vm, "pasm_single_step", 0);
+    p2_map_set_string(vm, "policy", "query_snapshots_only_no_breakpoints_or_trace_controls");
+}
+
+static int m_p2_debug_capabilities(bvm *vm)
+{
+    p2_debug_push_capabilities(vm);
+    be_pop(vm, 1);
+    be_return(vm);
+}
+
+static int m_p2_debug_capability(bvm *vm)
+{
+    const char *name;
+
+    if (be_top(vm) < 1 || !be_isstring(vm, 1)) {
+        be_return_nil(vm);
+    }
+    name = be_tostring(vm, 1);
+    if (!strcmp(name, "snapshot") ||
+        !strcmp(name, "heap") ||
+        !strcmp(name, "gc") ||
+        !strcmp(name, "cogs") ||
+        !strcmp(name, "memory_map") ||
+        !strcmp(name, "pins") ||
+        !strcmp(name, "smartpin") ||
+        !strcmp(name, "registers")) {
+        be_pushbool(vm, 1);
+    } else if (!strcmp(name, "breakpoints") ||
+        !strcmp(name, "trace_controls") ||
+        !strcmp(name, "source_stack_traces") ||
+        !strcmp(name, "native_error_detail") ||
+        !strcmp(name, "module_cache_internals") ||
+        !strcmp(name, "task_internals") ||
+        !strcmp(name, "lock_internals") ||
+        !strcmp(name, "channel_internals") ||
+        !strcmp(name, "pasm_single_step")) {
+        be_pushbool(vm, 0);
+    } else if (!strcmp(name, "policy")) {
+        be_pushstring(vm, "query_snapshots_only_no_breakpoints_or_trace_controls");
+    } else {
+        be_pushnil(vm);
+    }
+    be_return(vm);
+}
+
 static void p2_module_add_debug(bvm *vm)
 {
     be_newmodule(vm);
+    p2_module_set_func(vm, "capabilities", m_p2_debug_capabilities);
+    p2_module_set_func(vm, "capability", m_p2_debug_capability);
     p2_module_set_func(vm, "snapshot", m_p2_debug_snapshot);
     p2_module_set_func(vm, "heap", m_p2_debug_heap);
     p2_module_set_func(vm, "gc", m_p2_debug_gc);
@@ -7653,7 +8552,9 @@ static void p2_module_add_cog(bvm *vm)
     p2_module_set_func(vm, "result", m_p2_closure_cog_result);
     p2_module_set_func(vm, "error", m_p2_closure_cog_error);
     p2_module_set_func(vm, "kill", m_p2_closure_cog_kill);
+    p2_module_set_func(vm, "cleanup_result", m_p2_closure_cog_cleanup_result);
     p2_module_set_func(vm, "capabilities", m_p2_closure_cog_capabilities);
+    p2_module_set_func(vm, "capability", m_p2_closure_cog_capability);
     p2_module_set_func(vm, "required_capability_keys", m_p2_closure_cog_required_capability_keys);
     p2_module_set_func(vm, "audit", m_p2_closure_cog_audit);
     p2_module_set_func(vm, "audit_problems", m_p2_closure_cog_audit_problems);
@@ -7729,8 +8630,10 @@ static void p2_module_add_asm(bvm *vm)
     p2_module_set_func(vm, "cogstop", m_cog_stop);
     p2_module_set_func(vm, "cogcheck", m_cog_check);
     p2_module_set_func(vm, "capabilities", m_p2_asm_capabilities);
+    p2_module_set_func(vm, "capability", m_p2_asm_capability);
     p2_module_set_func(vm, "required_capability_keys", m_p2_asm_required_capability_keys);
     p2_module_set_func(vm, "abi", m_p2_asm_abi);
+    p2_module_set_func(vm, "abi_value", m_p2_asm_abi_value);
     p2_module_set_func(vm, "required_abi_keys", m_p2_asm_required_abi_keys);
     p2_module_set_func(vm, "audit", m_p2_asm_audit);
     p2_module_set_func(vm, "audit_problems", m_p2_asm_audit_problems);
@@ -7738,6 +8641,8 @@ static void p2_module_add_asm(bvm *vm)
     p2_module_set_func(vm, "marker_blob", m_p2_asm_marker_blob);
     p2_module_set_func(vm, "launch_probe", m_p2_asm_launch_probe);
     p2_module_set_func(vm, "launch_loaded_probe", m_p2_asm_launch_loaded_probe);
+    p2_module_set_func(vm, "fixture_call", m_p2_asm_fixture_call);
+    p2_module_set_func(vm, "fixture_add", m_p2_asm_fixture_add);
     p2_module_set_current_as_member(vm, "asm");
 }
 
@@ -7749,6 +8654,7 @@ typedef struct {
 static const p2_named_int p2_smart_constants[] = {
     { "true_a", P_TRUE_A },
     { "local_a", P_LOCAL_A },
+    { "invert_a", (bint)(int32_t)P_INVERT_A },
     { "plus1_a", P_PLUS1_A },
     { "plus2_a", P_PLUS2_A },
     { "plus3_a", P_PLUS3_A },
@@ -7910,7 +8816,9 @@ static void p2_module_add_runtime_cog(bvm *vm)
     p2_module_set_func(vm, "result", m_p2_closure_cog_result);
     p2_module_set_func(vm, "error", m_p2_closure_cog_error);
     p2_module_set_func(vm, "kill", m_p2_closure_cog_kill);
+    p2_module_set_func(vm, "cleanup_result", m_p2_closure_cog_cleanup_result);
     p2_module_set_func(vm, "capabilities", m_p2_closure_cog_capabilities);
+    p2_module_set_func(vm, "capability", m_p2_closure_cog_capability);
     p2_module_set_func(vm, "required_capability_keys", m_p2_closure_cog_required_capability_keys);
     p2_module_set_func(vm, "audit", m_p2_closure_cog_audit);
     p2_module_set_func(vm, "audit_problems", m_p2_closure_cog_audit_problems);
@@ -8170,6 +9078,8 @@ static int m_p2_member(bvm *vm)
 #endif
     else if (!strcmp(name, "cog_is_task")) be_pushntvfunction(vm, m_p2_closure_cog_is_task);
     else if (!strcmp(name, "cog_info")) be_pushntvfunction(vm, m_p2_closure_cog_info);
+    else if (!strcmp(name, "cog_cleanup_result")) be_pushntvfunction(vm, m_p2_closure_cog_cleanup_result);
+    else if (!strcmp(name, "cog_capability")) be_pushntvfunction(vm, m_p2_closure_cog_capability);
     else if (!strcmp(name, "cog_required_capability_keys")) be_pushntvfunction(vm, m_p2_closure_cog_required_capability_keys);
     else if (!strcmp(name, "cog_audit")) be_pushntvfunction(vm, m_p2_closure_cog_audit);
     else if (!strcmp(name, "cog_audit_problems")) be_pushntvfunction(vm, m_p2_closure_cog_audit_problems);
@@ -8217,9 +9127,11 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "vm_cog_ping")) be_pushntvfunction(vm, m_p2_vm_cog_ping);
 #endif
     else if (!strcmp(name, "vm_close")) be_pushntvfunction(vm, m_p2_vm_close);
+    else if (!strcmp(name, "vm_info")) be_pushntvfunction(vm, m_p2_vm_info);
     else if (!strcmp(name, "vm_partition_info")) be_pushntvfunction(vm, m_p2_vm_partition_info);
     else if (!strcmp(name, "vm_partition_release")) be_pushntvfunction(vm, m_p2_vm_partition_release);
     else if (!strcmp(name, "vm_copyable")) be_pushntvfunction(vm, m_p2_vm_copyable);
+    else if (!strcmp(name, "vm_copyable_args")) be_pushntvfunction(vm, m_p2_vm_copyable_args);
     else if (!strcmp(name, "c_allocator_test")) be_pushntvfunction(vm, m_p2_c_allocator_test);
     else if (!strcmp(name, "fs_info")) be_pushntvfunction(vm, m_p2_fs_info);
     else if (!strcmp(name, "sd_info")) be_pushntvfunction(vm, m_p2_fs_info);
@@ -8243,12 +9155,16 @@ static int m_p2_member(bvm *vm)
     else if (!strcmp(name, "psram_write")) be_pushntvfunction(vm, m_p2_psram_write);
     else if (!strcmp(name, "psram_test")) be_pushntvfunction(vm, m_p2_psram_test);
     else if (!strcmp(name, "asm_capabilities")) be_pushntvfunction(vm, m_p2_asm_capabilities);
+    else if (!strcmp(name, "asm_capability")) be_pushntvfunction(vm, m_p2_asm_capability);
     else if (!strcmp(name, "asm_required_capability_keys")) be_pushntvfunction(vm, m_p2_asm_required_capability_keys);
     else if (!strcmp(name, "asm_abi")) be_pushntvfunction(vm, m_p2_asm_abi);
+    else if (!strcmp(name, "asm_abi_value")) be_pushntvfunction(vm, m_p2_asm_abi_value);
     else if (!strcmp(name, "asm_required_abi_keys")) be_pushntvfunction(vm, m_p2_asm_required_abi_keys);
     else if (!strcmp(name, "asm_audit")) be_pushntvfunction(vm, m_p2_asm_audit);
     else if (!strcmp(name, "asm_audit_problems")) be_pushntvfunction(vm, m_p2_asm_audit_problems);
     else if (!strcmp(name, "asm_audit_ok")) be_pushntvfunction(vm, m_p2_asm_audit_ok);
+    else if (!strcmp(name, "asm_fixture_call")) be_pushntvfunction(vm, m_p2_asm_fixture_call);
+    else if (!strcmp(name, "asm_fixture_add")) be_pushntvfunction(vm, m_p2_asm_fixture_add);
     else if (!strcmp(name, "status")) be_pushntvfunction(vm, m_p2_status);
     else if (!strcmp(name, "status_info")) be_pushntvfunction(vm, m_p2_status_info);
     else if (!strcmp(name, "debug_snapshot")) be_pushntvfunction(vm, m_p2_status_info);

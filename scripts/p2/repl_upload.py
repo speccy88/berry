@@ -152,6 +152,18 @@ def upload_file(ser, src: Path, target: str, line_ending: bytes, prompt: bytes, 
     run_command(ser, "f.close()", line_ending, prompt, timeout)
 
 
+def upload_binary_file(ser, src: Path, target: str, line_ending: bytes, prompt: bytes, timeout: float, chunk_bytes: int) -> None:
+    data = src.read_bytes()
+    ensure_dirs(ser, target, line_ending, prompt, timeout)
+    print(f"[p2-upload] {src} -> {target} ({len(data)} binary bytes)")
+    run_command(ser, f"f=open({berry_string(target)},\"w\")", line_ending, prompt, timeout)
+    chunk_bytes = max(1, chunk_bytes // 2)
+    for offset in range(0, len(data), chunk_bytes):
+        chunk = data[offset : offset + chunk_bytes]
+        run_command(ser, f"f.write(bytes().fromhex({berry_string(chunk.hex())}))", line_ending, prompt, timeout)
+    run_command(ser, "f.close()", line_ending, prompt, timeout)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Upload text files to a running Berry P2 REPL.")
     parser.add_argument("--port", required=True)
@@ -167,23 +179,30 @@ def main() -> int:
         metavar="LOCAL=REMOTE",
         help="upload LOCAL to REMOTE; REMOTE may be absolute or relative to --target-dir",
     )
+    parser.add_argument(
+        "--binary-target-file",
+        action="append",
+        default=[],
+        metavar="LOCAL=REMOTE",
+        help="upload binary LOCAL to REMOTE via bytes().fromhex(); REMOTE may be absolute or relative to --target-dir",
+    )
     parser.add_argument("--timeout", type=float, default=20.0)
     parser.add_argument("--line-ending", choices=sorted(LINE_ENDINGS), default="cr")
     parser.add_argument("--prompt", default="berry>")
     parser.add_argument("--chunk-body", type=int, default=96)
     args = parser.parse_args()
 
-    if not args.mkdir and not args.recursive_directory and not args.file and not args.target_file:
-        parser.error("provide --mkdir, --file, --target-file, or --recursive-directory")
+    if not args.mkdir and not args.recursive_directory and not args.file and not args.target_file and not args.binary_target_file:
+        parser.error("provide --mkdir, --file, --target-file, --binary-target-file, or --recursive-directory")
     if args.chunk_body <= 0 or args.chunk_body > 160:
         parser.error("--chunk-body must be 1..160")
 
-    transfers: list[tuple[Path, str]] = []
+    transfers: list[tuple[Path, str, bool]] = []
     for filename in args.file:
         src = Path(filename)
         if not src.is_file():
             raise FileNotFoundError(src)
-        transfers.append((src, target_join(args.target_dir, src.name)))
+        transfers.append((src, target_join(args.target_dir, src.name), False))
     for mapping in args.target_file:
         if "=" not in mapping:
             parser.error("--target-file must use LOCAL=REMOTE")
@@ -194,14 +213,25 @@ def main() -> int:
         if not src.is_file():
             raise FileNotFoundError(src)
         target = remote if remote.startswith("/") else target_join(args.target_dir, remote)
-        transfers.append((src, target))
+        transfers.append((src, target, False))
+    for mapping in args.binary_target_file:
+        if "=" not in mapping:
+            parser.error("--binary-target-file must use LOCAL=REMOTE")
+        local, remote = mapping.split("=", 1)
+        if not local or not remote:
+            parser.error("--binary-target-file must use non-empty LOCAL and REMOTE")
+        src = Path(local)
+        if not src.is_file():
+            raise FileNotFoundError(src)
+        target = remote if remote.startswith("/") else target_join(args.target_dir, remote)
+        transfers.append((src, target, True))
     for dirname in args.recursive_directory:
         directory = Path(dirname)
         if not directory.is_dir():
             raise FileNotFoundError(directory)
         for src in collect_files(directory):
             rel = src.relative_to(directory).as_posix()
-            transfers.append((src, target_join(args.target_dir, rel)))
+            transfers.append((src, target_join(args.target_dir, rel), False))
 
     serial = load_serial_module()
     prompt = args.prompt.encode("utf-8")
@@ -223,8 +253,11 @@ def main() -> int:
         for target_dir in args.mkdir:
             print(f"[p2-upload] mkdir {target_dir}")
             ensure_dir(ser, target_dir, line_ending, prompt, args.timeout)
-        for src, target in transfers:
-            upload_file(ser, src, target, line_ending, prompt, args.timeout, args.chunk_body)
+        for src, target, binary in transfers:
+            if binary:
+                upload_binary_file(ser, src, target, line_ending, prompt, args.timeout, args.chunk_body)
+            else:
+                upload_file(ser, src, target, line_ending, prompt, args.timeout, args.chunk_body)
 
     print("[p2-upload] done")
     return 0

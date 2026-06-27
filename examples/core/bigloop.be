@@ -1,15 +1,10 @@
-import time
+var iterations = 100
 
-c = time.clock()
-do
-    i = 0
-    while i < 100000000
-        i += 1
-    end
+i = 0
+while i < iterations
+    i += 1
 end
-print('while iteration 100000000 times', time.clock() - c, 's')
+print("while iterations:", i)
 
-c = time.clock()
-for i : 1 .. 100000000
-end
-print('for   iteration 100000000  times', time.clock() - c, 's')
+print("for iterator demo:", "skipped on current P2 image")
+print("bigloop demo done")

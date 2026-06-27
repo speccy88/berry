@@ -98,7 +98,14 @@ task descriptor return value or an integer return value as the native blink
 period, and then runs the current native `blinker` backend on the spawned cog.
 Explicit task descriptors are also supported for native task backends.
 
-The source-backed isolated child VM bridge remains an internal investigation path, but it is not exposed as supported on the current Catalina XMM profile. The lower-level C child-cog entry starts a raw cog but does not execute the entry routine on XMM, and Catalina's documented thread support does not cover XMM. `p2.cog.capabilities()` therefore reports `spawn_source=false`, `isolated_child_vm_cog=false`, and `berry_closure=false` on this build.
+The source-backed isolated child VM bridge remains an internal investigation
+path, but it is not exposed as supported on the current Catalina XMM profile.
+The lower-level C child-cog entry starts a raw cog but does not execute the
+entry routine safely on XMM, and Catalina's documented thread support does not
+cover XMM. `p2.cog.capabilities()` therefore reports `spawn_source=false`,
+`isolated_child_vm_cog=false`, `berry_closure=false`,
+`isolated_child_vm_cog_policy="unsupported_catalina_xmm_c_cog_runtime_not_safe"`,
+and an `isolated_child_vm_cog_reason` string on this build.
 
 The safe XMM-supported path today is native task descriptors. The eventual arbitrary-closure path still needs a bytecode/source transfer model plus a working isolated child execution runtime that recreates the closure in a child VM without sharing GC-owned closure objects between VMs or cogs.
 

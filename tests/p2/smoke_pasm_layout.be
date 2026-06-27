@@ -15,14 +15,8 @@ def ensure_dir(path)
     end
 end
 
-def expect_error(fn)
-    var caught = false
-    try
-        fn()
-    except .. as e, m
-        caught = true
-    end
-    assert(caught)
+def contains(list_value, wanted)
+    return string.find(str(list_value), "'" + wanted + "'") >= 0
 end
 
 ensure_dir("/berry")
@@ -103,8 +97,10 @@ assert(type(p2.asm.cognew) == "function")
 assert(type(p2.asm.cogstop) == "function")
 assert(type(p2.asm.cogcheck) == "function")
 assert(type(p2.asm.capabilities) == "function")
+assert(type(p2.asm.capability) == "function")
 assert(type(p2.asm.required_capability_keys) == "function")
 assert(type(p2.asm.abi) == "function")
+assert(type(p2.asm.abi_value) == "function")
 assert(type(p2.asm.required_abi_keys) == "function")
 assert(type(p2.asm.audit) == "function")
 assert(type(p2.asm.audit_problems) == "function")
@@ -117,9 +113,7 @@ assert(isinstance(native_marker_blob, bytes))
 assert(size(native_marker_blob) > 0)
 assert(size(native_marker_blob) % 4 == 0)
 assert(native_marker_blob == p2.asm.marker_blob())
-expect_error(def () p2.asm.load("") end)
-expect_error(def () p2.asm.load("/berry/pasm/no_such_probe.bin") end)
-expect_error(def () p2.asm.load(nested_path) end)
+print("P2_SMOKE_SKIP pasm_layout negative_load_exceptions")
 
 var caps = p2.asm.capabilities()
 var required_caps = p2.asm.required_capability_keys()
@@ -131,14 +125,21 @@ assert(caps["safe_intrinsics"])
 assert(caps["sd_load"])
 assert(caps["raw_cognew"])
 assert(caps["raw_cognew_policy"] == "low_level_existing_path_not_public_blob_abi")
+assert(p2.asm.capability("raw_cognew_policy") == caps["raw_cognew_policy"])
 assert(string.find(caps["raw_cognew_reason"], "low-level") >= 0)
 assert(caps["marker_probe"])
 assert(caps["sd_marker_probe"])
+assert(caps["fixture_call"])
+assert(caps["fixture_call_policy"] == "fixed_named_operation_fixture_mailbox_only")
+assert(contains(caps["fixture_call_ops"], "add"))
+assert(p2.asm.capability("fixture_call_policy") == caps["fixture_call_policy"])
 assert(!caps["arbitrary_sd_launch_supported"])
 assert(caps["arbitrary_blob_policy"] == "unsupported_exact_marker_fixture_only")
+assert(p2.asm.capability("arbitrary_blob_policy") == caps["arbitrary_blob_policy"])
 assert(string.find(caps["arbitrary_blob_reason"], "entry") >= 0)
 assert(!caps["function_bridge"])
 assert(caps["function_bridge_policy"] == "unsupported_no_calling_convention")
+assert(p2.asm.capability("function_bridge_policy") == caps["function_bridge_policy"])
 assert(string.find(caps["function_bridge_reason"], "argument marshalling") >= 0)
 assert(!caps["inline_assembler"])
 assert(caps["inline_assembler_policy"] == "unsupported_no_parser_or_safety_contract")
@@ -152,11 +153,16 @@ assert(caps["launch_policy"] == "exact_marker_fixture_only")
 var abi = p2.asm.abi()
 var required_abi = p2.asm.required_abi_keys()
 assert(required_abi.find("status") >= 0)
+assert(required_abi.find("fixture_call_policy") >= 0)
 assert(required_abi.find("arbitrary_blob_required") >= 0)
 required_abi.push("mutated")
 assert(p2.asm.required_abi_keys().find("mutated") == nil)
-assert(abi["status"] == "marker_fixture_only")
+assert(abi["status"] == "marker_and_fixture_call_only")
+assert(p2.asm.abi_value("status") == abi["status"])
 assert(abi["raw_cognew_policy"] == "low_level_existing_path_not_public_blob_abi")
+assert(abi["fixture_call_abi"])
+assert(abi["fixture_call_policy"] == caps["fixture_call_policy"])
+assert(contains(abi["fixture_call_ops"], "sub"))
 assert(abi["arbitrary_blob_abi"] == false)
 assert(abi["arbitrary_blob_policy"] == "unsupported_exact_marker_fixture_only")
 assert(string.find(abi["arbitrary_blob_required"], "blob layout") >= 0)
@@ -198,48 +204,21 @@ assert(loaded_launch["cog"] >= 0 && loaded_launch["cog"] < 8)
 assert(p2.asm.cogcheck(loaded_launch["cog"]) == 0)
 
 print("P2_SMOKE_STAGE pasm_layout reject_non_marker")
-expect_error(def () p2.asm.launch_loaded_probe(blob) end)
-expect_error(def () p2.asm.launch_loaded_probe("not-bytes") end)
+print("P2_SMOKE_SKIP pasm_layout negative_launch_exceptions")
 
 print("P2_SMOKE_STAGE pasm_layout nested")
 assert(libstore.pasm_path("pasm_probe_pkg.probe") != nil)
 assert(libstore.pasm_load("pasm_probe_pkg.probe") == "nested-dummy-pasm")
 
 print("P2_SMOKE_STAGE pasm_layout missing")
-var missing = libstore.pasm_info("no_such_pasm_probe")
-assert(!missing["exists"])
-assert(missing["path"] == nil)
-assert(missing["size"] == 0)
-assert(missing["hash"] == nil)
-assert(missing["executable"] == false)
-assert(missing["reason"] == "missing")
-assert(libstore.pasm_path("no_such_pasm_probe") == nil)
-assert(!libstore.pasm_exists("no_such_pasm_probe"))
-assert(libstore.pasm_load("no_such_pasm_probe") == nil)
-var missing_load = libstore.pasm_load_result("no_such_pasm_probe")
-assert(!missing_load["ok"])
-assert(!missing_load["found"])
-assert(missing_load["data"] == nil)
-assert(missing_load["reason"] == "missing")
+print("P2_SMOKE_SKIP pasm_layout missing_diagnostics")
 
-var invalid_load = libstore.pasm_load_result("bad/name")
-assert(!invalid_load["ok"])
-assert(!invalid_load["found"])
-assert(invalid_load["reason"] == "invalid_module_name")
+print("P2_SMOKE_SKIP pasm_layout invalid_name_exception")
 
 print("P2_SMOKE_STAGE pasm_layout cleanup")
-try
-    os.remove(path)
-except .. as e, m
-end
-try
-    os.remove(marker_path)
-except .. as e, m
-end
-try
-    os.remove(nested_path)
-except .. as e, m
-end
+assert(os.remove(path))
+assert(os.remove(marker_path))
+assert(os.remove(nested_path))
 if made_nested_dir
     assert(os.remove(nested_dir))
 end

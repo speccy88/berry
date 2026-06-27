@@ -31,12 +31,7 @@ def qsort(data)
     return data
 end
 
-import time, math
-math.srand(time.time()) # sse system time as a random seed
-data = []
-# put 20 random numbers into the array
-for i : 1 .. 20
-    data.push(math.rand() % 100)
-end
-# sort and print
-print(qsort(data))
+data = [42, 7, 19, 3, 42, 0, 11]
+print("qsort before:", data)
+print("qsort after:", qsort(data))
+print("qsort demo done")

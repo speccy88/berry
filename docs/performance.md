@@ -33,3 +33,16 @@ This file defines the benchmark areas required by the TODO list. It does not cla
 Every benchmark result should record board, profile, toolchain, git revision, command, sample count, result, and notes about SD card or attached hardware.
 
 Do not add complicated acceleration until benchmarks prove the PSRAM/cache/native path is worth the complexity.
+
+## Captured results
+
+### CORDIC math timing hook
+
+- Board/profile: P2 Edge 32 MB, XMM profile, `/dev/ttyUSB0` board.
+- Toolchain: Catalina via `CATALINA_DIR=../Catalina`.
+- Captured firmware image: `1165888` bytes, build `Jun 26 2026 06:58:43`.
+- Command: `make p2-smoke-math-perf-min PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina`.
+- Smoke: `/tests/p2/mathperf.be`, staged from `tests/p2/smoke_math_perf_min.be`.
+- Sample count: `64` loop iterations.
+- Result: `P2_MATH_PERF_MIN p2_cordic 64 5943592 60154344 34037192`.
+- Meaning: the active backend reported `p2_cordic`; the three tick values are empty-loop, `sin`/`cos`, and `sqrt` fallback loops. This is a repeatable measurement hook, not yet a statistical speedup claim.

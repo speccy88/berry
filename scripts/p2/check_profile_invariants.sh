@@ -38,6 +38,24 @@ require_absent() {
     fi
 }
 
+require_make_failure() {
+    local name=$1
+    local expected=$2
+    shift 2
+    local log="$tmpdir/$name"
+    if make -C "$repo" --no-print-directory show-config "$@" > "$log" 2>&1; then
+        echo "error: expected make failure for $name" >&2
+        cat "$log" >&2
+        exit 1
+    fi
+    if ! grep -Fq "$expected" "$log"; then
+        echo "error: expected '$expected' in failed make output for $name" >&2
+        echo "--- $log ---" >&2
+        cat "$log" >&2
+        exit 1
+    fi
+}
+
 run_show_config edge32 TOOLCHAIN=catalina P2_PROFILE=edge32 P2_BOARD=p2edge32 \
     CATALINA_DIR=../Catalina CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx \
     CATALINA_SERIAL_LIB=-lpsram
@@ -72,4 +90,10 @@ if ! grep -F "CATALINA_CONFIG_FLAGS=" "$tmpdir/xmm" | grep -Fq -- "-C PSRAM"; th
     exit 1
 fi
 
-echo "ok: P2 Edge32 COMPACT fallback and XMM profile invariants hold"
+require_make_failure invalid_profile "Unsupported P2_PROFILE 'badprofile'" \
+    TOOLCHAIN=catalina P2_PROFILE=badprofile CATALINA_DIR=../Catalina
+
+require_make_failure invalid_board "Unsupported P2_BOARD 'badboard'" \
+    TOOLCHAIN=catalina P2_PROFILE=full P2_BOARD=badboard CATALINA_DIR=../Catalina
+
+echo "ok: P2 Edge32 COMPACT fallback, XMM profile, and unsupported board/profile invariants hold"

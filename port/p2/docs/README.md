@@ -2,6 +2,10 @@
 
 This directory holds the P2-specific notes that sit closest to the runtime and bring-up work.
 
+For the current human-readable status, start at `../../../docs/P2_PORT_STATUS.md`.
+The files in this directory include historical proof logs; preserve their
+original evidence unless a current guidance page points at them.
+
 ## Layout
 
 - `../include/` contains the P2 configuration shim and small public headers.
@@ -31,7 +35,7 @@ Current Catalina status on P2 Edge / latest silicon:
 
 - the default build targets the no-PSRAM P2 Edge: `CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, with no `-lpsram`
 - the default feature profile is `P2_PROFILE=full`; `make p2-minimal` builds the core-language/string-only footprint profile, and `make p2-edge32` builds the P2 Edge 32 MB RAM profile with Catalina `-lpsram`
-- `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` reaches a working REPL on the full-profile image
+- `make p2-run TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0` reaches a working REPL on the full-profile image
 - `print()`, assignment, and basic arithmetic are live-verified
 - `for i:0..3`, `for e:list`, `for v:map`, and `for k:map.keys()` are live-verified
 - `import string`, native `import math`, native `import task`, `import json`, `import bytes`, and `import os` are live-verified
@@ -65,15 +69,15 @@ Current hardware verification examples:
 - `import task; print(task.info())` reports the native cooperative scheduler
 - `import p2; def blinker(pin, ms) p2.pin.dir_high(pin); p2.pin.toggle(pin); return ms end; h=p2.cog.spawn(blinker, 38, 250); print(p2.cog.info(h)); p2.cog.stop(h)` starts and stops a supported native cog-backed blinker
 - `run_file("/examples/core/qsort.be")` runs a `.be` file from the current VM, including from the REPL
-- `import spin2; print(spin2.path()); print(spin2.list())` -> `/spin2` and `[]` on the current SD-visible path
+- `import introspect; print(introspect.module("spin2"))` reports `nil` on the normal default image because Spin2 is archived/opt-in
 
 Repeatable smoke tests live in `../../../tests/p2/`. Copy that directory and
 `../../../modules/` to the SD card root and run from the host while Berry is
 sitting at `berry>`:
 
 ```sh
-make p2-smoke PORT=/dev/cu.usbserial-P97cvdxp
-make p2-smoke-edge32 PORT=/dev/cu.usbserial-P97cvdxp
+make p2-smoke TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
+make p2-smoke-edge32 TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
 ```
 
 The target scripts print `P2_SMOKE_PASS ...` markers when complete. The general
@@ -162,7 +166,7 @@ stops the handle. This is intentionally not yet independent per-cog VM/GC
 isolation. `p2.cog.info(handle)["model"]` reports `shared_vm_repl_idle` for
 this proof path.
 
-The hardware-verified p38/p39 LED form,
+The hardware-verified pin 38 / pin 39 LED form,
 `p2.cog.spawn(closure, pin, rate_ms)`, is promoted to the safer native GPIO
 blinker model when both arguments are positive integers and the pin is in
 `0..63`. The closure is still invoked once on the main REPL cog during setup and
@@ -268,10 +272,10 @@ Primary development focus from now on:
 
 P2 Edge 32 MB RAM notes:
 
-- build with `make p2-edge32` or flash with `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp`
+- build with `make p2-edge32` or flash with `make p2-edge32-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0`
 - the profile uses `CATALINA_MODEL=COMPACT`, `CATALINA_CLIB=-lcx`, and `CATALINA_SERIAL_LIB=-lpsram`
 - Catalina's COMPACT PSRAM support is a block-transfer API (`psram_read()` / `psram_write()`), so Berry's pointer-following GC/object heap remains in Hub RAM for now
-- use `make p2-sd-sync PORT=/dev/cu.usbserial-P97cvdxp` at a running Berry prompt to copy repo `modules/` to `/modules` and `tests/p2/` to `/tests/p2` through the REPL uploader
+- use `make p2-sd-sync TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0` at a running Berry prompt to copy repo `modules/` to `/modules` and `tests/p2/` to `/tests/p2` through the REPL uploader
 - use `import p2; print(p2.fs_info()); print(p2.fs_info(true))` to inspect SD mount, root directory, and create/write/read/remove result codes when SD-backed imports fail
 - use `import p2; print(p2.psram_info()); print(p2.psram_test())` as the quick runtime PSRAM smoke check; `make p2-smoke-edge32` also checks raw `p2.psram_read()` / `p2.psram_write()`, chunked `libstore` PSRAM source caching, and loading `math` from the PSRAM source cache
 - build the experimental unified-memory image with `make p2-xmm`; it uses
@@ -279,9 +283,9 @@ P2 Edge 32 MB RAM notes:
   external, and keeps the Hub/PSRAM distinction below Berry's allocator.
   Catalina's P2 Edge XMM support uses the lower `16 MiB` of PSRAM as transparent
   memory, while Berry leaves the upper `16 MiB` available for explicit
-  PSRAM/block-cache use. Hardware boot/smoke is still pending because XMM
-  images need Catalina's XMM loader utilities, so keep using `edge32` for
-  verified board work.
+  PSRAM/block-cache use. XMM flash boot is now the normal high-capacity
+  validation path on the P2 Edge 32 MB board; keep the COMPACT `edge32` profile
+  as the Hub-RAM recovery fallback.
 
 Other toolchains and silicon paths should still be kept buildable, but this is
 the first path to validate when continuing the port. In particular, do not

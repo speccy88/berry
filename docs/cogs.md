@@ -32,6 +32,9 @@ cross-VM transfer.
 `p2compat.child_vm_transfer_policy()` exposes the same boundary as a structured
 map for tooling: copyable primitive type names, staged closure-name selector
 policy, rejected live-object categories, and ownership/resource-transfer flags.
+`p2compat.child_vm_live_object_transfer(value)` is the loud failure helper for
+code that explicitly asks to transfer a live object graph; it raises
+`unsupported_error` until real serialization and ownership semantics exist.
 Use `p2compat.child_vm_copyable_type(name)` and
 `p2compat.child_vm_rejected_type(name)` for direct type-policy checks.
 `p2compat.required_child_vm_policy_keys()` and

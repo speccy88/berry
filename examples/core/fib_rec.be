@@ -1,5 +1,3 @@
-import time
-
 def fib(x)
     if x <= 2
         return 1
@@ -7,6 +5,6 @@ def fib(x)
     return fib(x - 1) + fib(x - 2)
 end
 
-c = time.clock()
-print("fib:", fib(38)) # minimum stack size: 78!!
-print("time:", time.clock() - c, 's')
+var n = 10
+print("fib:", n, fib(n))
+print("fib recursion demo done")

@@ -61,6 +61,7 @@ smart.outbit_a = 0x40000000
 smart.minus3_a = 0x50000000
 smart.minus2_a = 0x60000000
 smart.minus1_a = 0x70000000
+smart.invert_a = -2147483648
 smart.plus1_b = 0x01000000
 smart.plus2_b = 0x02000000
 smart.plus3_b = 0x03000000
@@ -218,6 +219,7 @@ assert(type(p2smart.AsyncSerialPair) == "class")
 assert(type(p2smart.SyncSerialPair) == "class")
 assert(type(p2smart.ADC) == "class")
 assert(type(p2smart.DAC) == "class")
+assert(p2smart.smart.invert_a == -2147483648)
 assert(p2smart.smart.plus2_a == 0x20000000)
 assert(p2smart.smart.minus2_a == 0x60000000)
 assert(p2smart.smart.outbit_b == 0x04000000)
@@ -275,16 +277,21 @@ assert(caps["default_jumper_pairs_bidirectional_probe"] == "diagnostic")
 assert(caps["normal_pin"] == "verified")
 assert(caps["normal_pin_diagnostics"] == "diagnostic")
 assert(caps["raw_smartpin_probe"] == "diagnostic")
+assert(caps["raw_smartpin_reserved_pin_policy"] == "diagnostic")
+assert(caps["raw_smartpin_reserved_pin_rejection"] == "staged")
 assert(caps["async_serial_zero_byte"] == "verified")
 assert(caps["async_serial_paced_exchange"] == "verified")
 assert(caps["async_serial_probe"] == "diagnostic")
 assert(caps["async_serial_drain"] == "diagnostic")
 assert(caps["async_serial_drain_probe"] == "diagnostic")
+assert(caps["async_serial_burst_probe"] == "diagnostic")
 assert(caps["async_serial_buffer_policy"] == "diagnostic")
 assert(caps["counter_sample_diagnostics"] == "diagnostic")
 assert(caps["counter_variant_sample_probe"] == "diagnostic")
 assert(caps["counter_variant_drive_probe"] == "diagnostic")
 assert(caps["counter_variant_drive_modes_probe"] == "diagnostic")
+assert(caps["counter_timer_calibration_policy"] == "diagnostic")
+assert(caps["counter_timer_calibrated_probe"] == "unsupported")
 assert(caps["high_counter_probe"] == "diagnostic")
 assert(caps["counter_mode_variants"] == "setup_only")
 assert(caps["repository_write_diagnostics"] == "diagnostic")
@@ -293,50 +300,70 @@ assert(caps["repository_probe"] == "diagnostic")
 assert(caps["pwm_duty_diagnostics"] == "diagnostic")
 assert(caps["pwm_counter_probe"] == "diagnostic")
 assert(caps["pwm_variant_counter_probe"] == "diagnostic")
+assert(caps["pwm_duty_shape_probe"] == "verified")
 assert(caps["pwm_mode_variants"] == "setup_only")
 assert(caps["nco_increment_diagnostics"] == "diagnostic")
 assert(caps["nco_counter_probe"] == "diagnostic")
-assert(caps["nco_duty"] == "setup_only")
-assert(caps["nco_duty_diagnostics"] == "diagnostic")
-assert(caps["nco_duty_counter_probe"] == "diagnostic")
+assert(caps["nco_duty"] == "verified")
+assert(caps["nco_duty_diagnostics"] == "verified")
+assert(caps["nco_duty_counter_probe"] == "verified")
+assert(caps["nco_duty_waveform_probe"] == "verified")
 assert(caps["pulse_trigger_diagnostics"] == "diagnostic")
 assert(caps["pulse_counter_probe"] == "diagnostic")
 assert(caps["transition_trigger_diagnostics"] == "diagnostic")
 assert(caps["transition_counter_probe"] == "diagnostic")
 assert(caps["adc_mode_variants"] == "setup_only")
 assert(caps["adc_variant_sample_probe"] == "diagnostic")
-assert(caps["adc_variant_dac_sampled_probe"] == "verified")
+assert(caps["adc_variant_dac_sampled_probe"] == "diagnostic")
 assert(caps["dac_mode_variants"] == "setup_only")
 assert(caps["dac_variant_adc_probe"] == "diagnostic")
 assert(caps["dac_variant_adc_sampled_probe"] == "verified")
-assert(caps["adc_dac_variants_sampled_probe"] == "verified")
+assert(caps["adc_dac_variants_sampled_probe"] == "diagnostic")
 assert(caps["adc_dac_delta_policy"] == "diagnostic")
 assert(caps["async_serial_buffer"] == "unsupported")
-assert(caps["sync_serial_result_diagnostics"] == "staged")
-assert(caps["sync_serial_transfer_diagnostics"] == "staged")
+assert(caps["async_serial_buffered_pair"] == "unsupported")
+assert(caps["sync_serial_result_diagnostics"] == "verified")
+assert(caps["sync_serial_transfer_diagnostics"] == "verified")
 assert(caps["sync_serial_probe"] == "staged")
-assert(caps["sync_serial_clocked_probe"] == "staged")
-assert(caps["sync_serial_clocked_jumper_probes"] == "staged")
-assert(caps["sync_serial_default_clocked_probe"] == "staged")
+assert(caps["sync_serial_clocked_probe"] == "verified")
+assert(caps["sync_serial_clocked_jumper_probes"] == "verified")
+assert(caps["sync_serial_default_clocked_probe"] == "verified")
 assert(caps["sync_serial_receive_policy"] == "diagnostic")
-assert(caps["sync_serial_receive"] == "unverified")
+assert(caps["sync_serial_receive"] == "verified")
 assert(caps["adc_dac_probe"] == "diagnostic")
 assert(caps["adc_dac_sampled_probe"] == "verified")
 assert(caps["adc_dac_delta"] == "unverified")
+assert(caps["adc_dac_calibrated_probe"] == "unsupported")
 assert(caps["quadrature_sample_diagnostics"] == "diagnostic")
 assert(caps["quadrature_sample_probe"] == "diagnostic")
+assert(caps["quadrature_mechanical_policy"] == "diagnostic")
+assert(caps["quadrature_mechanical_encoder"] == "unsupported")
 assert(caps["adc_sample_diagnostics"] == "diagnostic")
 assert(caps["dac_set_diagnostics"] == "diagnostic")
+assert(caps["usb_pair_policy"] == "diagnostic")
 assert(caps["usb_pair"] == "unsupported")
+assert(caps["usb_pair_probe"] == "unsupported")
 caps["gpio"] = "mutated"
 assert(p2smart.capabilities()["gpio"] == "verified")
 assert(type(p2smart.required_capability_keys) == "function")
 var required_caps = p2smart.required_capability_keys()
 assert(list_has(required_caps, "gpio"))
+assert(list_has(required_caps, "pwm_duty_shape_probe"))
+assert(list_has(required_caps, "counter_timer_calibration_policy"))
+assert(list_has(required_caps, "counter_timer_calibrated_probe"))
+assert(list_has(required_caps, "adc_dac_calibrated_probe"))
 assert(list_has(required_caps, "async_serial_drain_probe"))
+assert(list_has(required_caps, "async_serial_burst_probe"))
+assert(list_has(required_caps, "async_serial_buffered_pair"))
+assert(list_has(required_caps, "quadrature_mechanical_policy"))
+assert(list_has(required_caps, "quadrature_mechanical_encoder"))
 assert(list_has(required_caps, "sync_serial_receive_policy"))
 assert(list_has(required_caps, "sync_serial_receive"))
+assert(list_has(required_caps, "raw_smartpin_reserved_pin_policy"))
+assert(list_has(required_caps, "raw_smartpin_reserved_pin_rejection"))
+assert(list_has(required_caps, "usb_pair_policy"))
 assert(list_has(required_caps, "usb_pair"))
+assert(list_has(required_caps, "usb_pair_probe"))
 required_caps.push("mutated")
 assert(!list_has(p2smart.required_capability_keys(), "mutated"))
 var status_names = p2smart.statuses()
@@ -349,8 +376,11 @@ assert(!p2smart.status_known("missing"))
 assert(!p2smart.status_known(nil))
 assert(p2smart.status("gpio") == "verified")
 assert(p2smart.status("normal_pin") == "verified")
-assert(p2smart.status("sync_serial_receive") == "unverified")
+assert(p2smart.status("sync_serial_receive") == "verified")
+assert(p2smart.status("raw_smartpin_reserved_pin_rejection") == "staged")
+assert(p2smart.status("usb_pair_policy") == "diagnostic")
 assert(p2smart.status("usb_pair") == "unsupported")
+assert(p2smart.status("usb_pair_probe") == "unsupported")
 assert(p2smart.status("missing") == nil)
 assert(p2smart.status(nil) == nil)
 status_names.push("mutated")
@@ -360,23 +390,27 @@ assert(list_has(capability_names, "gpio"))
 assert(list_has(capability_names, "sync_serial_receive"))
 assert(list_has(capability_names, "sync_serial_transfer_diagnostics"))
 assert(list_has(capability_names, "sync_serial_clocked_jumper_probes"))
+assert(list_has(capability_names, "raw_smartpin_reserved_pin_policy"))
+assert(list_has(capability_names, "raw_smartpin_reserved_pin_rejection"))
+assert(list_has(capability_names, "usb_pair_policy"))
 assert(list_has(capability_names, "usb_pair"))
+assert(list_has(capability_names, "usb_pair_probe"))
 capability_names.push("mutated")
 assert(!list_has(p2smart.names(), "mutated"))
 var verified_items = p2smart.items_by_status("verified")
 assert(list_has(verified_items, "gpio"))
 assert(list_has(verified_items, "async_serial_paced_exchange"))
-assert(!list_has(verified_items, "sync_serial_receive"))
+assert(list_has(verified_items, "sync_serial_receive"))
 verified_items.push("mutated")
 assert(!list_has(p2smart.items_by_status("verified"), "mutated"))
 assert(list_has(p2smart.names_by_status("verified"), "gpio"))
 assert(list_has(p2smart.names_by_status("unsupported"), "usb_pair"))
-assert(list_has(p2smart.items_by_status("staged"), "sync_serial_result_diagnostics"))
-assert(list_has(p2smart.items_by_status("staged"), "sync_serial_transfer_diagnostics"))
+assert(list_has(p2smart.items_by_status("verified"), "sync_serial_result_diagnostics"))
+assert(list_has(p2smart.items_by_status("verified"), "sync_serial_transfer_diagnostics"))
 assert(list_has(p2smart.items_by_status("staged"), "sync_serial_probe"))
-assert(list_has(p2smart.items_by_status("staged"), "sync_serial_clocked_probe"))
-assert(list_has(p2smart.items_by_status("staged"), "sync_serial_clocked_jumper_probes"))
-assert(list_has(p2smart.items_by_status("staged"), "sync_serial_default_clocked_probe"))
+assert(list_has(p2smart.items_by_status("verified"), "sync_serial_clocked_probe"))
+assert(list_has(p2smart.items_by_status("verified"), "sync_serial_clocked_jumper_probes"))
+assert(list_has(p2smart.items_by_status("verified"), "sync_serial_default_clocked_probe"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "counter_sample_diagnostics"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "counter_variant_sample_probe"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "counter_variant_drive_probe"))
@@ -395,55 +429,72 @@ assert(list_has(p2smart.items_by_status("diagnostic"), "jumper_pairs_bidirection
 assert(list_has(p2smart.items_by_status("diagnostic"), "default_jumper_pairs_bidirectional_probe"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "normal_pin_diagnostics"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "raw_smartpin_probe"))
+assert(list_has(p2smart.items_by_status("diagnostic"), "raw_smartpin_reserved_pin_policy"))
+assert(list_has(p2smart.items_by_status("staged"), "raw_smartpin_reserved_pin_rejection"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "quadrature_sample_diagnostics"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "quadrature_sample_probe"))
+assert(list_has(p2smart.items_by_status("diagnostic"), "quadrature_mechanical_policy"))
+assert(list_has(p2smart.items_by_status("unsupported"), "quadrature_mechanical_encoder"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "adc_sample_diagnostics"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "adc_variant_sample_probe"))
 assert(list_has(p2smart.items_by_status("verified"), "adc_dac_sampled_probe"))
-assert(list_has(p2smart.items_by_status("verified"), "adc_variant_dac_sampled_probe"))
+assert(list_has(p2smart.items_by_status("diagnostic"), "adc_variant_dac_sampled_probe"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "dac_set_diagnostics"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "dac_variant_adc_probe"))
 assert(list_has(p2smart.items_by_status("verified"), "dac_variant_adc_sampled_probe"))
-assert(list_has(p2smart.items_by_status("verified"), "adc_dac_variants_sampled_probe"))
+assert(list_has(p2smart.items_by_status("diagnostic"), "adc_dac_variants_sampled_probe"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "adc_dac_delta_policy"))
+assert(list_has(p2smart.items_by_status("unsupported"), "adc_dac_calibrated_probe"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "pwm_duty_diagnostics"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "high_counter_probe"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "repository_read_diagnostics"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "repository_probe"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "pwm_counter_probe"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "pwm_variant_counter_probe"))
+assert(list_has(p2smart.items_by_status("verified"), "pwm_duty_shape_probe"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "nco_increment_diagnostics"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "nco_counter_probe"))
-assert(list_has(p2smart.items_by_status("diagnostic"), "nco_duty_diagnostics"))
-assert(list_has(p2smart.items_by_status("diagnostic"), "nco_duty_counter_probe"))
+assert(list_has(p2smart.items_by_status("verified"), "nco_duty_diagnostics"))
+assert(list_has(p2smart.items_by_status("verified"), "nco_duty_counter_probe"))
+assert(list_has(p2smart.items_by_status("verified"), "nco_duty_waveform_probe"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "pulse_trigger_diagnostics"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "pulse_counter_probe"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "transition_trigger_diagnostics"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "transition_counter_probe"))
+assert(list_has(p2smart.items_by_status("diagnostic"), "counter_timer_calibration_policy"))
+assert(list_has(p2smart.items_by_status("unsupported"), "counter_timer_calibrated_probe"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "async_serial_probe"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "async_serial_drain"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "async_serial_drain_probe"))
+assert(list_has(p2smart.items_by_status("diagnostic"), "async_serial_burst_probe"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "async_serial_buffer_policy"))
+assert(list_has(p2smart.items_by_status("unsupported"), "async_serial_buffered_pair"))
 assert(list_has(p2smart.items_by_status("diagnostic"), "sync_serial_receive_policy"))
+assert(list_has(p2smart.items_by_status("diagnostic"), "usb_pair_policy"))
 assert(list_has(p2smart.items_by_status("verified"), "normal_pin"))
 assert(list_has(p2smart.items_by_status("setup_only"), "counter_mode_variants"))
 assert(list_has(p2smart.items_by_status("setup_only"), "pwm_mode_variants"))
-assert(list_has(p2smart.items_by_status("setup_only"), "nco_duty"))
+assert(list_has(p2smart.items_by_status("verified"), "nco_duty"))
 assert(list_has(p2smart.items_by_status("setup_only"), "adc_mode_variants"))
 assert(list_has(p2smart.items_by_status("setup_only"), "dac_mode_variants"))
-assert(list_has(p2smart.items_by_status("unverified"), "sync_serial_receive"))
+assert(list_has(p2smart.items_by_status("verified"), "sync_serial_receive"))
 assert(list_has(p2smart.items_by_status("unsupported"), "usb_pair"))
+assert(list_has(p2smart.items_by_status("unsupported"), "usb_pair_probe"))
 expect_error(def () p2smart.items_by_status(nil) end)
 expect_error(def () p2smart.items_by_status("missing") end)
 expect_error(def () p2smart.names_by_status("missing") end)
 var report = p2smart.status_report()
 assert(report["ok"])
-assert(report["capabilities"]["sync_serial"] == "setup_only")
+assert(report["capabilities"]["sync_serial"] == "verified")
 assert(list_has(report["verified"], "gpio"))
 assert(list_has(report["verified"], "adc_dac_sampled_probe"))
-assert(list_has(report["verified"], "adc_variant_dac_sampled_probe"))
+assert(list_has(report["staged"], "adc_variant_dac_sampled_probe"))
 assert(list_has(report["verified"], "dac_variant_adc_sampled_probe"))
-assert(list_has(report["verified"], "adc_dac_variants_sampled_probe"))
+assert(list_has(report["staged"], "adc_dac_variants_sampled_probe"))
+assert(list_has(report["verified"], "nco_duty"))
+assert(list_has(report["verified"], "nco_duty_diagnostics"))
+assert(list_has(report["verified"], "nco_duty_counter_probe"))
+assert(list_has(report["verified"], "nco_duty_waveform_probe"))
 assert(list_has(report["staged"], "gpio_diagnostics"))
 assert(list_has(report["staged"], "gpio_loopback_probe"))
 assert(list_has(report["staged"], "jumper_pair_probe"))
@@ -462,23 +513,27 @@ assert(list_has(report["staged"], "counter_variant_drive_modes_probe"))
 assert(list_has(report["staged"], "repository_write_diagnostics"))
 assert(list_has(report["staged"], "normal_pin_diagnostics"))
 assert(list_has(report["staged"], "raw_smartpin_probe"))
+assert(list_has(report["staged"], "raw_smartpin_reserved_pin_policy"))
+assert(list_has(report["staged"], "raw_smartpin_reserved_pin_rejection"))
 assert(list_has(report["staged"], "quadrature_sample_diagnostics"))
 assert(list_has(report["staged"], "quadrature_sample_probe"))
+assert(list_has(report["staged"], "quadrature_mechanical_policy"))
+assert(list_has(report["open"], "quadrature_mechanical_encoder"))
 assert(list_has(report["staged"], "adc_sample_diagnostics"))
 assert(list_has(report["staged"], "adc_variant_sample_probe"))
 assert(list_has(report["staged"], "dac_set_diagnostics"))
 assert(list_has(report["staged"], "dac_variant_adc_probe"))
 assert(list_has(report["staged"], "adc_dac_delta_policy"))
+assert(list_has(report["open"], "adc_dac_calibrated_probe"))
 assert(list_has(report["staged"], "pwm_duty_diagnostics"))
 assert(list_has(report["staged"], "high_counter_probe"))
 assert(list_has(report["staged"], "repository_read_diagnostics"))
 assert(list_has(report["staged"], "repository_probe"))
 assert(list_has(report["staged"], "pwm_counter_probe"))
 assert(list_has(report["staged"], "pwm_variant_counter_probe"))
+assert(list_has(report["verified"], "pwm_duty_shape_probe"))
 assert(list_has(report["staged"], "nco_increment_diagnostics"))
 assert(list_has(report["staged"], "nco_counter_probe"))
-assert(list_has(report["staged"], "nco_duty_diagnostics"))
-assert(list_has(report["staged"], "nco_duty_counter_probe"))
 assert(list_has(report["staged"], "pulse_trigger_diagnostics"))
 assert(list_has(report["staged"], "pulse_counter_probe"))
 assert(list_has(report["staged"], "transition_trigger_diagnostics"))
@@ -486,25 +541,27 @@ assert(list_has(report["staged"], "transition_counter_probe"))
 assert(list_has(report["staged"], "async_serial_probe"))
 assert(list_has(report["staged"], "async_serial_drain"))
 assert(list_has(report["staged"], "async_serial_drain_probe"))
+assert(list_has(report["staged"], "async_serial_burst_probe"))
 assert(list_has(report["staged"], "async_serial_buffer_policy"))
-assert(list_has(report["staged"], "sync_serial_result_diagnostics"))
-assert(list_has(report["staged"], "sync_serial_transfer_diagnostics"))
+assert(list_has(report["verified"], "sync_serial_result_diagnostics"))
+assert(list_has(report["verified"], "sync_serial_transfer_diagnostics"))
 assert(list_has(report["staged"], "sync_serial_probe"))
-assert(list_has(report["staged"], "sync_serial_clocked_probe"))
-assert(list_has(report["staged"], "sync_serial_clocked_jumper_probes"))
-assert(list_has(report["staged"], "sync_serial_default_clocked_probe"))
+assert(list_has(report["verified"], "sync_serial_clocked_probe"))
+assert(list_has(report["verified"], "sync_serial_clocked_jumper_probes"))
+assert(list_has(report["verified"], "sync_serial_default_clocked_probe"))
 assert(list_has(report["staged"], "sync_serial_receive_policy"))
+assert(list_has(report["staged"], "usb_pair_policy"))
 assert(list_has(report["staged"], "counter_mode_variants"))
 assert(list_has(report["staged"], "pwm_mode_variants"))
-assert(list_has(report["staged"], "nco_duty"))
 assert(list_has(report["staged"], "adc_mode_variants"))
 assert(list_has(report["staged"], "dac_mode_variants"))
-assert(list_has(report["open"], "sync_serial_receive"))
+assert(list_has(report["verified"], "sync_serial_receive"))
 assert(list_has(report["open"], "usb_pair"))
+assert(list_has(report["open"], "usb_pair_probe"))
 report["verified"].push("mutated")
 assert(!list_has(p2smart.status_report()["verified"], "mutated"))
 report["capabilities"]["sync_serial"] = "mutated"
-assert(p2smart.status_report()["capabilities"]["sync_serial"] == "setup_only")
+assert(p2smart.status_report()["capabilities"]["sync_serial"] == "verified")
 var audit = p2smart.audit()
 assert(audit["ok"])
 assert(audit["count"] == p2smart.names().size())
@@ -533,24 +590,28 @@ assert(buffer_policy["receive_model"] == "single_smartpin_sample")
 assert(list_has(buffer_policy["safe_receive_helpers"], "read_result_after"))
 assert(list_has(buffer_policy["safe_receive_helpers"], "read_available_results"))
 assert(list_has(buffer_policy["safe_receive_helpers"], "read_available"))
+assert(list_has(buffer_policy["safe_receive_helpers"], "async_serial_burst_probe"))
+assert(list_has(buffer_policy["unsupported_helpers"], "async_serial_buffered_pair"))
 assert(buffer_policy["cleanup_required"])
 assert(buffer_policy["clear_releases_state"])
 buffer_policy["safe_receive_helpers"].push("mutated")
+buffer_policy["unsupported_helpers"].push("mutated")
 assert(!list_has(p2smart.async_serial_buffer_policy()["safe_receive_helpers"], "mutated"))
+assert(!list_has(p2smart.async_serial_buffer_policy()["unsupported_helpers"], "mutated"))
 var sync_policy = p2smart.sync_serial_receive_policy()
 assert(sync_policy["ok"])
-assert(!sync_policy["supported"])
+assert(sync_policy["supported"])
 assert(sync_policy["capability"] == "sync_serial_receive")
-assert(sync_policy["status"] == "unverified")
-assert(sync_policy["policy"] == "unverified_no_matched_receive_words")
-assert(sync_policy["setup_status"] == "setup_only")
+assert(sync_policy["status"] == "verified")
+assert(sync_policy["policy"] == "verified_clocked_jumper_receive")
+assert(sync_policy["setup_status"] == "verified")
 assert(sync_policy["diagnostic_status"] == "diagnostic")
-assert(sync_policy["receive_model"] == "smartpin_sync_io_result_sample")
+assert(sync_policy["receive_model"] == "smartpin_sync_io_left_aligned_word")
 assert(list_has(sync_policy["safe_probe_helpers"], "sync_serial_clocked_probe"))
 assert(sync_policy["bounded_clocked_probe"])
 assert(sync_policy["unclocked_constant_raw_observed"])
-assert(!sync_policy["clocked_ready_observed"])
-assert(!sync_policy["matched_receive_words"])
+assert(sync_policy["clocked_ready_observed"])
+assert(sync_policy["matched_receive_words"])
 assert(sync_policy["default_clocked_jumper_groups"] == [[0, 1, 2, 3], [4, 5, 6, 7]])
 sync_policy["safe_probe_helpers"].push("mutated")
 sync_policy["default_clocked_jumper_groups"][0][0] = 99
@@ -568,8 +629,75 @@ assert(list_has(delta_policy["measured_fields"], "abs_delta"))
 assert(!delta_policy["calibrated_voltage"])
 assert(!delta_policy["polarity_verified"])
 assert(delta_policy["safe_claim"] == "setup_readback_only")
+assert(list_has(delta_policy["safe_probe_helpers"], "dac_adc_sampled_probe"))
+assert(list_has(delta_policy["unsupported_helpers"], "adc_dac_calibrated_probe"))
 delta_policy["measured_fields"].push("mutated")
+delta_policy["safe_probe_helpers"].push("mutated")
+delta_policy["unsupported_helpers"].push("mutated")
 assert(!list_has(p2smart.adc_dac_delta_policy()["measured_fields"], "mutated"))
+assert(!list_has(p2smart.adc_dac_delta_policy()["safe_probe_helpers"], "mutated"))
+assert(!list_has(p2smart.adc_dac_delta_policy()["unsupported_helpers"], "mutated"))
+var timer_policy = p2smart.counter_timer_calibration_policy()
+assert(timer_policy["ok"])
+assert(!timer_policy["supported"])
+assert(timer_policy["capability"] == "counter_timer_calibrated_probe")
+assert(timer_policy["status"] == "unsupported")
+assert(timer_policy["policy"] == "unsupported_no_calibrated_timer_scaling")
+assert(timer_policy["raw_diagnostic_status"] == "diagnostic")
+assert(timer_policy["matrix_target"] == "p2-smoke-smartpins-counter-timer-matrix")
+assert(list_has(timer_policy["observed_modes"], "state_ticks"))
+assert(list_has(timer_policy["observed_modes"], "counter_periods"))
+assert(list_has(timer_policy["unsupported_claims"], "microsecond_scaling"))
+assert(list_has(timer_policy["safe_probe_helpers"], "counter_variant_drive_probe"))
+assert(list_has(timer_policy["unsupported_helpers"], "counter_timer_calibrated_probe"))
+timer_policy["observed_modes"].push("mutated")
+timer_policy["unsupported_claims"].push("mutated")
+timer_policy["safe_probe_helpers"].push("mutated")
+timer_policy["unsupported_helpers"].push("mutated")
+assert(!list_has(p2smart.counter_timer_calibration_policy()["observed_modes"], "mutated"))
+assert(!list_has(p2smart.counter_timer_calibration_policy()["unsupported_claims"], "mutated"))
+assert(!list_has(p2smart.counter_timer_calibration_policy()["safe_probe_helpers"], "mutated"))
+assert(!list_has(p2smart.counter_timer_calibration_policy()["unsupported_helpers"], "mutated"))
+var quadrature_policy = p2smart.quadrature_mechanical_policy()
+assert(quadrature_policy["ok"])
+assert(!quadrature_policy["supported"])
+assert(quadrature_policy["capability"] == "quadrature_mechanical_encoder")
+assert(quadrature_policy["status"] == "unsupported")
+assert(quadrature_policy["policy"] == "unsupported_no_mechanical_encoder_validation")
+assert(quadrature_policy["setup_status"] == "setup_only")
+assert(quadrature_policy["synthetic_motion_status"] == "diagnostic")
+assert(quadrature_policy["verified_motion_model"] == "jumper_driven_synthetic_quadrature")
+assert(list_has(quadrature_policy["verified_helpers"], "quadrature_sample_probe"))
+assert(list_has(quadrature_policy["unsupported_helpers"], "quadrature_mechanical_encoder"))
+assert(list_has(quadrature_policy["unsupported_claims"], "real_encoder_bounce"))
+quadrature_policy["verified_helpers"].push("mutated")
+quadrature_policy["unsupported_claims"].push("mutated")
+assert(!list_has(p2smart.quadrature_mechanical_policy()["verified_helpers"], "mutated"))
+assert(!list_has(p2smart.quadrature_mechanical_policy()["unsupported_claims"], "mutated"))
+var raw_reserved_policy = p2smart.raw_smartpin_reserved_pin_policy()
+assert(raw_reserved_policy["ok"])
+assert(raw_reserved_policy["capability"] == "raw_smartpin_reserved_pin_rejection")
+assert(raw_reserved_policy["status"] == "staged")
+assert(raw_reserved_policy["policy"] == "deferred_current_image_hangs")
+assert(list_has(raw_reserved_policy["safe_test_pins"], 0))
+assert(list_has(raw_reserved_policy["reserved_pin_classes"], "psram"))
+assert(raw_reserved_policy["attempted_probe"] == "/tests/p2/smoke_smartpins_reserved_pins.be")
+assert(raw_reserved_policy["attempt_result"] == "hung_before_begin_marker")
+raw_reserved_policy["safe_test_pins"].push(99)
+raw_reserved_policy["reserved_pin_classes"].push("mutated")
+assert(!list_has(p2smart.raw_smartpin_reserved_pin_policy()["safe_test_pins"], 99))
+assert(!list_has(p2smart.raw_smartpin_reserved_pin_policy()["reserved_pin_classes"], "mutated"))
+var usb_policy = p2smart.usb_pair_policy()
+assert(usb_policy["ok"])
+assert(!usb_policy["supported"])
+assert(usb_policy["capability"] == "usb_pair")
+assert(usb_policy["status"] == "unsupported")
+assert(usb_policy["policy"] == "unsupported_no_usb_stack")
+assert(usb_policy["raw_mode"] == smart.usb_pair)
+assert(usb_policy["implemented_helpers"].size() == 0)
+assert(usb_policy["safe_claim"] == "raw_constant_only")
+usb_policy["implemented_helpers"].push("mutated")
+assert(p2smart.usb_pair_policy()["implemented_helpers"].size() == 0)
 
 reset_calls()
 var raw_reads = [11, 22]
@@ -997,6 +1125,12 @@ smart.rdpin = def(pin_no)
 end
 expect_error(def () p2smart.counter_variant_drive_modes_probe(0, 1, "bad", 0, 0) end)
 expect_error(def () p2smart.counter_variant_drive_modes_probe(0, 1, [], 0, 0) end)
+expect_error(def () p2smart.counter_timer_calibrated_probe(0, 1, "counter_ticks", 100, 4) end)
+expect_error(def () p2smart.counter_timer_calibrated_probe(0, 0, "counter_ticks", 100, 4) end)
+expect_error(def () p2smart.counter_timer_calibrated_probe(-1, 1, "counter_ticks", 100, 4) end)
+expect_error(def () p2smart.counter_timer_calibrated_probe(0, 1, "missing", 100, 4) end)
+expect_error(def () p2smart.counter_timer_calibrated_probe(0, 1, "counter_ticks", 0, 4) end)
+expect_error(def () p2smart.counter_timer_calibrated_probe(0, 1, "counter_ticks", 100, 0) end)
 
 reset_calls()
 var quadrature = p2smart.quadrature(4, 5, nil)
@@ -1273,6 +1407,52 @@ smart.rdpin = def(pin_no)
 end
 
 reset_calls()
+var pwm_shape_reads = [100, 160, 200, 320]
+smart.rdpin = def(pin_no)
+    calls.push(["smart.rdpin", pin_no])
+    var value = pwm_shape_reads[0]
+    pwm_shape_reads = pwm_shape_reads[1..]
+    return value
+end
+var pwm_shape = p2smart.pwm_duty_shape_probe(2, 3, 200, 50, 150, 2, "smps", 40, 10)
+assert(pwm_shape["ok"])
+assert(pwm_shape["out_pin"] == 2)
+assert(pwm_shape["in_pin"] == 3)
+assert(pwm_shape["mode_name"] == "smps")
+assert(pwm_shape["frame"] == 200)
+assert(pwm_shape["low_duty"] == 50)
+assert(pwm_shape["high_duty"] == 150)
+assert(pwm_shape["divisor"] == 2)
+assert(pwm_shape["sample_us"] == 40)
+assert(pwm_shape["settle_us"] == 10)
+assert(pwm_shape["low"]["delta"] == 60)
+assert(pwm_shape["high"]["delta"] == 120)
+assert(pwm_shape["delta"] == 60)
+assert(pwm_shape["pwm"]["mode"] == smart.oe + smart.pwm_smps)
+assert(calls == [
+    ["smart.start", 3, smart.count_highs, 0, 0],
+    ["smart.akpin", 3],
+    ["smart.start", 2, smart.oe + smart.pwm_smps, 200 * 65536 + 2, 50],
+    ["waitus", 10],
+    ["smart.rdpin", 3],
+    ["waitus", 40],
+    ["smart.rdpin", 3],
+    ["smart.wypin", 2, 150],
+    ["waitus", 10],
+    ["smart.rdpin", 3],
+    ["waitus", 40],
+    ["smart.rdpin", 3],
+    ["smart.clear", 2],
+    ["pin.float", 2],
+    ["smart.clear", 3],
+    ["pin.float", 3]
+])
+smart.rdpin = def(pin_no)
+    calls.push(["smart.rdpin", pin_no])
+    return smart.rd_value
+end
+
+reset_calls()
 var nco = p2smart.nco(3, 16000, 0x20000000, nil)
 assert(nco.info()["mode"] == smart.oe + smart.nco_freq)
 nco.start()
@@ -1332,25 +1512,27 @@ smart.rdpin = def(pin_no)
 end
 
 reset_calls()
-var nco_duty = p2smart.nco_duty(3, 16000, 4000, nil)
+var nco_duty = p2smart.nco_duty(3, 1, 0x40000000, nil)
 assert(nco_duty.info()["kind"] == "NCODuty")
 assert(nco_duty.info()["mode"] == smart.oe + smart.nco_duty)
 nco_duty.start()
 assert(calls == [
-    ["smart.start", 3, smart.oe + smart.nco_duty, 16000, 4000]
+    ["smart.start", 3, smart.oe + smart.nco_duty, 1, 0x40000000]
 ])
-nco_duty.set_duty(8000)
-assert(calls[calls.size() - 1] == ["smart.wypin", 3, 8000])
-assert(nco_duty.info()["duty"] == 8000)
+nco_duty.set_duty(0x20000000)
+assert(calls[calls.size() - 1] == ["smart.wypin", 3, 0x20000000])
+assert(nco_duty.info()["duty"] == 0x20000000)
 reset_calls()
-var nco_duty_result = nco_duty.set_duty_result(6000, 30)
+var nco_duty_result = nco_duty.set_duty_result(0x30000000, 30)
 assert(nco_duty_result["ok"])
 assert(nco_duty_result["pin"] == 3)
-assert(nco_duty_result["bit_period"] == 16000)
-assert(nco_duty_result["duty"] == 6000)
+assert(nco_duty_result["prescaler"] == 1)
+assert(nco_duty_result["bit_period"] == 1)
+assert(nco_duty_result["duty"] == 0x30000000)
+assert(nco_duty_result["value"] == 0x30000000)
 assert(nco_duty_result["settled"])
 assert(nco_duty_result["settle_us"] == 30)
-assert(calls == [["smart.wypin", 3, 6000], ["waitus", 30]])
+assert(calls == [["smart.wypin", 3, 0x30000000], ["waitus", 30]])
 nco_duty.clear()
 assert(calls[calls.size() - 2] == ["smart.clear", 3])
 assert(calls[calls.size() - 1] == ["pin.float", 3])
@@ -1363,13 +1545,15 @@ smart.rdpin = def(pin_no)
     nco_duty_probe_reads = nco_duty_probe_reads[1..]
     return value
 end
-var nco_duty_probe = p2smart.nco_duty_counter_probe(3, 4, 16000, 4000, 25)
+var nco_duty_probe = p2smart.nco_duty_counter_probe(3, 4, 1, 0x40000000, 25)
 assert(nco_duty_probe["ok"])
 assert(nco_duty_probe["out_pin"] == 3)
 assert(nco_duty_probe["in_pin"] == 4)
 assert(nco_duty_probe["settle_us"] == 25)
-assert(nco_duty_probe["nco_duty"]["bit_period"] == 16000)
-assert(nco_duty_probe["nco_duty"]["duty"] == 4000)
+assert(nco_duty_probe["nco_duty"]["prescaler"] == 1)
+assert(nco_duty_probe["nco_duty"]["bit_period"] == 1)
+assert(nco_duty_probe["nco_duty"]["duty"] == 0x40000000)
+assert(nco_duty_probe["nco_duty"]["value"] == 0x40000000)
 assert(nco_duty_probe["counter"]["before"] == 12)
 assert(nco_duty_probe["counter"]["after"] == 18)
 assert(nco_duty_probe["counter"]["delta"] == 6)
@@ -1377,9 +1561,52 @@ assert(nco_duty_probe["counter"]["advanced"])
 assert(calls == [
     ["smart.start", 4, smart.count_rises, 0, 0],
     ["smart.akpin", 4],
-    ["smart.start", 3, smart.oe + smart.nco_duty, 16000, 4000],
+    ["smart.start", 3, smart.oe + smart.nco_duty, 1, 0x40000000],
     ["smart.rdpin", 4],
     ["waitus", 25],
+    ["smart.rdpin", 4],
+    ["smart.clear", 3],
+    ["pin.float", 3],
+    ["smart.clear", 4],
+    ["pin.float", 4]
+])
+
+reset_calls()
+nco_duty_probe_reads = [100, 200, 210, 500]
+smart.rdpin = def(pin_no)
+    calls.push(["smart.rdpin", pin_no])
+    var value = nco_duty_probe_reads[0]
+    nco_duty_probe_reads = nco_duty_probe_reads[1..]
+    return value
+end
+var nco_duty_wave = p2smart.nco_duty_waveform_probe(3, 4, 1, 0x20000000, 0x60000000, 50, 10)
+assert(nco_duty_wave["ok"])
+assert(nco_duty_wave["out_pin"] == 3)
+assert(nco_duty_wave["in_pin"] == 4)
+assert(nco_duty_wave["prescaler"] == 1)
+assert(nco_duty_wave["bit_period"] == 1)
+assert(nco_duty_wave["low_duty"] == 0x20000000)
+assert(nco_duty_wave["high_duty"] == 0x60000000)
+assert(nco_duty_wave["low_value"] == 0x20000000)
+assert(nco_duty_wave["high_value"] == 0x60000000)
+assert(nco_duty_wave["low"]["delta"] == 100)
+assert(nco_duty_wave["high"]["delta"] == 290)
+assert(nco_duty_wave["delta"] == 190)
+assert(nco_duty_wave["sample_us"] == 50)
+assert(nco_duty_wave["settle_us"] == 10)
+assert(nco_duty_wave["nco_duty"]["duty"] == 0x60000000)
+assert(calls == [
+    ["smart.start", 4, smart.count_highs, 0, 0],
+    ["smart.akpin", 4],
+    ["smart.start", 3, smart.oe + smart.nco_duty, 1, 0x20000000],
+    ["waitus", 10],
+    ["smart.rdpin", 4],
+    ["waitus", 50],
+    ["smart.rdpin", 4],
+    ["smart.wypin", 3, 0x60000000],
+    ["waitus", 10],
+    ["smart.rdpin", 4],
+    ["waitus", 50],
     ["smart.rdpin", 4],
     ["smart.clear", 3],
     ["pin.float", 3],
@@ -1929,6 +2156,49 @@ assert(calls == [
 ])
 expect_error(def () p2smart.async_serial_drain_probe(6, 7, 300, 12, 1000000, 8, 4) end)
 expect_error(def () p2smart.async_serial_drain_probe(6, 7, 0x33, 12, 1000000, 8, -1) end)
+reset_calls()
+smart.rdpin = def(pin_no)
+    calls.push(["smart.rdpin", pin_no])
+    return smart.rd_value
+end
+smart.rqpin = def(pin_no)
+    calls.push(["smart.rqpin", pin_no])
+    return smart.rq_value
+end
+smart.rq_value = 1
+smart.rd_value = 0x34000000
+var burst_probe = p2smart.async_serial_burst_probe(6, 7, [0x12, 0x34], 12, 1000000, 8)
+assert(burst_probe["ok"])
+assert(burst_probe["tx_pin"] == 6)
+assert(burst_probe["rx_pin"] == 7)
+assert(burst_probe["values"] == [0x12, 0x34])
+assert(burst_probe["count"] == 2)
+assert(burst_probe["expected_latest"] == 0x34)
+assert(burst_probe["sampled"] == 0x34)
+assert(burst_probe["latest_matched"])
+assert(burst_probe["event"] == 1)
+assert(burst_probe["raw"] == 0x34000000)
+assert(burst_probe["wait_us"] == 12)
+assert(burst_probe["receive_model"] == "single_smartpin_sample")
+assert(!burst_probe["fifo_buffered"])
+assert(!burst_probe["serial"]["started"])
+assert(calls == [
+    ["clock.freq"],
+    ["smart.start", 6, smart.oe + smart.async_tx, 200 * 65536 + 7, 0],
+    ["smart.start", 7, smart.async_rx, 200 * 65536 + 7, 0],
+    ["smart.wypin", 6, 0x12],
+    ["smart.wypin", 6, 0x34],
+    ["waitus", 12],
+    ["smart.rqpin", 7],
+    ["smart.rdpin", 7],
+    ["smart.clear", 6],
+    ["smart.clear", 7],
+    ["pin.float", 6],
+    ["pin.float", 7]
+])
+expect_error(def () p2smart.async_serial_burst_probe(6, 7, nil, 12, 1000000, 8) end)
+expect_error(def () p2smart.async_serial_burst_probe(6, 7, [], 12, 1000000, 8) end)
+expect_error(def () p2smart.async_serial_burst_probe(6, 7, [300], 12, 1000000, 8) end)
 smart.rdpin = def(pin_no)
     calls.push(["smart.rdpin", pin_no])
     return smart.rd_value
@@ -1945,13 +2215,13 @@ assert(serial_reverse.info()["rx_mode"] == smart.async_rx)
 reset_calls()
 var sync = p2smart.sync_serial_pair_ticks(12, 13, 160, 8, nil, nil)
 assert(sync.info()["kind"] == "SyncSerialPair")
-assert(sync.x() == 160 * 65536 + 7)
+assert(sync.x() == 39)
 assert(sync.info()["tx_mode"] == smart.oe + smart.sync_io + smart.sync_tx)
 assert(sync.info()["rx_mode"] == smart.sync_io + smart.sync_rx)
 sync.start()
 assert(calls == [
-    ["smart.start", 12, smart.oe + smart.sync_io + smart.sync_tx, 160 * 65536 + 7, 0],
-    ["smart.start", 13, smart.sync_io + smart.sync_rx, 160 * 65536 + 7, 0]
+    ["smart.start", 12, smart.oe + smart.sync_io + smart.sync_tx, 39, 0],
+    ["smart.start", 13, smart.sync_io + smart.sync_rx, 39, 0]
 ])
 sync.send(0x5a)
 assert(calls[calls.size() - 1] == ["smart.wypin", 12, 0x5a])
@@ -1972,18 +2242,18 @@ assert(sync_not_ready["value"] == nil)
 assert(sync_not_ready["error"] == "not_ready")
 assert(calls == [["smart.rqpin", 13]])
 smart.rq_value = 1
-smart.rd_value = 0x1234
+smart.rd_value = 0x34000000
 reset_calls()
 var sync_ready = sync.read_result()
 assert(sync_ready["ok"])
 assert(sync_ready["ready"])
 assert(sync_ready["event"] == 1)
-assert(sync_ready["raw"] == 0x1234)
-assert(sync_ready["value"] == 0x1234)
+assert(sync_ready["raw"] == 0x34000000)
+assert(sync_ready["value"] == 0x34)
 assert(sync_ready["error"] == nil)
 assert(calls == [["smart.rqpin", 13], ["smart.rdpin", 13]])
 smart.rq_value = 1
-smart.rd_value = 0x77
+smart.rd_value = 0x77000000
 reset_calls()
 var sync_after = sync.read_result_after(25)
 assert(sync_after["ok"])
@@ -1991,7 +2261,7 @@ assert(sync_after["value"] == 0x77)
 assert(sync_after["delayed"])
 assert(calls == [["waitus", 25], ["smart.rqpin", 13], ["smart.rdpin", 13]])
 smart.rq_value = 1
-smart.rd_value = 0x5a
+smart.rd_value = 0x5a000000
 reset_calls()
 var sync_transfer = sync.transfer_result(0x5a, 25, nil)
 assert(sync_transfer["ok"])
@@ -2002,7 +2272,7 @@ assert(sync_transfer["delayed"])
 assert(!sync_transfer["clocked"])
 assert(calls == [["smart.akpin", 13], ["smart.wypin", 12, 0x5a], ["waitus", 25], ["smart.rqpin", 13], ["smart.rdpin", 13]])
 smart.rq_value = 1
-smart.rd_value = 0x23
+smart.rd_value = 0x23000000
 reset_calls()
 var sync_transfers = sync.transfer_results([0x23], 25, nil)
 assert(sync_transfers.size() == 1)
@@ -2020,7 +2290,7 @@ assert(calls[calls.size() - 1] == ["pin.float", 13])
 
 reset_calls()
 smart.rq_value = 1
-smart.rd_value = 0x23
+smart.rd_value = 0x23000000
 var sync_probe = p2smart.sync_serial_probe(12, 13, [0x23], 25, 1250000, 8)
 assert(sync_probe["ok"])
 assert(sync_probe["tx_pin"] == 12)
@@ -2030,12 +2300,12 @@ assert(sync_probe["count"] == 1)
 assert(sync_probe["ready_count"] == 1)
 assert(sync_probe["matched_count"] == 1)
 assert(sync_probe["wait_us"] == 25)
-assert(sync_probe["serial"]["x"] == 160 * 65536 + 7)
+assert(sync_probe["serial"]["x"] == 39)
 assert(sync_probe["results"][0]["matched"])
 assert(calls == [
     ["clock.freq"],
-    ["smart.start", 12, smart.oe + smart.sync_io + smart.sync_tx, 160 * 65536 + 7, 0],
-    ["smart.start", 13, smart.sync_io + smart.sync_rx, 160 * 65536 + 7, 0],
+    ["smart.start", 12, smart.oe + smart.sync_io + smart.sync_tx, 39, 0],
+    ["smart.start", 13, smart.sync_io + smart.sync_rx, 39, 0],
     ["smart.akpin", 13],
     ["smart.wypin", 12, 0x23],
     ["waitus", 25],
@@ -2049,17 +2319,24 @@ assert(calls == [
 
 reset_calls()
 smart.rq_value = 1
-smart.rd_value = 0x34
+smart.rd_value = 0x34000000
 var sync_clocked_probe = p2smart.sync_serial_clocked_probe(0, 1, 2, 3, [0x34], 25, 1250000, 8)
 assert(sync_clocked_probe["ok"])
 assert(sync_clocked_probe["data_tx_pin"] == 0)
 assert(sync_clocked_probe["data_rx_pin"] == 1)
 assert(sync_clocked_probe["clock_tx_pin"] == 2)
 assert(sync_clocked_probe["clock_rx_pin"] == 3)
+assert(sync_clocked_probe["tx_mode"] == smart.oe + smart.sync_io + smart.plus2_b + smart.sync_tx)
+assert(sync_clocked_probe["rx_mode"] == smart.sync_io + smart.plus2_b + smart.sync_rx)
+assert(sync_clocked_probe["clock_mode"] == smart.oe + smart.pulse)
 assert(sync_clocked_probe["values"] == [0x34])
 assert(sync_clocked_probe["count"] == 1)
 assert(sync_clocked_probe["ready_count"] == 1)
 assert(sync_clocked_probe["matched_count"] == 1)
+assert(sync_clocked_probe["matched_receive_words"])
+assert(sync_clocked_probe["receive_status"] == "verified")
+assert(sync_clocked_probe["receive_policy"] == "verified_clocked_jumper_receive")
+assert(sync_clocked_probe["execution_supported"])
 assert(sync_clocked_probe["results"][0]["matched"])
 assert(sync_clocked_probe["results"][0]["clocked"])
 assert(sync_clocked_probe["serial"]["tx_mode"] == smart.oe + smart.sync_io + smart.plus2_b + smart.sync_tx)
@@ -2069,8 +2346,8 @@ assert(calls == [
     ["pin.float", 3],
     ["smart.start", 2, smart.oe + smart.pulse, 1000 * 65536 + 2000, 0],
     ["smart.wypin", 2, 0],
-    ["smart.start", 0, smart.oe + smart.sync_io + smart.plus2_b + smart.sync_tx, 160 * 65536 + 7, 0],
-    ["smart.start", 1, smart.sync_io + smart.plus2_b + smart.sync_rx, 160 * 65536 + 7, 0],
+    ["smart.start", 0, smart.oe + smart.sync_io + smart.plus2_b + smart.sync_tx, 39, 0],
+    ["smart.start", 1, smart.sync_io + smart.plus2_b + smart.sync_rx, 39, 0],
     ["smart.akpin", 1],
     ["smart.wypin", 0, 0x34],
     ["smart.wypin", 2, 8],
@@ -2181,8 +2458,15 @@ assert(variant_probe["selected"] == nil)
 assert(variant_probe["error"] == "execution_deferred")
 assert(variant_probe["ready_count"] == 0)
 assert(variant_probe["matched_count"] == 0)
+assert(!variant_probe["matched_receive_words"])
+assert(variant_probe["receive_status"] == "verified")
+assert(variant_probe["receive_policy"] == "verified_clocked_jumper_receive")
 assert(variant_probe["results"][0]["variant"] == "normal_clock")
 assert(variant_probe["results"][0]["error"] == "execution_deferred")
+assert(!variant_probe["results"][0]["matched_receive_words"])
+assert(variant_probe["results"][0]["receive_status"] == "verified")
+assert(variant_probe["results"][0]["receive_policy"] == "verified_clocked_jumper_receive")
+assert(!variant_probe["results"][0]["execution_supported"])
 assert(variant_probe["results"][1]["variant"] == "inverted_rx_clock")
 assert(variant_probe["results"][1]["rx_mode"] == smart.sync_io + smart.invert_b + smart.plus2_b + smart.sync_rx)
 assert(variant_probe["results"][2]["clock_mode"] == smart.oe + smart.invert_output + smart.pulse)
@@ -2198,6 +2482,9 @@ assert(default_sync_variants["ok_count"] == 0)
 assert(default_sync_variants["failed_count"] == 2)
 assert(default_sync_variants["results"][0]["variant_count"] == 4)
 assert(default_sync_variants["results"][0]["execution_supported"] == false)
+assert(!default_sync_variants["results"][0]["matched_receive_words"])
+assert(default_sync_variants["results"][0]["receive_status"] == "verified")
+assert(default_sync_variants["results"][0]["receive_policy"] == "verified_clocked_jumper_receive")
 assert(default_sync_variants["results"][0]["error"] == "execution_deferred")
 assert(default_sync_variants["failures"][0]["variant_count"] == 4)
 expect_error(def () p2smart.sync_serial_clocked_jumper_probes(nil, [0], 0, 1000000, 8) end)
@@ -2212,10 +2499,10 @@ expect_error(def () p2smart.sync_serial_clocked_jumper_variant_probes([[0, 1, 2,
 reset_calls()
 var adc = p2smart.adc(8, nil, nil)
 assert(adc.info()["mode"] == smart.adc_1x + smart.adc)
-assert(adc.info()["sample_ticks"] == 256)
+assert(adc.info()["sample_ticks"] == 32)
 adc.start()
 assert(calls == [
-    ["smart.start", 8, smart.adc_1x + smart.adc, 256, 0],
+    ["smart.start", 8, smart.adc_1x + smart.adc, 32, 0],
     ["smart.akpin", 8]
 ])
 smart.rd_value = 12345
@@ -2354,7 +2641,7 @@ assert(probe["delta"] == 40)
 assert(probe["abs_delta"] == 40)
 assert(probe["threshold"] == 4)
 assert(calls == [
-    ["smart.start", 8, smart.adc_1x + smart.adc, 256, 0],
+    ["smart.start", 8, smart.adc_1x + smart.adc, 32, 0],
     ["smart.akpin", 8],
     ["smart.start", 9, smart.oe + smart.dac_990r_3v + smart.dac_dither_pwm, 256, 0],
     ["waitus", 10],
@@ -2399,7 +2686,7 @@ assert(sampled_probe["polarity"] == "positive")
 assert(!sampled_probe["polarity_verified"])
 assert(!sampled_probe["calibrated_voltage"])
 assert(calls == [
-    ["smart.start", 8, smart.adc_1x + smart.adc, 256, 0],
+    ["smart.start", 8, smart.adc_1x + smart.adc, 32, 0],
     ["smart.akpin", 8],
     ["smart.start", 9, smart.oe + smart.dac_990r_3v + smart.dac_dither_pwm, 256, 0],
     ["waitus", 10],
@@ -2444,7 +2731,7 @@ assert(variant_probe["dac"]["mode"] == smart.oe + smart.dac_600r_2v + smart.dac_
 assert(variant_probe["dac"]["frame"] == 128)
 assert(variant_probe["adc"]["mode"] == smart.adc_1x + smart.adc)
 assert(calls == [
-    ["smart.start", 8, smart.adc_1x + smart.adc, 256, 0],
+    ["smart.start", 8, smart.adc_1x + smart.adc, 32, 0],
     ["smart.akpin", 8],
     ["smart.start", 9, smart.oe + smart.dac_600r_2v + smart.dac_dither_rnd, 128, 5],
     ["waitus", 12],
@@ -2492,7 +2779,7 @@ assert(sampled_variant_probe["dac"]["mode"] == smart.oe + smart.dac_600r_2v + sm
 assert(sampled_variant_probe["dac"]["frame"] == 128)
 assert(sampled_variant_probe["adc"]["mode"] == smart.adc_1x + smart.adc)
 assert(calls == [
-    ["smart.start", 8, smart.adc_1x + smart.adc, 256, 0],
+    ["smart.start", 8, smart.adc_1x + smart.adc, 32, 0],
     ["smart.akpin", 8],
     ["smart.start", 9, smart.oe + smart.dac_600r_2v + smart.dac_dither_rnd, 128, 5],
     ["waitus", 12],
@@ -2635,6 +2922,12 @@ expect_error(def () p2smart.adc_dac_variants_sampled_probe(0, 1, 0, 255, nil, ni
 expect_error(def () p2smart.adc_dac_variants_sampled_probe(0, 1, 0, 255, nil, nil, 256, 256, nil, nil, 0, 1, 0, 0) end)
 expect_error(def () p2smart.adc_dac_variants_sampled_probe(0, 1, 0, 255, nil, nil, 256, 256, nil, nil, 0, 1, 33, 0) end)
 expect_error(def () p2smart.adc_dac_variants_sampled_probe(0, 1, 0, 255, nil, nil, 256, 256, nil, nil, 0, 1, 1, -1) end)
+expect_error(def () p2smart.adc_dac_calibrated_probe(0, 1, 0, 255, 100) end)
+expect_error(def () p2smart.adc_dac_calibrated_probe(-1, 1, 0, 255, 100) end)
+expect_error(def () p2smart.adc_dac_calibrated_probe(0, 0, 0, 255, 100) end)
+expect_error(def () p2smart.adc_dac_calibrated_probe(0, 1, -1, 255, 100) end)
+expect_error(def () p2smart.adc_dac_calibrated_probe(0, 1, 0, 256, 100) end)
+expect_error(def () p2smart.adc_dac_calibrated_probe(0, 1, 0, 255, 0) end)
 smart.rdpin = def(pin_no)
     calls.push(["smart.rdpin", pin_no])
     return smart.rd_value
@@ -2647,6 +2940,11 @@ expect_error(def () p2smart.quadrature(0, 0, nil) end)
 expect_error(def () p2smart.quadrature(0, 2, nil) end)
 expect_error(def () p2smart.quadrature(0, 2, -1) end)
 expect_error(def () p2smart.quadrature_sample_probe(0, 2, nil, 0) end)
+expect_error(def () p2smart.quadrature_mechanical_encoder(0, 1, nil) end)
+expect_error(def () p2smart.quadrature_mechanical_encoder(-1, 1, nil) end)
+expect_error(def () p2smart.quadrature_mechanical_encoder(0, 0, nil) end)
+expect_error(def () p2smart.quadrature_mechanical_encoder(0, 2, nil) end)
+expect_error(def () p2smart.quadrature_mechanical_encoder(0, 1, -1) end)
 expect_error(def () p2smart.gpio_input(-1) end)
 expect_error(def () p2smart.gpio_output(64, nil) end)
 expect_error(def () p2smart.gpio_output(0, 2) end)
@@ -2675,12 +2973,10 @@ expect_error(def () p2smart.pwm_mode("bad") end)
 expect_error(def () p2smart.pwm_variant(0, 100, 1, 1, "bad") end)
 expect_error(def () p2smart.nco(0, 0, 1, nil) end)
 expect_error(def () p2smart.nco(0, 1, -1, nil) end)
-expect_error(def () p2smart.nco_duty(-1, 16000, 1, nil) end)
+expect_error(def () p2smart.nco_duty(-1, 1, 1, nil) end)
 expect_error(def () p2smart.nco_duty(0, 0, 1, nil) end)
-expect_error(def () p2smart.nco_duty(0, 16000, 0, nil) end)
-expect_error(def () p2smart.nco_duty(0, 16000, 16001, nil) end)
-expect_error(def () p2smart.nco_duty(0, 16000, 1, nil).set_duty(0) end)
-expect_error(def () p2smart.nco_duty(0, 16000, 1, nil).set_duty(16001) end)
+expect_error(def () p2smart.nco_duty(0, 1, -1, nil) end)
+expect_error(def () p2smart.nco_duty(0, 1, 1, nil).set_duty(-1) end)
 expect_error(def () p2smart.pulse(0, 0, 1, 1, nil) end)
 expect_error(def () p2smart.pulse(0, 40000, 1, 1, nil) end)
 expect_error(def () p2smart.pulse(0, 40000, 30000, 1, nil) end)
@@ -2694,6 +2990,12 @@ expect_error(def () p2smart.async_serial_pair_ticks(0, 1, 200, 0, nil, nil) end)
 expect_error(def () p2smart.async_serial_pair_ticks(0, 1, 200, 33, nil, nil) end)
 expect_error(def () p2smart.async_serial_pair_ticks(0, 1, 200, 8, nil, nil).send(256) end)
 expect_error(def () p2smart.async_serial_probe(0, 1, [], 0, 1000000, 8) end)
+expect_error(def () p2smart.async_serial_buffered_pair(0, 1, 1000000, 8, 16) end)
+expect_error(def () p2smart.async_serial_buffered_pair(0, 0, 1000000, 8, 16) end)
+expect_error(def () p2smart.async_serial_buffered_pair(-1, 1, 1000000, 8, 16) end)
+expect_error(def () p2smart.async_serial_buffered_pair(0, 1, 0, 8, 16) end)
+expect_error(def () p2smart.async_serial_buffered_pair(0, 1, 1000000, 33, 16) end)
+expect_error(def () p2smart.async_serial_buffered_pair(0, 1, 1000000, 8, 0) end)
 expect_error(def () p2smart.sync_serial_pair_ticks(0, 0, 200, 8, nil, nil) end)
 expect_error(def () p2smart.sync_serial_pair_ticks(0, 1, 0, 8, nil, nil) end)
 expect_error(def () p2smart.sync_serial_pair_ticks(0, 1, 200, 0, nil, nil) end)
@@ -2702,6 +3004,9 @@ expect_error(def () p2smart.sync_serial_pair_ticks(0, 1, 200, 8, nil, nil).send(
 expect_error(def () p2smart.sync_serial_probe(0, 1, [], 0, 1000000, 8) end)
 expect_error(def () p2smart.sync_serial_clocked_probe(0, 1, 2, 3, [], 0, 1000000, 8) end)
 expect_error(def () p2smart.serial_bit_ticks(0) end)
+expect_error(def () p2smart.usb_pair_probe(0, 1) end)
+expect_error(def () p2smart.usb_pair_probe(-1, 1) end)
+expect_error(def () p2smart.usb_pair_probe(0, 64) end)
 expect_error(def () p2smart.adc(-1, nil, nil) end)
 expect_error(def () p2smart.adc(0, -1, nil) end)
 expect_error(def () p2smart.adc(0, nil, 0) end)

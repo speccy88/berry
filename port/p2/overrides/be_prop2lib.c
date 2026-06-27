@@ -31,6 +31,11 @@ static uint32_t p2_require_u32(bvm *vm, int index, const char *what)
     return (uint32_t)value;
 }
 
+static uint32_t p2_require_smart_mode(bvm *vm, int index)
+{
+    return (uint32_t)p2_require_int(vm, index, "mode must be an int");
+}
+
 static int p2_require_boolish(bvm *vm, int index, const char *what)
 {
     if (be_top(vm) < index || (!be_isbool(vm, index) && !be_isint(vm, index))) {
@@ -380,6 +385,9 @@ int m_cog_start_hex(bvm *vm)
 int m_cog_stop(bvm *vm)
 {
     int cog = p2_require_cog(vm, 1);
+    if (cog == _cogid()) {
+        be_raise(vm, "value_error", "refusing to stop the current cog");
+    }
     _cogstop(cog);
     p2_cog_release_stack(cog);
     be_return_nil(vm);
@@ -462,7 +470,17 @@ int m_attention_poll(bvm *vm)
 
 int m_attention_wait(bvm *vm)
 {
-    be_pushint(vm, (bint)_waitatn());
+    uint32_t mask;
+
+    for (;;) {
+        p2_check_interrupt_now(vm);
+        mask = _pollatn();
+        if (mask != 0u) {
+            break;
+        }
+        _waitus(10);
+    }
+    be_pushint(vm, (bint)mask);
     be_return(vm);
 }
 
@@ -660,7 +678,7 @@ int m_pin_read(bvm *vm)
 
 int m_smartpin_write_mode(bvm *vm)
 {
-    _wrpin(p2_require_pin(vm, 1), p2_require_u32(vm, 2, "mode must be an int"));
+    _wrpin(p2_require_pin(vm, 1), p2_require_smart_mode(vm, 2));
     be_return_nil(vm);
 }
 
@@ -697,7 +715,7 @@ int m_smartpin_query(bvm *vm)
 int m_smartpin_start(bvm *vm)
 {
     int pin = p2_require_pin(vm, 1);
-    uint32_t mode = p2_require_u32(vm, 2, "mode must be an int");
+    uint32_t mode = p2_require_smart_mode(vm, 2);
     uint32_t x = p2_require_u32(vm, 3, "x must be an int");
     uint32_t y = p2_require_u32(vm, 4, "y must be an int");
     _pinstart(pin, mode, x, y);

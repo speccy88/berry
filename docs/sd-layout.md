@@ -26,10 +26,10 @@ The long-form `/berry/...` layout is provisioned separately so ordinary smoke
 syncs stay conservative:
 
 ```sh
-make p2-sd-berry-dirs PORT=/dev/cu.usbserial-P97cvdxp
-make p2-sd-berry-lib PORT=/dev/cu.usbserial-P97cvdxp
-make p2-sd-berry-examples PORT=/dev/cu.usbserial-P97cvdxp
-make p2-sd-berry-sync PORT=/dev/cu.usbserial-P97cvdxp
+make p2-sd-berry-dirs TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
+make p2-sd-berry-lib TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
+make p2-sd-berry-examples TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
+make p2-sd-berry-sync TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
 ```
 
 `p2-sd-berry-dirs` creates the empty `/berry/cache`, `/berry/config`, and
@@ -75,7 +75,7 @@ The intended import order is:
 3. Configured module paths such as `/modules` and future `/berry/lib`.
 4. Future bytecode cache paths when `.bec` support is implemented.
 
-Current verified behavior covers native modules and `/modules/*.be` lazy source imports. Source-level smoke coverage exists for native-module-first precedence, current-directory SD imports, optional `/berry/main.be` auto-run builds, `/berry/lib/*.be`, `/berry/app/*.be`, and `/berry/config/*.json`; hardware execution of that expanded smoke remains part of the next full P2 SD smoke run. `.bec` path detection and deterministic size/hash metadata are staged through `libstore.compiled_path(name)` and `libstore.compiled_stats(name)`. `.bec` sidecar freshness manifests are now staged as `<module>.bec.json`, but `.bec` execution and compile-to-cache emission remain open. Until then, `.be` source is the explicit fallback.
+Current verified behavior covers native modules and `/modules/*.be` lazy source imports. Source-level smoke coverage exists for native-module-first precedence, current-directory SD imports, optional `/berry/main.be` auto-run builds, `/berry/lib/*.be`, `/berry/app/*.be`, and `/berry/config/*.json`; hardware execution of that expanded smoke remains part of the next full P2 SD smoke run. `.bec` path detection and deterministic size/hash metadata are staged through `libstore.compiled_path(name)` and `libstore.compiled_stats(name)`. `.bec` sidecar freshness manifests use 8.3-safe `<module>.jsn` files. Builds that report bytecode loader plus execution support can prefer fresh, validated `.bec` files; unsupported builds keep `.be` source fallback.
 
 `libstore.path_add(path)`, `libstore.path_remove(path)`, and
 `libstore.path_list()` configure the SD source paths used by `libstore`
@@ -93,23 +93,20 @@ Bare dotted imports bind the last segment by default, so `import pkg.mod`
 stores the loaded module in variable `mod`; use `as alias` when a different
 binding name is clearer.
 
-`libstore.resolve(name)` reports the selected load path and reason. Today `.bec`
-files are detected and hashed but unsupported for execution. When source,
-bytecode, and a matching `<module>.bec.json` sidecar are present,
+`libstore.resolve(name)` reports the selected load path and reason. When source,
+bytecode, and a matching 8.3-safe `<module>.jsn` sidecar are present,
 `libstore.compiled_freshness(name)` can report `fresh == true` and
-`comparable == true`. Default firmware still reports `usable == false` with
-reason `compiled_execution_unavailable`; opt-in loader builds are reported
-through `p2.status_info()["build"]["bytecode_loader"]` and
+`comparable == true`. Bytecode-capable builds are reported through
+`p2.status_info()["build"]["bytecode_loader"]`,
+`p2.status_info()["build"]["bytecode_execution"]`, and
 `libstore.compiled_execution_probe()`. `libstore.compiled_validation(name)`
-separates fresh sidecar metadata from the default-off safe bytecode
-execution policy. A matching `.be` source file remains selected with reason
-`compiled_unsupported_source_fallback` unless the opt-in loader build,
-freshness check, and `BE_P2_ENABLE_BYTECODE_EXECUTION` policy make the staged
-bytecode usable.
+separates fresh sidecar metadata from the safe bytecode execution policy. A
+matching `.be` source file remains selected with reason
+`compiled_unsupported_source_fallback` unless the loader, freshness check, and
+`BE_P2_ENABLE_BYTECODE_EXECUTION` policy make the staged bytecode usable.
 `libstore.compiled_load_plan(name)` and `libstore.load_compiled(name)` expose
-the future `.bec` execution hook explicitly; default builds raise
-`unsupported_error` with the plan reason instead of silently executing or
-silently falling back.
+the `.bec` execution hook explicitly; unsupported builds raise
+`unsupported_error` with the plan reason instead of silently falling back.
 `libstore.compiled_status(name)` bundles the staged bytecode freshness,
 validation, load, and emit state for tooling that needs one diagnostics map.
 `libstore.compiled_status_text(name)` exports the same bundle as JSON text for
@@ -152,9 +149,11 @@ an app is absent.
 
 `libstore.example_path(name)`, `libstore.example_exists(name)`, and
 `libstore.run_example(name)` provide the same source-file helper pattern for
-`.be` examples under `/berry/examples`. For example, `run_example("smartpin_diagnostics")`
-runs `/berry/examples/smartpin_diagnostics.be` when the examples tree has been
-provisioned to SD.
+`.be` examples under `/berry/examples`. For example,
+`run_example("sync_serial_loopback")` runs the preferred synchronous-serial
+jumper example at `/berry/examples/sync_serial_loopback.be`, and
+`run_example("smartpin_diagnostics")` runs the aggregate jumper diagnostic when
+the examples tree has been provisioned to SD.
 
 `libstore.pasm_path(name)`, `libstore.pasm_exists(name)`, and
 `libstore.pasm_info(name)` detect staged `/berry/pasm/*.bin` files without

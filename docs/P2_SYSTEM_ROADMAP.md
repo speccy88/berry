@@ -31,8 +31,8 @@ The `edge32` profile is the first selectable P2 Edge 32 MB RAM path:
 
 ```sh
 make p2-edge32
-make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp
-tio -b 230400 /dev/cu.usbserial-P97cvdxp
+make p2-edge32-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
+tio -b 230400 /dev/ttyUSB0
 ```
 
 It uses Catalina COMPACT plus `-lpsram`. Catalina exposes PSRAM in this mode
@@ -150,7 +150,7 @@ Current implementation:
 
 - `task` runs cooperative same-VM tasks one scheduler step at a time.
 - `p2.cog` returns native handles for supported cog-backed work such as the
-  p38/p39 native-blink closure shape.
+  native-blink closure shape on pins 38 and 39.
 - arbitrary Berry closure execution in an isolated cog remains future work until
   VM, heap, GC, capture, error, and ownership semantics are proven safe.
 - the older `rtos` worker API and SD `taskspin` facade are retired from the
@@ -162,7 +162,7 @@ Current implementation:
 2. Keep `edge32` flash/RAM builds working.
 3. Keep expanding the non-destructive `tests/p2/` smoke suite for:
    - arithmetic, strings, lists, maps, ranges
-   - `string`, `math`, `task`, `json`, `bytes`, `os`, `p2`, `i2c`, `spi`, `spin2`
+   - `string`, `math`, `task`, `json`, `bytes`, `os`, `p2`, `i2c`, `spi`, and the archived/opt-in `spin2` boundary
    - SD read/write/list/remove
    - PSRAM `p2.psram_info()` and `p2.psram_test()` on edge32
 4. Expand base-Berry library coverage module by module, measuring image size
@@ -170,8 +170,10 @@ Current implementation:
 5. Add a lazy loader for SD/PSRAM-backed modules.
 6. Grow `p2.cog.spawn(function, ...)` beyond native-backed handle shapes only
    after function transfer and isolated-VM semantics are understood.
-7. Continue Spin2/PASM loading until Berry can orchestrate native P2 modules
-   as first-class companions.
+7. Keep Spin2/PASM loading as archived/opt-in regression work; if it does not
+   work quickly on the current image, stop spending priority time there and
+   move effort to working P2 usage paths such as native modules, SD loading,
+   cog handles, and smart-pin coverage.
 
 ## Non-Goals For Now
 

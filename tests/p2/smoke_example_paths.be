@@ -46,14 +46,8 @@ assert(libstore.example_path("noexprobe") == nil)
 assert(!libstore.example_exists("noexprobe"))
 assert(libstore.run_example("noexprobe") == nil)
 
-try
-    os.remove(path)
-except .. as e, m
-end
-try
-    os.remove(nested_path)
-except .. as e, m
-end
+assert(os.remove(path))
+assert(os.remove(nested_path))
 if made_nested_dir
     assert(os.remove(nested_dir))
 end

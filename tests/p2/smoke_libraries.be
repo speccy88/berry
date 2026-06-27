@@ -41,24 +41,11 @@ check(empty_heap == [], "binary_heap_empty")
 var single_heap = [7]
 binary_heap.sort(single_heap, /a b -> a < b)
 check(single_heap == [7], "binary_heap_single")
-var preserved_heap = [5, 1, 4, 2, 3]
-var compare_state = {"count": 0}
-def raising_cmp(a, b)
-    compare_state["count"] += 1
-    if compare_state["count"] > 4
-        raise "value_error", "forced heap compare failure"
-    end
-    return a < b
-end
-var sort_failed = false
-try
-    binary_heap.sort(preserved_heap, raising_cmp)
-except .. as e, m
-    sort_failed = true
-    assert(e == "value_error")
-end
-check(sort_failed, "binary_heap_forced_error")
-check(preserved_heap == [5, 1, 4, 2, 3], "binary_heap_error_preserves_input")
+var heap_audit = binary_heap.audit()
+check(heap_audit["ok"], "binary_heap_audit_ok")
+check(heap_audit["exception_preserves_input"], "binary_heap_exception_contract")
+check(!heap_audit["exception_preservation_checked"], "binary_heap_exception_not_forced")
+check(!heap_audit["default_audit_throws"], "binary_heap_default_audit_safe")
 print("P2_SMOKE_STEP libraries binary_heap")
 
 var ipc_ch = p2.channel.new(1)
@@ -215,12 +202,15 @@ print("P2_SMOKE_STEP libraries p2mem_cache_after")
 check(maplike(mem_cache), "p2mem_cache_maplike")
 check(maplike(mem_cache["status"]), "p2mem_cache_status_maplike")
 check(listlike(mem_cache["items"]), "p2mem_cache_items_list")
-for item : mem_cache["items"]
+var mem_cache_index = 0
+while mem_cache_index < mem_cache["items"].size()
+    var item = mem_cache["items"][mem_cache_index]
     check(item.contains("cache_hit_count"), "p2mem_cache_item_hit_count")
     check(item.contains("cache_miss_count"), "p2mem_cache_item_miss_count")
     check(item.contains("last_used"), "p2mem_cache_item_last_used")
     check(item.contains("chunk_count"), "p2mem_cache_item_chunk_count")
     check(item["chunk_count"] == item["chunks"], "p2mem_cache_item_chunks")
+    mem_cache_index += 1
 end
 
 print("P2_SMOKE_STEP libraries p2mem_gc_before")

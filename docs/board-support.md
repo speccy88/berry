@@ -25,3 +25,6 @@ The normal first-validation target is the no-PSRAM P2 Edge Catalina COMPACT prof
 - SD card pins `58..61` are reserved.
 - PSRAM builds reserve pins `40..57`.
 - Hardware tests that touch user pins must state their pin use and skip when the pin is reserved by the selected board profile.
+- `p2compat.board_pin_policy(pin)` exposes the same PSRAM/SD/serial reserved-pin
+  policy to Berry scripts. Use it for examples or diagnostics that need a
+  compact runtime answer before touching a pin.

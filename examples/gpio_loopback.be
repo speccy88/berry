@@ -1,12 +1,30 @@
-import p2smart
+import p2
 
 var out_pin = 0
 var in_pin = 1
 
 print("GPIO loopback OUT", out_pin, "IN", in_pin)
-var result = p2smart.gpio_loopback_probe(out_pin, in_pin, [0, 1, 0, 1], 10000)
-print("ok", result["ok"], "count", result["count"])
-for item : result["results"]
-    print("write", item["write"]["value"], "read", item["read"]["value"], "match", item["ok"])
+
+p2.pin.float(out_pin)
+p2.pin.float(in_pin)
+p2.pin.dir_high(out_pin)
+p2.pin.dir_low(in_pin)
+
+var values = [0, 1, 0, 1]
+var ok = true
+var i = 0
+while i < values.size()
+    var value = values[i]
+    p2.pin.write(out_pin, value)
+    p2.waitus(10000)
+    var read = p2.pin.read(in_pin)
+    var match = read == value
+    ok = ok && match
+    print("write", value, "read", read, "match", match)
+    i += 1
 end
+
+p2.pin.float(out_pin)
+p2.pin.float(in_pin)
+print("ok", ok, "count", values.size())
 print("gpio loopback done")

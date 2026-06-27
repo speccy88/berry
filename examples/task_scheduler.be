@@ -11,7 +11,7 @@ print("max tasks:", caps["max_tasks"])
 var log = []
 
 def counter(name, limit, delay_ms)
-    var runs = task.task_info(task.current())["runs"]
+    var runs = task.lifecycle_result(task.current())["runs"]
     log.push(name + str(runs))
     print("task run:", name, runs)
     if runs >= limit

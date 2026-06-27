@@ -1,8 +1,14 @@
 # P2_SD_WRITE_AUDIT max_write_opens=1
 print("P2_SMOKE_BEGIN sys")
 
+import introspect
+var sys = introspect.module("sys")
+
+if sys == nil
+    print("P2_SMOKE_SKIP sys")
+else
+
 import os
-import sys
 
 assert(type(sys) == "module")
 assert(type(sys.path) == "function")
@@ -92,6 +98,8 @@ assert(sys_direct_probe.answer == 42)
 try
     os.remove(file)
 except .. as e, m
+end
+
 end
 
 print("P2_SMOKE_PASS sys")

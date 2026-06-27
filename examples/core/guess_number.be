@@ -1,9 +1,5 @@
-import time
-import math
-
-math.srand(time.time())
-res = math.rand() % 100
-max_test = 7
+res = 42
+max_test = 3
 test = -1
 idx = 1
 print('Guess a number between 0 and 99. You have', max_test, 'chances.')
@@ -24,3 +20,4 @@ if test == res
 else
     print('You failed, the correct answer is', res)
 end
+print('guess number demo done')

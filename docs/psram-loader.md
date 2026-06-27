@@ -18,7 +18,7 @@ On `xmm`, Catalina owns the lower PSRAM window as transparent external heap. Ber
 
 - Direct execution from PSRAM.
 - Live GC object storage in PSRAM on COMPACT profiles.
-- `.bec` bytecode cache execution and compile-to-cache emission; sidecar freshness manifest metadata is staged but does not enable execution.
+- P2-compatible preferred `.bec` cache loading, plus `.be` to `.bec` cache emission in saver-enabled builds. Current hardware verifies that host-ABI `.bec` files and matching-size bytecode with mismatched builtin counts are rejected as incompatible, and normal `libstore.load()` falls back to source.
 - Real module hit/miss/refcount/last-used metadata.
 - Low-memory and eviction stress behavior.
 

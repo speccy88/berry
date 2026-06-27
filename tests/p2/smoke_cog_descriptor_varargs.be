@@ -8,7 +8,7 @@ def blinker(pin, ms, label, enabled, spare, note, phase, sentinel)
     return p2.cog.task("blinker", pin, ms, label, enabled, spare, note, phase, sentinel)
 end
 
-t = blinker(38, 250, "p38:fast", true, nil, "extra", 3, false)
+t = blinker(38, 250, "pin38:fast", true, nil, "extra", 3, false)
 print("cap", p2.cog.capabilities()["task_max_args"])
 print("task", p2.cog.is_task(t), p2.cog.task_info(t)["kind"], p2.cog.task_info(t)["argc"])
 h = p2.cog.spawn(t)

@@ -10,6 +10,7 @@ import os
 import json
 import p2
 import string
+import introspect
 
 var libstore = module("libstore")
 
@@ -249,15 +250,83 @@ libstore.module_file_or_nil = def(name, ext)
     return libstore.module_file(name, ext)
 end
 
-libstore.hash_text = def(text)
-    var raw = bytes().fromstring(text)
+libstore._hash_mod_add = def(a, b)
+    var mod = 2147483647
+    if a >= mod - b
+        return a - (mod - b)
+    end
+    return a + b
+end
+
+libstore.hash_bytes = def(raw)
     var h = 0
     var i = 0
     while i < raw.size()
-        h = (h * 33 + raw[i]) % 2147483647
+        var old = h
+        h = raw[i]
+        var j = 0
+        while j < 33
+            h = libstore._hash_mod_add(h, old)
+            j += 1
+        end
         i += 1
     end
     return h
+end
+
+libstore.hash_text = def(text)
+    return libstore.hash_bytes(bytes().fromstring(text))
+end
+
+libstore.compiled_expected_sizeinfo = def()
+    var status = p2.status_info()
+    if status.contains("build")
+        var build = status["build"]
+        if build.contains("bytecode_sizeinfo")
+            return build["bytecode_sizeinfo"]
+        end
+        if build.contains("profile")
+            # P2 Catalina uses 32-bit bint plus single-precision breal.
+            return 0
+        end
+    end
+    return nil
+end
+
+libstore.compiled_expected_builtin_count = def()
+    var status = p2.status_info()
+    if status.contains("build")
+        var build = status["build"]
+        if build.contains("builtin_count")
+            return build["builtin_count"]
+        end
+    end
+    return nil
+end
+
+libstore._le_u32 = def(raw, offset)
+    if raw.size() < offset + 4
+        return nil
+    end
+    return raw[offset] +
+        raw[offset + 1] * 256 +
+        raw[offset + 2] * 65536 +
+        raw[offset + 3] * 16777216
+end
+
+libstore._read_file_bytes = def(path)
+    var f = open(path, "r")
+    try
+        var raw = f.readbytes()
+        f.close()
+        return raw
+    except .. as e, m
+        f.close()
+    end
+    f = open(path, "r")
+    var text = f.read()
+    f.close()
+    return bytes().fromstring(text)
 end
 
 libstore.source_stats = def(name)
@@ -291,14 +360,62 @@ libstore.compiled_stats = def(name)
             "hash": nil
         }
     end
-    var f = open(path, "r")
-    var bytecode = f.read()
-    f.close()
+    var bytecode = libstore._read_file_bytes(path)
     return {
         "path": path,
         "exists": true,
-        "size": size(bytecode),
-        "hash": libstore.hash_text(bytecode)
+        "size": bytecode.size(),
+        "hash": libstore.hash_bytes(bytecode)
+    }
+end
+
+libstore.compiled_header = def(name)
+    var path = libstore.compiled_path(name)
+    if path == nil
+        return {
+            "path": nil,
+            "valid": false,
+            "reason": "compiled_missing"
+        }
+    end
+    var bytecode = libstore._read_file_bytes(path)
+    var magic_valid = bytecode.size() >= 8 &&
+        bytecode[0] == 0xbe &&
+        bytecode[1] == 0xcd &&
+        bytecode[2] == 0xfe &&
+        bytecode[3] == 0x04
+    var expected_sizeinfo = nil
+    var sizeinfo = nil
+    var sizeinfo_valid = true
+    var expected_builtin_count = nil
+    var builtin_count = nil
+    var builtin_count_valid = true
+    if magic_valid
+        sizeinfo = bytecode[4]
+        expected_sizeinfo = libstore.compiled_expected_sizeinfo()
+        sizeinfo_valid = expected_sizeinfo == nil || sizeinfo == expected_sizeinfo
+        builtin_count = libstore._le_u32(bytecode, 8)
+        expected_builtin_count = libstore.compiled_expected_builtin_count()
+        builtin_count_valid = expected_builtin_count == nil || builtin_count == expected_builtin_count
+    end
+    var valid = magic_valid && sizeinfo_valid && builtin_count_valid
+    var reason = "invalid_bytecode_header"
+    if valid
+        reason = "ok"
+    elif magic_valid && !sizeinfo_valid
+        reason = "incompatible_bytecode_vm"
+    elif magic_valid && !builtin_count_valid
+        reason = "incompatible_bytecode_builtins"
+    end
+    return {
+        "path": path,
+        "valid": valid,
+        "reason": reason,
+        "version": magic_valid ? bytecode[3] : nil,
+        "sizeinfo": sizeinfo,
+        "expected_sizeinfo": expected_sizeinfo,
+        "builtin_count": builtin_count,
+        "expected_builtin_count": expected_builtin_count
     }
 end
 
@@ -313,10 +430,13 @@ libstore.path_add = def(path)
     if path == nil || size(path) == 0
         raise "value_error", "module path is empty"
     end
-    for base : libstore.paths
+    var i = 0
+    while i < libstore.paths.size()
+        var base = libstore.paths[i]
         if base == path
             return false
         end
+        i += 1
     end
     libstore.paths.push(path)
     return true
@@ -336,8 +456,10 @@ end
 
 libstore.path_list = def()
     var out = []
-    for base : libstore.paths
-        out.push(base)
+    var i = 0
+    while i < libstore.paths.size()
+        out.push(libstore.paths[i])
+        i += 1
     end
     return out
 end
@@ -942,10 +1064,13 @@ end
 
 libstore.known_source_count = def()
     var count = 0
-    for name : libstore.known
+    var i = 0
+    while i < libstore.known.size()
+        var name = libstore.known[i]
         if libstore.source_path(name) != nil
             count += 1
         end
+        i += 1
     end
     return count
 end
@@ -959,11 +1084,14 @@ libstore.source_path = def(name)
     if file == nil
         return nil
     end
-    for base : libstore.paths
+    var i = 0
+    while i < libstore.paths.size()
+        var base = libstore.paths[i]
         var path = base + "/" + file
         if os.path.exists(path)
             return path
         end
+        i += 1
     end
     return nil
 end
@@ -973,11 +1101,14 @@ libstore.compiled_path = def(name)
     if file == nil
         return nil
     end
-    for base : libstore.compiled_paths
+    var i = 0
+    while i < libstore.compiled_paths.size()
+        var base = libstore.compiled_paths[i]
         var path = base + "/" + file
         if os.path.exists(path)
             return path
         end
+        i += 1
     end
     return nil
 end
@@ -1129,12 +1260,12 @@ libstore.compiled_manifest_text = def(name)
 end
 
 libstore.build_features = def()
-    try
-        var status = p2.status_info()
-        if type(status) == "map" && status.contains("build") && type(status["build"]) == "map"
-            return status["build"]
-        end
-    except .. as e, m
+    if !introspect.contains(p2, "status_info")
+        return {}
+    end
+    var status = p2.status_info()
+    if type(status) == "map" && status.contains("build") && type(status["build"]) == "map"
+        return status["build"]
     end
     return {}
 end
@@ -1517,8 +1648,9 @@ libstore.compiled_validation = def(name)
             fresh = source_ok && compiled_ok
             if fresh
                 if execution["validator_supported"]
-                    valid = true
-                    reason = "ok"
+                    var header = libstore.compiled_header(name)
+                    valid = header["valid"]
+                    reason = valid ? "ok" : header["reason"]
                 else
                     reason = "bytecode_validator_unavailable"
                 end
@@ -1811,8 +1943,17 @@ libstore.compiled_freshness = def(name)
                 compiled_ok = compiled_ok && data["compiled_size"] == cstats["size"]
             end
             fresh = source_ok && compiled_ok
-            usable = fresh && libstore.compiled_supported
-            reason = fresh ? (usable ? "fresh" : "compiled_execution_unavailable") : "stale_manifest"
+            if fresh
+                if libstore.compiled_supported
+                    var header = libstore.compiled_header(name)
+                    usable = header["valid"]
+                    reason = usable ? "fresh" : header["reason"]
+                else
+                    reason = "compiled_execution_unavailable"
+                end
+            else
+                reason = "stale_manifest"
+            end
         end
     elif cstats["exists"]
         reason = "compiled_without_source"
@@ -1907,9 +2048,62 @@ libstore.info = def(name)
     var cpath = libstore.compiled_path(name)
     var stats = libstore.source_stats(name)
     var cstats = libstore.compiled_stats(name)
-    var freshness = libstore.compiled_freshness(name)
-    var validation = libstore.compiled_validation(name)
-    var load_plan = libstore.compiled_load_plan(name)
+    var freshness = nil
+    var validation = nil
+    var load_plan = nil
+    if cstats["exists"]
+        freshness = libstore.compiled_freshness(name)
+        validation = libstore.compiled_validation(name)
+        load_plan = libstore.compiled_load_plan(name)
+    else
+        var valid_name_for_freshness = libstore.valid_module_name(name)
+        var missing_reason = valid_name_for_freshness ? (stats["exists"] ? "compiled_missing" : "missing") : "invalid_module_name"
+        freshness = {
+            "name": name,
+            "source_path": stats["path"],
+            "source_exists": stats["exists"],
+            "source_size": stats["size"],
+            "source_hash": stats["hash"],
+            "compiled_path": cstats["path"],
+            "compiled_exists": false,
+            "compiled_size": cstats["size"],
+            "compiled_hash": cstats["hash"],
+            "manifest_path": nil,
+            "manifest_exists": false,
+            "manifest_valid": false,
+            "manifest_reason": "missing",
+            "fresh": false,
+            "usable": false,
+            "comparable": false,
+            "reason": missing_reason
+        }
+        validation = {
+            "valid": false,
+            "fresh": false,
+            "comparable": false,
+            "reason": missing_reason,
+            "loader_supported": execution_probe["loader_supported"],
+            "supported": execution_probe["validator_supported"],
+            "execution_supported": execution_probe["supported"],
+            "source_path": stats["path"],
+            "compiled_path": cstats["path"],
+            "manifest_path": nil
+        }
+        load_plan = {
+            "name": name,
+            "can_load": false,
+            "reason": missing_reason,
+            "path": cstats["path"],
+            "compiled_exists": false,
+            "fresh": false,
+            "usable": false,
+            "validation_valid": false,
+            "validation_reason": missing_reason,
+            "loader_supported": execution_probe["loader_supported"],
+            "validator_supported": execution_probe["validator_supported"],
+            "execution_supported": execution_probe["supported"]
+        }
+    end
     var psram = p2.psram_info()
     var window = libstore.cache_ensure()
     var heap = psram["heap"] ? "external" : "hub"
@@ -2145,7 +2339,27 @@ libstore.cached_source = def(name)
     return out
 end
 
+libstore.cached_source_execution_supported = def()
+    try
+        var status = p2.status_info()
+        if status.contains("build")
+            var build = status["build"]
+            if build.contains("cached_source_execution")
+                return build["cached_source_execution"]
+            end
+            if build.contains("profile")
+                return false
+            end
+        end
+    except .. as e, m
+    end
+    return true
+end
+
 libstore.run_cached = def(name)
+    if !libstore.cached_source_execution_supported()
+        return nil
+    end
     var source = libstore.cached_source(name)
     if source == nil
         return nil
@@ -2154,13 +2368,23 @@ libstore.run_cached = def(name)
 end
 
 libstore.load = def(name)
-    var path = libstore.source_path(name)
-    if path == nil
+    if !libstore.cached_source_execution_supported()
+        var source_path = libstore.source_path(name)
+        if source_path != nil
+            return run_file(source_path)
+        end
+    end
+    var resolved = libstore.resolve(name)
+    if resolved["selected_path"] == nil
         return nil
     end
-    # Compiled bytecode files are detected by info()/compiled_path(), but this
-    # P2 port does not execute .bec yet. Keep the active load path as source
-    # fallback until bytecode validation/freshness is implemented.
+    if resolved["selected_kind"] == "compiled"
+        return libstore.load_compiled(name)
+    end
+    var path = resolved["selected_path"]
+    if !libstore.cached_source_execution_supported()
+        return run_file(path)
+    end
     var policy = libstore._policy_resolve()
     if libstore._policy_uses_psram_cache(policy)
         var source = libstore.cached_source(name)
@@ -2288,7 +2512,10 @@ end
 
 libstore.cache_report = def()
     var items = []
-    for name : libstore.cache.keys()
+    var names = libstore.cache.keys()
+    var i = 0
+    while i < names.size()
+        var name = names[i]
         var item = libstore.cache[name]
         items.push({
             "name": name,
@@ -2301,6 +2528,7 @@ libstore.cache_report = def()
             "cache_miss_count": libstore.cache_misses_for(name),
             "last_used": item["last_used"]
         })
+        i += 1
     end
     return {
         "status": libstore.status(),

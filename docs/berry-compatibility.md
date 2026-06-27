@@ -13,7 +13,7 @@ SD filesystem smoke through `tests/p2/smoke_sd.be`.
 
 - Core builtins: `print`, `input`, `classname`, `classof`, `str`, `number`, `int`, `real`, `bool`, `type`, `size`, `super`, `assert`, `compile`, `module`, `issubclass`, `isinstance`, `call`, `list`, `map`, `range`, and `bytes`.
 - SD-backed modules: `math`, `json`, `string`, `os`, `os.path`, `libstore`, `p2mem` and `task` have targeted P2 smoke coverage.
-- Native/hardware modules: `p2`, `i2c`, `spi`, `spin2`, and WiFi scaffolding are documented in the P2 docs and coverage matrix.
+- Native/hardware modules: `p2`, `i2c`, `spi`, archived/opt-in `spin2`, and WiFi scaffolding are documented in the P2 docs and coverage matrix. The normal default P2 image does not provide `import spin2`.
 
 ## Host-like limitations
 

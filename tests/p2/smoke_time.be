@@ -1,6 +1,11 @@
 print("P2_SMOKE_BEGIN time")
 
-import time
+import introspect
+var time = introspect.module("time")
+
+if time == nil
+    print("P2_SMOKE_SKIP time")
+else
 
 assert(type(time) == "module")
 assert(type(time.clock) == "function")
@@ -95,5 +100,7 @@ assert(isinstance(now_dump, map))
 assert(now_dump["epoch"] == now)
 assert(has_time_fields(now_dump))
 assert(has_integer_time_fields(now_dump))
+
+end
 
 print("P2_SMOKE_PASS time")

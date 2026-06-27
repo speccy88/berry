@@ -12,13 +12,13 @@ class node
             if self.l
                 self.l.insert(v)
             else
-                self.l = node(v)
+                self.l = node(v, nil, nil)
             end
         else
             if self.r
                 self.r.insert(v)
             else
-                self.r = node (v)
+                self.r = node(v, nil, nil)
             end
         end
     end
@@ -35,7 +35,7 @@ class btree
         if self.root
             self.root.insert(v)
         else
-            self.root = node(v)
+            self.root = node(v, nil, nil)
         end
     end
     def sort()
@@ -57,4 +57,8 @@ tree.insert(10000000);
 tree.insert(1);
 tree.insert(-1);
 tree.insert(-10);
-print(tree.sort());
+var sorted = tree.sort()
+print("bintree count:", sorted.size())
+print("bintree first last:", sorted[0], sorted[sorted.size() - 1])
+print("bintree sorted:", sorted)
+print("bintree demo done")

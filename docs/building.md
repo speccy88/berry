@@ -28,25 +28,25 @@ make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 No-PSRAM P2 Edge:
 
 ```sh
-make p2 TOOLCHAIN=catalina P2_PROFILE=full P2_BOARD=p2edge CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
+make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina P2_PROFILE=full P2_BOARD=p2edge CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
 ```
 
 P2 Edge 32 MB RAM block-cache profile:
 
 ```sh
-make p2-edge32 TOOLCHAIN=catalina
+make p2-edge32 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 ```
 
 XMM profile:
 
 ```sh
-make p2-xmm TOOLCHAIN=catalina
+make p2-xmm TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 ```
 
 Standalone XMM flash install uses:
 
 ```sh
-make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-xmm-flash PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 ```
 
 If the bundled `loadp2` does not support `-FLASHRAW`, the make target uses the equivalent `-HIMEM=flash @80000000=...` raw-image path.

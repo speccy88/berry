@@ -138,6 +138,31 @@ Implementation implications for P2:
 - Cog RAM/LUT RAM are optimization targets for hot runtime or PASM routines, not a first-pass requirement.
 - CORDIC-backed math helpers should expose P2 acceleration where it is correct and measurable.
 
+## Child VM and cog-runtime boundary
+
+The current implementation proves useful child-VM diagnostics and a narrow
+primitive-copy boundary, but it does not prove arbitrary closure execution in an
+independent cog-hosted Berry VM. Live Berry closures reference VM-local proto,
+upvalue, and GC state, so direct pointer transfer is not a safe serialization
+model.
+
+Implementation implications for P2:
+
+- Treat nil, bool, int, and bounded string transfer as the current child-VM
+  primitive-copy surface.
+- Reject lists, maps, functions, file handles, native pointers, and hardware
+  resources across child-VM boundaries unless a real serialization or ownership
+  protocol exists.
+- Use `p2.heap_info()` `vm_partition_*` diagnostics and
+  `p2compat.child_vm_partition_policy()` to size and inspect child VM partition
+  capacity, but do not treat those diagnostics as proof that production
+  partition counts are tuned.
+- Keep isolated child-VM cog execution unsupported until the Catalina XMM C-cog
+  runtime, stack, allocator, VM state, and GC isolation are proven.
+- If a focused child-VM/cog experiment does not quickly produce new native
+  allocator or runtime evidence, record the boundary and move routine
+  first-four-priority effort back to working P2 usage paths.
+
 ## Smart pins
 
 The P2 smart pin system covers a large set of autonomous pin modes. The hardware manual lists families including normal pin mode, repository, DAC modes, pulse/transition output, NCO output, PWM, quadrature, counters/timers, ADC internal/external/scope modes, USB pair mode, synchronous serial TX/RX, and asynchronous serial TX/RX.
@@ -188,4 +213,3 @@ Implementation implications for P2:
 8. Make multicog execution real, but define value transfer and sharing rules before accepting closures.
 9. Keep unsafe PASM explicitly gated and documented.
 10. Keep coverage honest: unsupported or untested features belong in `TODO.md` and `docs/coverage-matrix.md`, not behind silent stubs.
-

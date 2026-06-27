@@ -1,5 +1,13 @@
 print("P2_SMOKE_BEGIN strict")
 
+import introspect
+var strict_module = introspect.module("strict")
+var global_module = introspect.module("global")
+
+if strict_module == nil || global_module == nil
+    print("P2_SMOKE_SKIP strict")
+else
+
 def expect_syntax_error(code)
     var caught = false
     try
@@ -65,5 +73,7 @@ print("P2_SMOKE_STEP strict cleanup-missing-while")
 expect_syntax_error("while p2_strict_known_global return 1 end return 0")
 print("P2_SMOKE_STEP strict cleanup-missing-cond-expr")
 expect_syntax_error("return p2_strict_known_global ? 1 : 0")
+
+end
 
 print("P2_SMOKE_PASS strict")

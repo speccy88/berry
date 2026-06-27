@@ -1,32 +1,31 @@
-s = "This is a long string test. 0123456789 abcdefg ABCDEFG"
-print(s)
+text = "This is a long string test. 0123456789 abcdefg ABCDEFG"
+print("text:", text)
 
-a = .5
-print(a)
+print("float literal:", .5)
 
-import string as s
+import string as string_mod
 
-print(s.hex(0x45678ABCD, 16))
+print("hex:", string_mod.hex(0x5678ABCD, 8))
 
 def bin(x, num)
     assert(type(x) == 'int', 'the type of \'x\' must be integer')
-    # test the 'x' bits
-    var bits = 1
-    for i : 0 .. 62
-        if x & (1 << 63 - i)
-            bits = 64 - i
-            break
-        end
+    if x == 0
+        return num == nil || num <= 1 ? '0' : '0' * num
     end
-    if type(num) == 'int' && num > 0 && num <= 64
-        bits = bits < num ? num : bits
-    end
+    var value = x
     var result = ''
-    bits -= 1
-    for i : 0 .. bits
-        result += x & (1 << (bits - i)) ? '1' : '0'
+    while value > 0
+        result = (value % 2 ? '1' : '0') + result
+        value = value / 2
+    end
+    if type(num) == 'int' && num > 0
+        while size(result) < num
+            result = '0' + result
+        end
     end
     return result
 end
 
-print(bin(33))
+print("binary:", bin(33, nil))
+print("binary padded:", bin(33, 8))
+print("string demo done")

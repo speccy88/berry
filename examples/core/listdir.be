@@ -1,16 +1,30 @@
 import os
 
-def scandir(path)
-    print('path: ' + path)
-    for name : os.listdir(path)
-        var fullname = os.path.join(path, name)
-        if os.path.isfile(fullname)
-            print('file: ' + fullname)
-        else
-            print('path: ' + fullname)
-            scandir(fullname)
-        end
+def scandir(path, max_entries)
+    print("path:", path)
+    var names = os.listdir(path)
+    print("entry count:", names.size())
+    var count = 0
+    var limit = names.size()
+    if limit > max_entries
+        limit = max_entries
+    end
+    while count < limit
+        print("entry:", names[count])
+        count += 1
+    end
+    if names.size() > max_entries
+        print("entry limit reached:", max_entries)
     end
 end
 
-scandir('.')
+var root = "/berry/examples/core"
+if !os.path.exists(root)
+    root = "examples/core"
+end
+if !os.path.exists(root)
+    root = "."
+end
+
+scandir(root, 8)
+print("listdir demo done")

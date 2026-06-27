@@ -1,16 +1,22 @@
-import p2smart
+import p2
 
 var pin = 1
-var adc = p2smart.adc(pin, nil, nil)
+var mode = p2.smart.adc_1x + p2.smart.adc
+var sample_ticks = 32
 
 print("ADC samples on pin", pin)
-adc.start()
+p2.smart.start(pin, mode, sample_ticks, 0)
 
-for i : 0..3
-    var sample = adc.sample_after(20000)
-    print("sample", i, "ready", sample["ready"], "event", sample["event"], "raw", sample["raw"], "wait", sample["wait_us"])
-    adc.ack()
+var i = 0
+while i < 4
+    p2.waitus(20000)
+    var event = p2.smart.rdpin(pin)
+    var raw = p2.smart.rqpin(pin)
+    p2.smart.akpin(pin)
+    print("sample", i, "event", event, "raw", raw, "ticks", sample_ticks)
+    i += 1
 end
 
-adc.clear()
+p2.smart.clear(pin)
+p2.pin.float(pin)
 print("adc done")

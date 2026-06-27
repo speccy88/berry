@@ -36,7 +36,7 @@ Use short jumpers and document exact pins for each loopback test:
 - Current smart-pin jumper harness: connect `0-1`, `2-3`, `4-5`, and `6-7`
   with short direct jumpers. These pairs are used by the focused smart-pin
   smokes for GPIO, normal smart-pin mode, counters, PWM/NCO/pulse/transition
-  output into counters, async serial, staged sync serial diagnostics, and
+  output into counters, async serial, bounded clocked sync serial diagnostics, and
   DAC-output to ADC-input diagnostics.
 - Current sync-serial diagnostic groups: use `0-1` as the data pair with
   `2-3` as the clock pair, and `4-5` as the data pair with `6-7` as the clock
@@ -65,23 +65,30 @@ When hardware is unavailable, record the skip with board, missing wiring/device,
 
 Current intentional diagnostic-only or skipped smart-pin areas:
 
-- ADC/DAC calibrated voltage scaling, stable polarity, and nonzero low/high
-  delta remain unverified on the current direct-jumper setup.
-- NCO-duty waveform validation remains unverified; the focused diagnostic can
-  report no counter delta on the current `0->1` jumper.
+- ADC/DAC calibrated voltage scaling and stable polarity remain unverified on
+  the current direct-jumper setup. The focused native ADC/DAC smoke does verify
+  nonzero raw low/high movement on jumper `0-1`.
+- NCO-duty calibrated waveform shape remains outside this harness. The focused
+  native output-mode smoke does verify uncalibrated high-time movement by
+  comparing low and high duty values on jumper `0-1`.
 - Quadrature setup/read/clear is covered with a static jumper, and synthetic
   motion/direction is covered by driving pins `0` and `2` into inputs `1` and
   `3`; mechanical encoder behavior remains open.
-- Sync serial setup and bounded transfer diagnostics are staged, but matched
-  received word validation remains open.
+- Sync serial setup and bounded transfer diagnostics include a matched one-word
+  clocked receive proof on the `0-1` data and `2-3` clock jumpers. Broader SPI
+  framing remains open.
 - USB/HID and VGA examples report unsupported or setup-only status unless
   matching hardware and a real implementation are present.
 
 ## Runnable entrypoints
 
 ```sh
-make test-p2 PORT=/dev/cu.usbserial-P97cvdxp BOARD=p2edge32
-make soak-p2 PORT=/dev/cu.usbserial-P97cvdxp BOARD=p2edge32 HOURS=1
+export PORT=/dev/ttyUSB0
+export TOOLCHAIN=catalina
+export CATALINA_DIR=../Catalina
+
+make test-p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0 BOARD=p2edge32
+make soak-p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0 BOARD=p2edge32 HOURS=1
 ```
 
 These are the standard scripted smoke/soak entrypoints once the board is already at a Berry prompt and the serial port is known.
@@ -92,8 +99,11 @@ broad suite:
 ```sh
 make p2-smoke-smartpins-normal-pin PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 make p2-smoke-smartpins-counter-modes PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-smoke-smartpins-counter-timer-matrix PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-smoke-smartpins-adc-variant-matrix PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 make p2-smoke-smartpins-adc-dac-diag PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 make p2-smoke-smartpins-async-rx PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-smoke-smartpins-async-buffer-boundary PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 make p2-smoke-smartpins-sync-diag PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 make p2-smoke-smartpins-quadrature-static PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 make p2-smoke-smartpins-quadrature-motion PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina

@@ -107,6 +107,25 @@ task.reset = def()
     return true
 end
 
+task.reset_result = def()
+    var before = task.info()
+    task.reset()
+    var after = task.info()
+    return {
+        "ok": true,
+        "reset": true,
+        "released_tasks": before["active"],
+        "released_events": before["events"],
+        "active_before": before["active"],
+        "events_before": before["events"],
+        "active_after": after["active"],
+        "events_after": after["events"],
+        "max_tasks": after["max_tasks"],
+        "error": nil,
+        "message": nil
+    }
+end
+
 task._valid = def(handle)
     return type(handle) == "int" && handle >= 0 && handle < task.MAX_TASKS
 end
@@ -406,6 +425,109 @@ task.wait = def(target, a, b)
     }
 end
 
+task.ready_result = def(target, a, b)
+    var k = task._kind(target)
+    if type(target) == "string"
+        var ready = task._event_ready(target)
+        return {
+            "ok": ready,
+            "ready": ready,
+            "kind": "event",
+            "wait": "event",
+            "event": target,
+            "mode": "event",
+            "error": ready ? nil : "not_ready",
+            "message": ready ? nil : "event is not signaled"
+        }
+    elif k == "flags"
+        var mode = b == nil ? "any" : b
+        var res = target.ready_result(a, mode)
+        res["kind"] = "flags"
+        res["wait"] = "flags"
+        return res
+    elif k == "queue"
+        var mode = a == "put" ? "put" : "get"
+        var can_get = target.size() > 0
+        var can_put = target.free() > 0
+        var ready = mode == "put" ? can_put : can_get
+        return {
+            "ok": ready,
+            "ready": ready,
+            "kind": "queue",
+            "wait": mode == "put" ? "queue_put" : "queue_get",
+            "mode": mode,
+            "can_get": can_get,
+            "can_put": can_put,
+            "size": target.size(),
+            "free": target.free(),
+            "error": ready ? nil : "not_ready",
+            "message": ready ? nil : "queue is not ready for the requested operation"
+        }
+    elif k == "p2ipc_channel"
+        var channel_mode = a == "send" || a == "put" ? "send" : "recv"
+        var ch = target.ready_result(channel_mode)
+        ch["kind"] = "p2ipc_channel"
+        ch["wait"] = channel_mode == "send" ? "p2ipc_channel_send" : "p2ipc_channel_recv"
+        return ch
+    elif k == "p2ipc_mailbox"
+        var mailbox_mode = a == "put" || a == "send" ? "put" : "get"
+        var mb = target.ready_result(mailbox_mode)
+        mb["kind"] = "p2ipc_mailbox"
+        mb["wait"] = mailbox_mode == "put" ? "p2ipc_mailbox_put" : "p2ipc_mailbox_get"
+        return mb
+    elif k == "sem"
+        var sem_ready = target.value() > 0
+        return {
+            "ok": sem_ready,
+            "ready": sem_ready,
+            "kind": "semaphore",
+            "wait": "sem",
+            "mode": "take",
+            "count": target.value(),
+            "error": sem_ready ? nil : "not_ready",
+            "message": sem_ready ? nil : "semaphore count is zero"
+        }
+    elif k == "mutex"
+        var mutex_ready = !target.is_locked()
+        return {
+            "ok": mutex_ready,
+            "ready": mutex_ready,
+            "kind": "mutex",
+            "wait": "mutex",
+            "mode": "lock",
+            "locked": target.is_locked(),
+            "owner": target.owner(),
+            "error": mutex_ready ? nil : "not_ready",
+            "message": mutex_ready ? nil : "mutex is locked"
+        }
+    elif k == "timer"
+        var timer_ready = target._ready()
+        return {
+            "ok": timer_ready,
+            "ready": timer_ready,
+            "kind": "timer",
+            "wait": "timer",
+            "mode": "expired",
+            "active": target.info()["active"],
+            "remaining_ms": target.remaining(),
+            "error": timer_ready ? nil : "not_ready",
+            "message": timer_ready ? nil : "timer has not expired"
+        }
+    end
+    var event = str(target)
+    var fallback_ready = task._event_ready(event)
+    return {
+        "ok": fallback_ready,
+        "ready": fallback_ready,
+        "kind": "event",
+        "wait": "event",
+        "event": event,
+        "mode": "event",
+        "error": fallback_ready ? nil : "not_ready",
+        "message": fallback_ready ? nil : "event is not signaled"
+    }
+end
+
 task.signal = def(event)
     if type(event) != "string"
         return false
@@ -453,6 +575,14 @@ task._event_ready = def(event)
     return task._events.contains(event) && task._events[event]
 end
 
+task._p2ipc_wait_ready = def(obj, mode)
+    var res = obj.ready_result(mode)
+    if res["ok"]
+        return res["ready"]
+    end
+    return res["error"] == "closed"
+end
+
 task._wait_ready = def(slot)
     var wait = slot["wait"]
     if wait == "sleep"
@@ -466,13 +596,13 @@ task._wait_ready = def(slot)
     elif wait == "queue_put"
         return slot["wait_object"].free() > 0
     elif wait == "p2ipc_channel_recv"
-        return slot["wait_object"].size() > 0
+        return task._p2ipc_wait_ready(slot["wait_object"], "recv")
     elif wait == "p2ipc_channel_send"
-        return slot["wait_object"].free() > 0
+        return task._p2ipc_wait_ready(slot["wait_object"], "send")
     elif wait == "p2ipc_mailbox_get"
-        return slot["wait_object"].ready()
+        return task._p2ipc_wait_ready(slot["wait_object"], "get")
     elif wait == "p2ipc_mailbox_put"
-        return !slot["wait_object"].ready()
+        return task._p2ipc_wait_ready(slot["wait_object"], "put")
     elif wait == "sem"
         return slot["wait_object"].value() > 0
     elif wait == "mutex"
@@ -613,6 +743,43 @@ task.next = def()
     return -1
 end
 
+task.next_result = def()
+    var live_before = task._live()
+    var ran = task.next()
+    var live_after = task._live()
+    if ran < 0
+        return {
+            "ok": false,
+            "ran": false,
+            "handle": -1,
+            "status": "idle",
+            "live_before": live_before,
+            "live_after": live_after,
+            "ready_after": task.info()["ready"],
+            "waiting_after": task.info()["waiting"],
+            "error": "no_ready_task",
+            "message": "no ready cooperative task was available"
+        }
+    end
+    var slot = task._slot(ran)
+    var status = slot == nil ? "invalid" : task._status_name(slot["status"])
+    return {
+        "ok": true,
+        "ran": true,
+        "handle": ran,
+        "status": status,
+        "live_before": live_before,
+        "live_after": live_after,
+        "ready_after": task.info()["ready"],
+        "waiting_after": task.info()["waiting"],
+        "runs": slot == nil ? 0 : slot["runs"],
+        "last_error": slot == nil ? "" : slot["last_error"],
+        "last_result": slot == nil ? nil : slot["last_result"],
+        "error": nil,
+        "message": nil
+    }
+end
+
 task._live = def()
     var count = 0
     for slot : task._tasks
@@ -637,6 +804,26 @@ task.run = def(max_steps, idle_ms)
         end
     end
     return steps
+end
+
+task.run_result = def(max_steps, idle_ms)
+    var live_before = task._live()
+    var steps = task.run(max_steps, idle_ms)
+    var live_after = task._live()
+    var info = task.info()
+    return {
+        "ok": true,
+        "steps": steps,
+        "max_steps": max_steps,
+        "idle_ms": idle_ms == nil ? 1 : idle_ms,
+        "live_before": live_before,
+        "live_after": live_after,
+        "ready_after": info["ready"],
+        "waiting_after": info["waiting"],
+        "paused_after": info["paused"],
+        "errors_after": info["errors"],
+        "complete": live_after == 0
+    }
 end
 
 task.stop = def(handle)
@@ -837,6 +1024,82 @@ task.task_info = def(handle)
     }
 end
 
+task._wait_target_kind = def(obj)
+    if obj == nil
+        return nil
+    end
+    var k = task._kind(obj)
+    if k != nil
+        return k
+    end
+    return type(obj)
+end
+
+task._wait_lifecycle = def(slot)
+    var deadline = slot["deadline"]
+    return {
+        "wait": slot["wait"],
+        "waiting": slot["status"] == task._WAITING,
+        "wait_event": slot["wait_event"],
+        "wait_mode": slot["wait_mode"],
+        "wait_value": slot["wait_value"],
+        "wait_target_kind": task._wait_target_kind(slot["wait_object"]),
+        "has_deadline": deadline != nil,
+        "deadline": deadline,
+        "remaining_ms": deadline == nil ? nil : (deadline - task.millis()),
+        "woke_timeout": slot["woke_timeout"],
+        "woke_event": slot["woke_event"]
+    }
+end
+
+task.lifecycle_result = def(handle)
+    var id = task._resolve(handle)
+    var slot = task._slot(id)
+    if slot == nil
+        return {
+            "ok": false,
+            "handle": id,
+            "allocated": false,
+            "status": "invalid",
+            "current_vm": true,
+            "current": false,
+            "error": "invalid_handle",
+            "message": "invalid task handle"
+        }
+    end
+    var status = task._status_name(slot["status"])
+    var allocated = slot["status"] != task._FREE
+    var wait = task._wait_lifecycle(slot)
+    return {
+        "ok": true,
+        "handle": id,
+        "allocated": allocated,
+        "status": status,
+        "current_vm": true,
+        "current": id == task._current,
+        "running": slot["status"] == task._READY,
+        "waiting": slot["status"] == task._WAITING,
+        "paused": slot["status"] == task._PAUSED,
+        "error_state": slot["status"] == task._ERROR,
+        "runs": slot["runs"],
+        "wakeups": slot["wakeups"],
+        "last_error": slot["last_error"],
+        "last_result": slot["last_result"],
+        "wait": wait["wait"],
+        "wait_event": wait["wait_event"],
+        "wait_mode": wait["wait_mode"],
+        "wait_value": wait["wait_value"],
+        "wait_target_kind": wait["wait_target_kind"],
+        "has_deadline": wait["has_deadline"],
+        "deadline": wait["deadline"],
+        "remaining_ms": wait["remaining_ms"],
+        "woke_timeout": wait["woke_timeout"],
+        "woke_event": wait["woke_event"],
+        "error": allocated ? nil : "free",
+        "message": allocated ? nil : "task slot is free"
+    }
+end
+
 task.list = def()
     var out = []
     var i = 0
@@ -909,7 +1172,12 @@ task.capabilities = def()
         "events": true,
         "event_diagnostics": true,
         "clear_all_events": true,
+        "reset_result": true,
         "result_diagnostics": true,
+        "task_lifecycle_result": true,
+        "scheduler_step_result": true,
+        "scheduler_run_result": true,
+        "wait_readiness_result": true,
         "wait_descriptors": true,
         "contract": true,
         "audit": true,
@@ -993,7 +1261,12 @@ task.required_capability_keys = def()
         "events",
         "event_diagnostics",
         "clear_all_events",
+        "reset_result",
         "result_diagnostics",
+        "task_lifecycle_result",
+        "scheduler_step_result",
+        "scheduler_run_result",
+        "wait_readiness_result",
         "wait_descriptors",
         "contract",
         "audit",
@@ -1031,7 +1304,12 @@ task.contract = def()
         "spin2_compatible_names": true,
         "primitive_families": ["Semaphore", "Mutex", "Queue", "EventFlags", "Timer"],
         "wait_descriptors": true,
+        "reset_result": true,
         "result_diagnostics": true,
+        "task_lifecycle_result": true,
+        "scheduler_step_result": true,
+        "scheduler_run_result": true,
+        "wait_readiness_result": true,
         "unsupported_reason": "independent stacks, preemption, and true Spin2/PASM task switching are not implemented",
         "sharing_policy": "current_vm_objects_only",
         "cross_vm_serialization": false,
@@ -1070,7 +1348,12 @@ task.required_contract_keys = def()
         "spin2_compatible_names",
         "primitive_families",
         "wait_descriptors",
+        "reset_result",
         "result_diagnostics",
+        "task_lifecycle_result",
+        "scheduler_step_result",
+        "scheduler_run_result",
+        "wait_readiness_result",
         "unsupported_reason",
         "sharing_policy",
         "cross_vm_serialization",
@@ -1129,6 +1412,7 @@ task.primitive_capabilities = def()
         "queue_get_result": true,
         "p2ipc_channel_wait": true,
         "p2ipc_mailbox_wait": true,
+        "p2ipc_closed_wait_wakeup": true,
         "event_flags": true,
         "event_flags_set_result": true,
         "event_flags_clear_result": true,
@@ -1154,6 +1438,7 @@ task.required_primitive_capability_keys = def()
         "queue_get_result",
         "p2ipc_channel_wait",
         "p2ipc_mailbox_wait",
+        "p2ipc_closed_wait_wakeup",
         "event_flags",
         "event_flags_set_result",
         "event_flags_clear_result",
@@ -1337,6 +1622,21 @@ task.audit = def()
     if !primitive_caps["queue_get_result"] || !primitive_caps["timer_remaining_result"]
         problems.push("primitive_result_helpers_missing")
     end
+    if !caps["reset_result"] || !contract["reset_result"]
+        problems.push("reset_result_missing")
+    end
+    if !primitive_caps["p2ipc_closed_wait_wakeup"]
+        problems.push("p2ipc_closed_wait_wakeup_missing")
+    end
+    if !caps["scheduler_step_result"] || !caps["scheduler_run_result"] || !contract["scheduler_step_result"] || !contract["scheduler_run_result"]
+        problems.push("scheduler_result_helpers_missing")
+    end
+    if !caps["task_lifecycle_result"] || !contract["task_lifecycle_result"]
+        problems.push("task_lifecycle_result_missing")
+    end
+    if !caps["wait_readiness_result"] || !contract["wait_readiness_result"]
+        problems.push("wait_readiness_result_missing")
+    end
 
     return {
         "ok": problems.size() == 0,
@@ -1349,6 +1649,7 @@ task.audit = def()
         "stackful": model["stackful"],
         "bounded_attention_wait": model["bounded_attention_wait"],
         "cross_cog_attention_wakeup": model["cross_cog_attention_wakeup"],
+        "task_lifecycle_result": contract["task_lifecycle_result"],
         "attention_policy": attention,
         "contract": contract,
         "missing_capability_keys": missing_capability_keys,

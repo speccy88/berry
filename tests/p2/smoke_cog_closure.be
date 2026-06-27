@@ -6,15 +6,19 @@ assert(type(p2.cog.required_capability_keys) == "function")
 assert(type(p2.cog.audit) == "function")
 assert(type(p2.cog.audit_problems) == "function")
 assert(type(p2.cog.audit_ok) == "function")
+assert(type(p2.cog.cleanup_result) == "function")
+assert(type(p2.cog.capability) == "function")
 var caps = p2.cog.capabilities()
 var required_caps = p2.cog.required_capability_keys()
 assert(required_caps.find("spawn") >= 0)
 assert(required_caps.find("handle_model") >= 0)
 assert(required_caps.find("handle_join_result_policy") >= 0)
+assert(required_caps.find("cleanup_all_policy") >= 0)
 required_caps.push("mutated")
 assert(p2.cog.required_capability_keys().find("mutated") == nil)
 assert(caps["spawn"] == true)
 assert(caps["native_blink"] == true)
+assert(p2.cog.capability("native_blink") == true)
 assert(caps["native_blink_stack"] == 2048)
 assert(caps["handle_base"] == 100)
 assert(caps["max_handles"] >= 2)
@@ -32,6 +36,9 @@ assert(caps["handle_join_policy"] == "nonblocking_status_snapshot")
 assert(caps["handle_join_result_policy"] == "result_and_error_fields_in_join_snapshot")
 assert(caps["handle_kill_policy"] == "force_stop_cleanup_alias")
 assert(caps["handle_cleanup_policy"] == "stop_releases_stack_mailbox_source_slot")
+assert(caps["cleanup_all"] == true)
+assert(caps["cleanup_all_policy"] == "stop_releases_all_spawned_closure_cog_slots")
+assert(p2.cog.capability("cleanup_all_policy") == caps["cleanup_all_policy"])
 assert(caps["handle_result_policy"] == "last_result_value_nonblocking")
 assert(caps["handle_error_policy"] == "last_error_string_nonblocking")
 assert(caps["reject_unsupported"] == true)
@@ -45,6 +52,7 @@ assert(audit["missing_capability_keys"].size() == 0)
 assert(audit["handle_model"] == caps["handle_model"])
 assert(audit["handle_join_policy"] == caps["handle_join_policy"])
 assert(audit["handle_cleanup_policy"] == caps["handle_cleanup_policy"])
+assert(audit["cleanup_all_policy"] == caps["cleanup_all_policy"])
 assert(audit["unsafe_shared_vm"] == caps["unsafe_shared_vm"])
 assert(audit["reject_unsupported"] == caps["reject_unsupported"])
 assert(p2.cog.audit_ok())
@@ -69,7 +77,7 @@ def check(cond, label)
     assert(cond)
 end
 
-# Default firmware supports the hardware-safe p38/p39 closure-spawn shape:
+# Default firmware supports the hardware-safe pin 38 / pin 39 closure-spawn shape:
 # p2.cog.spawn(closure, pin, rate_ms). The passed closure is invoked once
 # during setup and must return a positive delay. The spawned cog then runs the
 # native blinker loop and can be inspected/stopped by handle. The reported
@@ -158,36 +166,79 @@ end
 check(saw38, "saw38")
 check(saw39, "saw39")
 
-var s38 = p2.cog.stop(h38)
-var s39 = p2.cog.kill(h39)
-check(s38["handle"] == h38, "s38_handle")
-check(s39["handle"] == h39, "s39_handle")
-check(s38["running"] == false, "s38_running")
-check(s39["running"] == false, "s39_running")
-check(s38["raw_running"] == false, "s38_raw_running")
-check(s39["raw_running"] == false, "s39_raw_running")
-check(s38["cleanup_attempted"] == true, "s38_cleanup_attempted")
-check(s39["cleanup_attempted"] == true, "s39_cleanup_attempted")
-check(s38["cleanup_policy"] == "stop_releases_stack_mailbox_source_slot", "s38_cleanup_policy")
-check(s39["cleanup_policy"] == "stop_releases_stack_mailbox_source_slot", "s39_cleanup_policy")
-check(s38["slot_released"] == true, "s38_slot_released")
-check(s39["slot_released"] == true, "s39_slot_released")
-check(s38["handle_valid_after_stop"] == false, "s38_handle_invalid_after_stop")
-check(s39["handle_valid_after_stop"] == false, "s39_handle_invalid_after_stop")
-check(p2.cog.info().size() == 0, "stopped_empty")
+var cleanup_pair = p2.cog.cleanup_result()
+check(cleanup_pair["ok"] == true, "cleanup_pair_ok")
+check(cleanup_pair["cleanup_attempted"] == true, "cleanup_pair_attempted")
+check(cleanup_pair["cleanup_policy"] == caps["cleanup_all_policy"], "cleanup_pair_policy")
+check(cleanup_pair["active_before"] >= 2, "cleanup_pair_active_before")
+check(cleanup_pair["released_handles"] >= 2, "cleanup_pair_released")
+check(cleanup_pair["pins_floated"] >= 2, "cleanup_pair_pins")
+check(cleanup_pair["active_after"] == 0, "cleanup_pair_active_after")
+check(cleanup_pair["registry_empty"] == true, "cleanup_pair_empty_flag")
+check(p2.cog.info().size() == 0, "cleanup_pair_empty")
+
+var hraw = p2.cog.spawn(blinker, 38, 180)
+var iraw = p2.cog.info(hraw)
+var raw_cog = iraw["cog"]
+check(hraw >= 100, "hraw_handle")
+check(raw_cog >= 0 && raw_cog < 8, "raw_cog_range")
+check(raw_cog != p2.cog.id(), "raw_cog_not_current")
+check(p2.cog.check(raw_cog) != 0, "raw_cog_running")
+p2.cog.stop(raw_cog)
+check(p2.cog.check(raw_cog) == 0, "raw_cog_stopped")
+var raw_cleanup = p2.cog.kill(hraw)
+check(raw_cleanup["handle"] == hraw, "raw_cleanup_handle")
+check(raw_cleanup["cog"] == raw_cog, "raw_cleanup_cog")
+check(raw_cleanup["running"] == false, "raw_cleanup_running")
+check(raw_cleanup["raw_running"] == false, "raw_cleanup_raw_running")
+check(raw_cleanup["slot_released"] == true, "raw_cleanup_slot_released")
+check(raw_cleanup["handle_valid_after_stop"] == false, "raw_cleanup_handle_invalid")
+check(p2.cog.info().size() == 0, "raw_stop_cleanup_empty")
+
+for n : 0..2
+    var hloop = p2.cog.spawn(blinker, 39, 90 + n)
+    var jloop = p2.cog.join(hloop)
+    check(hloop >= 100, "loop_handle")
+    check(jloop["handle"] == hloop, "loop_join_handle")
+    check(jloop["result_type_name"] == "int", "loop_join_result_type")
+    check(jloop["result"] == 90 + n, "loop_join_result")
+    check(jloop["error"] == "", "loop_join_error")
+    var cleanup = p2.cog.kill(hloop)
+    check(cleanup["handle"] == hloop, "loop_cleanup_handle")
+    check(cleanup["cleanup_attempted"] == true, "loop_cleanup_attempted")
+    check(cleanup["slot_released"] == true, "loop_slot_released")
+    check(cleanup["handle_valid_after_stop"] == false, "loop_handle_invalid")
+    check(p2.cog.info().size() == 0, "loop_cleanup_empty")
+end
+
+def setup_raises(pin, rate_ms)
+    raise "runtime_error", "forced closure setup failure"
+end
+
+def expect_spawn_reject(fn, label)
+    var rejected = false
+    try
+        fn()
+    except .. as e
+        rejected = type(e) == "string" || type(e) == "nil" || type(e) == "instance"
+    end
+    check(rejected, label + "_rejected")
+    check(p2.cog.info().size() == 0, label + "_empty")
+end
 
 def tick()
     return 10
 end
 
-var rejected = false
-try
-    p2.cog.spawn(tick)
-except .. as e
-    rejected = type(e) == "string" || type(e) == "nil" || type(e) == "instance"
-end
-check(rejected, "unsupported_rejected")
-check(p2.cog.info().size() == 0, "rejected_empty")
+expect_spawn_reject(def () p2.cog.spawn(tick) end, "unsupported")
+expect_spawn_reject(def () p2.cog.spawn(setup_raises, 38, 111) end, "setup_raise")
+expect_spawn_reject(def () p2.cog.spawn(blinker, 38, {}) end, "bad_arg")
+
+var cleanup_empty = p2.cog.cleanup_result()
+check(cleanup_empty["ok"] == true, "cleanup_empty_ok")
+check(cleanup_empty["active_before"] == 0, "cleanup_empty_active_before")
+check(cleanup_empty["released_handles"] == 0, "cleanup_empty_released")
+check(cleanup_empty["active_after"] == 0, "cleanup_empty_active_after")
 
 p2.pin.float(38)
 p2.pin.float(39)

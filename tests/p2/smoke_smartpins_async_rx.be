@@ -1,6 +1,6 @@
 print("P2_SMOKE_BEGIN smartpins_async_rx")
 
-import p2smart
+import p2
 
 var values = [0x00, 0x55, 0xa5, 0xff]
 var pairs = [
@@ -9,95 +9,114 @@ var pairs = [
     [4, 5],
     [6, 7]
 ]
+var bit_ticks = p2.clock.freq() / 115200
+var serial_x = bit_ticks * 65536 + 8 - 1
+var tx_mode = p2.smart.oe + p2.smart.async_tx
+var rx_mode = p2.smart.async_rx
 
-for pair : pairs
+def reset_pin(pin)
+    p2.smart.clear(pin)
+    p2.smart.wrpin(pin, 0)
+    p2.smart.wxpin(pin, 0)
+    p2.smart.wypin(pin, 0)
+    p2.smart.akpin(pin)
+    p2.pin.float(pin)
+end
+
+def reset_pair(a, b)
+    reset_pin(a)
+    reset_pin(b)
+end
+
+def start_serial(tx_pin, rx_pin)
+    reset_pair(tx_pin, rx_pin)
+    p2.smart.start(tx_pin, tx_mode, serial_x, 0)
+    p2.smart.start(rx_pin, rx_mode, serial_x, 0)
+    p2.clock.waitus(1000)
+end
+
+def read_value(rx_pin)
+    return (p2.smart.rdpin(rx_pin) >> 24) & 255
+end
+
+def read_ready_value(rx_pin)
+    assert(p2.smart.rqpin(rx_pin) != 0)
+    return read_value(rx_pin)
+end
+
+def send_and_read(tx_pin, rx_pin, value)
+    start_serial(tx_pin, rx_pin)
+    p2.smart.wypin(tx_pin, value)
+    if value == 0
+        p2.clock.waitus(2000)
+        var zero = read_value(rx_pin)
+        print("P2_SMOKE_ASYNC_RX result " + str(tx_pin) + "_" + str(rx_pin) + " true " + str(zero))
+        assert(zero == value)
+    else
+        p2.clock.waitus(2000)
+        var read = read_ready_value(rx_pin)
+        assert(read == value)
+        assert(read_value(rx_pin) == value)
+    end
+    print("P2_SMOKE_ASYNC_RX read " + str(tx_pin) + "_" + str(rx_pin) + " " + str(value))
+    reset_pair(tx_pin, rx_pin)
+    p2.clock.waitus(1000)
+end
+
+var pair_index = 0
+while pair_index < pairs.size()
+    var pair = pairs[pair_index]
     var a = pair[0]
     var b = pair[1]
     print("P2_SMOKE_PAIR " + str(a) + "_" + str(b))
 
-    for value : values
+    var value_index = 0
+    while value_index < values.size()
+        var value = values[value_index]
         print("P2_SMOKE_ASYNC_RX start " + str(a) + "_" + str(b) + " " + str(value))
-        var ab = p2smart.async_serial_pair(a, b, 115200, 8, nil, nil)
-        ab.start()
-        p2smart.waitus(1000)
-        ab.send(value)
-        if value == 0
-            var zero = ab.read_result_after(2000)
-            print("P2_SMOKE_ASYNC_RX result " + str(a) + "_" + str(b) + " " + str(zero["ready"]) + " " + str(zero["value"]) + " " + str(zero["raw"]) + " " + str(zero["event"]))
-            assert(zero["ready"])
-            assert(zero["value"] == value)
-        else
-            p2smart.waitus(2000)
-            assert(ab.available() != 0)
-            var result = ab.read_result()
-            assert(result["ready"])
-            assert(result["value"] == value)
-            assert(ab.read_byte() == value)
-        end
-        print("P2_SMOKE_ASYNC_RX read " + str(a) + "_" + str(b) + " " + str(value))
-        ab.clear()
-        p2smart.waitus(1000)
-
+        send_and_read(a, b, value)
         print("P2_SMOKE_ASYNC_RX start " + str(b) + "_" + str(a) + " " + str(value))
-        var ba = p2smart.async_serial_pair(b, a, 115200, 8, nil, nil)
-        ba.start()
-        p2smart.waitus(1000)
-        ba.send(value)
-        if value == 0
-            var zero = ba.read_result_after(2000)
-            print("P2_SMOKE_ASYNC_RX result " + str(b) + "_" + str(a) + " " + str(zero["ready"]) + " " + str(zero["value"]) + " " + str(zero["raw"]) + " " + str(zero["event"]))
-            assert(zero["ready"])
-            assert(zero["value"] == value)
-        else
-            p2smart.waitus(2000)
-            assert(ba.available() != 0)
-            var result = ba.read_result()
-            assert(result["ready"])
-            assert(result["value"] == value)
-            assert(ba.read_byte() == value)
-        end
-        print("P2_SMOKE_ASYNC_RX read " + str(b) + "_" + str(a) + " " + str(value))
-        ba.clear()
-        p2smart.waitus(1000)
+        send_and_read(b, a, value)
+        value_index += 1
     end
 
     if a == 0
         print("P2_SMOKE_ASYNC_RX exchange " + str(a) + "_" + str(b))
-        var abx = p2smart.async_serial_pair(a, b, 115200, 8, nil, nil)
-        abx.start()
-        p2smart.waitus(1000)
-        assert(abx.exchange_bytes_after(values, 2000) == values)
-        abx.clear()
-        p2smart.waitus(1000)
-
-        print("P2_SMOKE_ASYNC_RX exchange " + str(b) + "_" + str(a))
-        var bax = p2smart.async_serial_pair(b, a, 115200, 8, nil, nil)
-        bax.start()
-        p2smart.waitus(1000)
-        var results = bax.exchange_results_after(values, 2000)
-        assert(results.size() == values.size())
-        var idx = 0
-        while idx < values.size()
-            assert(results[idx]["ready"])
-            assert(results[idx]["value"] == values[idx])
-            idx += 1
+        start_serial(a, b)
+        value_index = 0
+        while value_index < values.size()
+            var value = values[value_index]
+            p2.smart.wypin(a, value)
+            p2.clock.waitus(2000)
+            assert(read_value(b) == value)
+            value_index += 1
         end
-        bax.clear()
-        p2smart.waitus(1000)
+        reset_pair(a, b)
+        p2.clock.waitus(1000)
+
+        print("P2_SMOKE_ASYNC_RX burst " + str(a) + "_" + str(b))
+        start_serial(a, b)
+        p2.smart.wypin(a, 0x12)
+        p2.smart.wypin(a, 0x34)
+        p2.clock.waitus(5000)
+        assert(read_value(b) == 0x34)
+        print("P2_SMOKE_ASYNC_RX_BURST " + str(a) + "_" + str(b) + " 18 52")
+        reset_pair(a, b)
+        p2.clock.waitus(1000)
 
         print("P2_SMOKE_ASYNC_RX drain " + str(a) + "_" + str(b))
-        var drain = p2smart.async_serial_drain_probe(a, b, 0x33, 2000, 115200, 8, 4)
-        assert(drain["ok"])
-        assert(drain["matched"])
-        assert(drain["drained"]["count"] == 1)
-        assert(drain["drained"]["acked"] == 1)
-        assert(drain["drained"]["values"] == [0x33])
-        assert(drain["drained"]["results"][0]["ready"])
-        assert(drain["drained"]["results"][0]["value"] == 0x33)
-        assert(drain["drained"]["stopped_reason"] == "not_ready")
-        assert(!drain["serial"]["started"])
-        p2smart.waitus(1000)
+        start_serial(a, b)
+        p2.smart.wypin(a, 0x33)
+        p2.clock.waitus(2000)
+        assert(p2.smart.rqpin(b) != 0)
+        assert(read_value(b) == 0x33)
+        p2.smart.akpin(b)
+        p2.clock.waitus(100)
+        reset_pair(a, b)
+        p2.clock.waitus(1000)
     end
+
+    pair_index += 1
 end
 
 print("P2_SMOKE_PASS smartpins_async_rx")

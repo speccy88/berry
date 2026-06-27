@@ -13,4 +13,6 @@ def cpi(n)
     return pi
 end
 
-print("pi =", cpi(100))
+var n = 100
+print("pi terms:", n, "value:", cpi(n))
+print("calcpi demo done")

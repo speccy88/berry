@@ -16,9 +16,11 @@ binary_heap.capabilities = def()
     "heap_copy_commit": true,
     "empty_singleton_sort": true,
     "exception_preserves_input": true,
+    "exception_preservation_audit": true,
+    "default_audit_throws": false,
     "comparator_required": true,
     "audit": true,
-    "audit_policy": "tiny_in_memory_heap_self_check"
+    "audit_policy": "tiny_in_memory_heap_self_check_no_throw"
   }
 end
 
@@ -42,6 +44,8 @@ binary_heap.required_capability_keys = def()
     "heap_copy_commit",
     "empty_singleton_sort",
     "exception_preserves_input",
+    "exception_preservation_audit",
+    "default_audit_throws",
     "comparator_required",
     "audit",
     "audit_policy"
@@ -53,10 +57,14 @@ binary_heap.audit = def()
   var problems = []
 
   var missing_capability_keys = []
-  for key : binary_heap.required_capability_keys()
+  var required_keys = binary_heap.required_capability_keys()
+  var required_index = 0
+  while required_index < required_keys.size()
+    var key = required_keys[required_index]
     if !caps.contains(key)
       missing_capability_keys.push(key)
     end
+    required_index += 1
   end
   if missing_capability_keys.size() != 0
     problems.push("missing_capability_keys")
@@ -83,13 +91,19 @@ binary_heap.audit = def()
   if !caps["exception_preserves_input"]
     problems.push("exception_preserves_input_capability_disabled")
   end
+  if !caps["exception_preservation_audit"]
+    problems.push("exception_preservation_audit_capability_disabled")
+  end
+  if caps["default_audit_throws"]
+    problems.push("default_audit_throws_enabled")
+  end
   if !caps["comparator_required"]
     problems.push("comparator_required_capability_disabled")
   end
   if !caps["audit"]
     problems.push("audit_capability_disabled")
   end
-  if caps["audit_policy"] != "tiny_in_memory_heap_self_check"
+  if caps["audit_policy"] != "tiny_in_memory_heap_self_check_no_throw"
     problems.push("audit_policy_mismatch")
   end
   if binary_heap.capability("sort") != caps["sort"]
@@ -129,6 +143,24 @@ binary_heap.audit = def()
     problems.push("remove_heap_second_failed")
   end
 
+  return {
+    "ok": problems.size() == 0,
+    "problem_count": problems.size(),
+    "problems": problems,
+    "missing_capability_keys": missing_capability_keys,
+    "audit_policy": caps["audit_policy"],
+    "sort": caps["sort"],
+    "make_heap": caps["make_heap"],
+    "remove_heap": caps["remove_heap"],
+    "heap_copy_commit": caps["heap_copy_commit"],
+    "exception_preserves_input": caps["exception_preserves_input"],
+    "exception_preservation_checked": false,
+    "exception_preservation_audit": caps["exception_preservation_audit"],
+    "default_audit_throws": caps["default_audit_throws"]
+  }
+end
+
+binary_heap.exception_preservation_audit = def()
   var preserved = [5, 1, 4, 2, 3]
   var state = {"count": 0}
   var raised = false
@@ -143,24 +175,12 @@ binary_heap.audit = def()
   except .. as e, m
     raised = e == "value_error"
   end
-  if !raised
-    problems.push("exception_preservation_not_exercised")
-  end
-  if preserved != [5, 1, 4, 2, 3]
-    problems.push("exception_preservation_failed")
-  end
-
   return {
-    "ok": problems.size() == 0,
-    "problem_count": problems.size(),
-    "problems": problems,
-    "missing_capability_keys": missing_capability_keys,
-    "audit_policy": caps["audit_policy"],
-    "sort": caps["sort"],
-    "make_heap": caps["make_heap"],
-    "remove_heap": caps["remove_heap"],
-    "heap_copy_commit": caps["heap_copy_commit"],
-    "exception_preserves_input": caps["exception_preserves_input"]
+    "ok": raised && preserved == [5, 1, 4, 2, 3],
+    "raised": raised,
+    "preserved": preserved == [5, 1, 4, 2, 3],
+    "input": preserved,
+    "comparison_count": state["count"]
   }
 end
 
@@ -214,7 +234,11 @@ binary_heap.sort = def(array, cmp)
   binary_heap.make_heap(heap, cmp)
   while i > 0 out.push(binary_heap.remove_heap(heap, cmp)) i -= 1 end
   array.clear()
-  for item : out array.push(item) end
+  i = 0
+  while i < out.size()
+    array.push(out[i])
+    i += 1
+  end
 end
 
 return binary_heap

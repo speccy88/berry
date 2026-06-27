@@ -17,6 +17,11 @@ chip do interesting things without rebuilding firmware for every experiment.
 Berry on P2 is already useful for bring-up, experiments, and small embedded
 programs.
 
+For the shortest current status page, start with
+`docs/P2_PORT_STATUS.md`. The older TODO, DONE, release, and handoff files are
+detailed trackers and historical evidence logs; they are not the best first
+read for normal usage.
+
 You can:
 
 - use an interactive serial REPL with history and basic line editing
@@ -119,10 +124,10 @@ cog.
 Build Berry for Propeller 2 with Catalina:
 
 ```sh
-make p2 TOOLCHAIN=catalina
+make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 make p2-minimal
 make p2-full
-make p2-run TOOLCHAIN=catalina PORT=COM5
+make p2-run TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
 ```
 
 Catalina is the preferred and verified P2 toolchain. FlexC targets remain in the
@@ -131,9 +136,9 @@ tree for historical/debugging work, but normal P2 validation should use Catalina
 P2 Edge flash install with Catalina:
 
 ```sh
-make configure TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
+make configure TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0 P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
 make p2-flash
-tio -b 230400 /dev/cu.usbserial-P97cvdxp
+tio -b 230400 /dev/ttyUSB0
 ```
 
 For the verified P2 Edge Rev D path, use boot switches
@@ -177,7 +182,7 @@ Windows PowerShell example:
 
 ```powershell
 make p2 TOOLCHAIN=catalina CATALINA_DIR=C:\tools\catalina
-make p2-run TOOLCHAIN=catalina PORT=COM6 LOADP2=C:\tools\flexprop\bin\loadp2.exe
+make p2-run TOOLCHAIN=catalina CATALINA_DIR=C:\tools\catalina PORT=COM6 LOADP2=C:\tools\flexprop\bin\loadp2.exe
 ```
 
 ## Release Binaries
@@ -198,16 +203,16 @@ Important Catalina flash note:
 RAM load:
 
 ```sh
-make p2 TOOLCHAIN=catalina
-make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp
+make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-run TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
 ```
 
 Flash install:
 
 ```sh
-make p2 TOOLCHAIN=catalina
-make p2-flash TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp
-tio -b 230400 /dev/cu.usbserial-P97cvdxp
+make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
+tio -b 230400 /dev/ttyUSB0
 ```
 
 ## Berry in 20 Minutes, Propeller Style
@@ -835,8 +840,8 @@ Repeatable SD smoke tests live under `tests/p2/`. Copy that directory and
 `modules/` to the SD card root, start Berry, then run:
 
 ```sh
-make p2-smoke PORT=/dev/cu.usbserial-P97cvdxp
-make p2-smoke-edge32 PORT=/dev/cu.usbserial-P97cvdxp
+make p2-smoke TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
+make p2-smoke-edge32 TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
 ```
 
 The edge32 target includes the general smoke suite plus PSRAM block-access
@@ -900,7 +905,7 @@ Catalina is the preferred and verified compiler flow for Berry on P2:
 ```sh
 make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 make p2 TOOLCHAIN=catalina P2_PROFILE=minimal CATALINA_DIR=../Catalina
-make p2-run TOOLCHAIN=catalina LOADP2=/opt/flexprop/bin/loadp2 PORT=/dev/ttyUSB0
+make p2-run TOOLCHAIN=catalina CATALINA_DIR=../Catalina LOADP2=/opt/flexprop/bin/loadp2 PORT=/dev/ttyUSB0
 ```
 
 Local managed loader caches are supported and ignored by git:
@@ -922,7 +927,7 @@ The P2 build keeps explicit silicon selection:
 Example:
 
 ```sh
-make configure TOOLCHAIN=catalina P2_SILICON=latest
+make configure TOOLCHAIN=catalina CATALINA_DIR=../Catalina P2_SILICON=latest
 make p2
 ```
 

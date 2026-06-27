@@ -15,7 +15,7 @@ var led39 = p2.cog.spawn(blinker, 39, 700)
 
 print("closure cog handles:", led38, led39)
 print("closure cog ids:", p2.cog.id(led38), p2.cog.id(led39))
-print("The p38/p39 blinker shape uses the native_blink cog fast path.")
+print("The pin 38 / pin 39 blinker shape uses the native_blink cog fast path.")
 
 p2.clock.waitms(750)
 

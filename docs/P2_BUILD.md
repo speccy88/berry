@@ -1,11 +1,14 @@
 # P2 Build
 
+For the current human-readable P2 status, including the normal board, profile,
+and focused validation commands, start with `docs/P2_PORT_STATUS.md`.
+
 ## Supported Interface
 
 ```sh
 make configure
 make show-config
-make p2 TOOLCHAIN=catalina
+make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 make p2-minimal
 make p2-full
 make p2-edge32
@@ -13,12 +16,12 @@ make p2-edge32-flash
 make p2-xmm
 make p2-xmm-run
 make p2-xmm-flash
-make p2-run TOOLCHAIN=catalina PORT=COM5
-make p2-ram TOOLCHAIN=catalina PORT=/dev/ttyUSB0
-make p2-flash TOOLCHAIN=catalina PORT=/dev/ttyUSB0
+make p2-run TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
+make p2-ram TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
+make p2-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
 make p2-stop
 make p2-clean
-make p2-tools TOOLCHAIN=catalina
+make p2-tools TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 make p2-prebuild
 ```
 
@@ -81,10 +84,25 @@ The P2 profile layer lives in `port/p2/include/berry_conf_p2.h`. It controls
 the Berry module feature macros, P2-native module caching, heap sizes, stack
 slot limit, and maximum `bytes()` size.
 
-- `minimal`: core language and standard classes plus the `string` module. It disables filesystem, JSON, math, OS, P2 hardware modules, retired worker/RTOS/Spin2 helpers, and low-level `prop2_*` globals. Current verified image: `426624` bytes with a `192 KiB` main heap.
-- `full`: the current no-PSRAM P2 Edge build. Current verified image: `494624` bytes with the existing `128 KiB` main heap, SD-backed `open()`/`os`, P2 hardware modules, native `task`, native `math`, and WiFiNINA helpers available as optional source. The older `rtos`, `worker`, `threads`, and `taskspin` APIs are retired from the active surface.
-- `edge32`: P2 Edge 32 MB RAM profile for the P2-EC32MB-style board. It enables Catalina `-lpsram`, reserves pins `40..57` for the memory interface, keeps Berry's object heap in Hub RAM, and exposes bounded PSRAM block transfers plus an SD-library source cache for runtime smoke testing. Current verified image: `518304` bytes with a `92 KiB` main heap and `8 KiB` worker heap, leaving enough Hub RAM for the Catalina flash wrapper.
-- `xmm`: experimental P2 Edge 32 MB RAM profile using Catalina `LARGE` plus `-lpsram` and `-C PSRAM`. This is the first clean unified-memory experiment: Berry still calls the same `p2_heap_malloc()` allocator, but the Catalina XMM memory model places the backing C data arena in external RAM so the VM does not need separate Hub-vs-PSRAM object rules. Catalina can use the lower `16 MiB` of P2 Edge PSRAM as XMM memory today; Berry keeps the upper `16 MiB` exposed as the explicit PSRAM block/cache window. Current hardware-verified image: `1044640` bytes with a `15728640` byte Berry heap and `Berry heap in PSRAM` at runtime.
+- `minimal`: core language and standard classes plus `string`. It disables
+  filesystem, JSON, math, OS, P2 hardware modules, retired worker/RTOS/Spin2
+  helpers, and low-level `prop2_*` globals. Last verified image:
+  `426624` bytes with a `192 KiB` main heap.
+- `full`: the current no-PSRAM P2 Edge build. It includes SD-backed
+  `open()`/`os`, P2 hardware modules, native `task`, native `math`, and optional
+  WiFiNINA helpers. Last verified image: `494624` bytes with a `128 KiB` main
+  heap. The older `rtos`, `worker`, `threads`, and `taskspin` APIs are retired.
+- `edge32`: P2 Edge 32 MB RAM profile with Catalina `-lpsram`. It reserves
+  pins `40..57` for PSRAM, keeps Berry's object heap in Hub RAM, and exposes
+  bounded PSRAM block transfers plus SD-library source-cache experiments. Last
+  verified image: `518304` bytes with a `92 KiB` main heap and `8 KiB` worker
+  heap.
+- `xmm`: P2 Edge 32 MB RAM profile using Catalina `LARGE`, `-lpsram`, and
+  `-C PSRAM`. Catalina places the backing C arena in the lower PSRAM/XMM
+  window, so Berry can use a large allocator-backed heap while the upper
+  `16 MiB` stays available for explicit PSRAM block/cache use. Current
+  hardware-verified image: `1168384` bytes with a `15728640` byte Berry heap
+  and `Berry heap in PSRAM` at runtime.
 
 Library loading policy (`modules/libstore.be`) on P2:
 
@@ -119,13 +137,13 @@ make p2-xmm
 Run the experimental XMM image through Catalina's serial XMM loader:
 
 ```sh
-make p2-xmm-run PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-xmm-run TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
 ```
 
 Install the experimental XMM image for standalone SPI-flash boot:
 
 ```sh
-make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
 ```
 
 The XMM flash target creates a complete bootable flash image and writes it with
@@ -149,19 +167,19 @@ reach `berry>` about 3 seconds after attach.
 Equivalent explicit form:
 
 ```sh
-make p2 TOOLCHAIN=catalina P2_PROFILE=minimal P2_BOARD=p2edge CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
+make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina P2_PROFILE=minimal P2_BOARD=p2edge CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
 ```
 
 P2 Edge 32 MB RAM explicit form:
 
 ```sh
-make p2 TOOLCHAIN=catalina P2_PROFILE=edge32 P2_BOARD=p2edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
+make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina P2_PROFILE=edge32 P2_BOARD=p2edge32 CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram
 ```
 
 Experimental unified-memory XMM explicit form:
 
 ```sh
-make p2 TOOLCHAIN=catalina P2_PROFILE=xmm P2_BOARD=p2edge32 CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram CATALINA_CONFIG_FLAGS="-C P2_EDGE -C LARGE -C SIMPLE -C VT100 -C NO_ARGS -C PSRAM"
+make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina P2_PROFILE=xmm P2_BOARD=p2edge32 CATALINA_MODEL=LARGE CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=-lpsram CATALINA_CONFIG_FLAGS="-C P2_EDGE -C LARGE -C SIMPLE -C VT100 -C NO_ARGS -C PSRAM"
 ```
 
 ## Local Environment Defaults
@@ -172,7 +190,8 @@ flags on every command:
 ```sh
 make configure \
  TOOLCHAIN=catalina \
- PORT=/dev/cu.usbserial-P97cvdxp \
+ CATALINA_DIR=../Catalina \
+ PORT=/dev/ttyUSB0 \
  P2_SILICON=latest \
  P2_BOARD=p2edge \
  CATALINA_PLATFORM=P2_EDGE \
@@ -223,14 +242,14 @@ Current macOS Catalina notes:
 - with a regular terminal, use:
 
 ```sh
-tio -b 230400 /dev/cu.usbserial-P97cvdxp
+tio -b 230400 /dev/ttyUSB0
 ```
 
 For a P2 Edge Rev D with the 32 MB RAM module:
 
 ```sh
-make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_DIR=../Catalina
-tio -b 230400 /dev/cu.usbserial-P97cvdxp
+make p2-edge32-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
+tio -b 230400 /dev/ttyUSB0
 ```
 
 Basic REPL smoke tests for that image:
@@ -274,7 +293,7 @@ directory and `modules/` to the SD card root so the target sees paths such as
 To provision those Berry libraries and tests through a running Berry REPL:
 
 ```sh
-make p2-sd-sync PORT=/dev/cu.usbserial-P97cvdxp
+make p2-sd-sync TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
 ```
 
 Use `make p2-sd-modules ...` when you only need to refresh `/modules`, or
@@ -285,7 +304,7 @@ After Berry is running at the `berry>` prompt, the host can drive the suite over
 serial with:
 
 ```sh
-make p2-smoke PORT=/dev/cu.usbserial-P97cvdxp
+make p2-smoke TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
 ```
 
 The smoke suite covers:
@@ -310,13 +329,13 @@ The smoke suite covers:
 For the original short REPL check set:
 
 ```sh
-make p2-smoke-quick PORT=/dev/cu.usbserial-P97cvdxp
+make p2-smoke-quick TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
 ```
 
 For the P2 Edge 32 MB RAM profile after `make p2-edge32-flash`, use:
 
 ```sh
-make p2-smoke-edge32 PORT=/dev/cu.usbserial-P97cvdxp
+make p2-smoke-edge32 TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
 ```
 
 That target runs `/tests/p2/smoke_edge32_all.be`, which includes the general
@@ -329,7 +348,7 @@ Current flash note:
 
 - direct `loadp2 -SPI build/p2/catalina/full/berry_p2.binary` is not the Catalina flash path; Catalina binaries need the `flshload.t` wrapper generated by `make p2-flash`
 - `make p2-flash` was verified on P2 Edge Rev D / P2 silicon rev G with `FLASH=ON, △=OFF, ▽=OFF`
-- after flashing, reset or power-cycle the board and attach with `tio -b 230400 /dev/cu.usbserial-P97cvdxp`
+- after flashing, reset or power-cycle the board and attach with `tio -b 230400 /dev/ttyUSB0`
 
 Interactive quit behavior on the current macOS Catalina path:
 
@@ -386,7 +405,7 @@ Examples:
 
 ```powershell
 make p2 TOOLCHAIN=catalina CATALINA_DIR=C:\tools\catalina
-make p2-run TOOLCHAIN=catalina PORT=COM6 LOADP2=C:\tools\flexprop\bin\loadp2.exe
+make p2-run TOOLCHAIN=catalina CATALINA_DIR=C:\tools\catalina PORT=COM6 LOADP2=C:\tools\flexprop\bin\loadp2.exe
 ```
 
 Point the Make variables at external installations. The bootstrap helpers in

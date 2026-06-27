@@ -9,8 +9,8 @@ This note is the handoff for the next P2 porting session.
 - The P2 build interface is now:
  - `make configure`
  - `make show-config`
- - `make p2 TOOLCHAIN=catalina`
- - `make p2-run TOOLCHAIN=catalina PORT=...`
+ - `make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina`
+ - `make p2-run TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=...`
  - `make p2-ram`
  - `make p2-flash`
  - `make p2-edge32`
@@ -59,18 +59,18 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
  - memory split: Catalina can use the lower `16 MiB` of P2 Edge PSRAM as XMM memory; Berry exposes the upper `16 MiB` as the safe raw PSRAM block/cache window
  - status: hardware verified through Catalina's XMM serial loader and through standalone SPI-flash boot
  - note: `CATALINA_CLIB=-lci` compiled most C files but failed link with undefined Catalina DOSFS `__vi`, so Berry's filesystem path still needs `-lcx`
-- `make p2-xmm-run PORT=/dev/cu.usbserial-P97cvdxp ...` boots the XMM profile through Catalina's serial XMM loader and reaches the Berry prompt.
-- `make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp ...` creates a complete bootable XMM SPI-flash image and writes it with FlexProp `loadp2 -HIMEM=flash @80000000=...`.
+- `make p2-xmm-run TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0 ...` boots the XMM profile through Catalina's serial XMM loader and reaches the Berry prompt.
+- `make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0 ...` creates a complete bootable XMM SPI-flash image and writes it with FlexProp `loadp2 -HIMEM=flash @80000000=...`.
  - flash layout: stage-1 boot block at `0x00000`, size-prefixed stage-2 flash-to-PSRAM loader at `0x10000`, size-prefixed Berry XMM image at `0x40000`
  - standalone XMM flash boot now uses the fast sparse flash-to-PSRAM loader with an `Initializing PSRAM` spinner, then a post-banner `Starting Berry VM` spinner while native modules are initialized
- - current hardware capture reaches `berry>` in about `3.000` seconds after attach on `/dev/cu.usbserial-P97cvdxp`
+ - current hardware capture reaches `berry>` in about `3.000` seconds after attach on `/dev/ttyUSB0`
  - verified banner reports `[xmm profile]`, `Berry heap external`, `XMM 16777216 B`, and `block 16777216 B @ 16777216`; `p2.status()` reports `main heap` total `15728640 B`
-- `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp CATALINA_DIR=../Catalina` flashed and booted from flash on the P2 Edge 32 MB RAM board. The boot banner reported `P2_EDGE, PSRAM`, `[edge32 profile]`, `131072 B` heap, and `33554432 B` PSRAM block API.
-- `make p2-run TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/cu.usbserial-P97cvdxp` RAM-loads and reaches the Berry prompt
+- `make p2-edge32-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0` flashed and booted from flash on the P2 Edge 32 MB RAM board. The boot banner reported `P2_EDGE, PSRAM`, `[edge32 profile]`, `131072 B` heap, and `33554432 B` PSRAM block API.
+- `make p2-run TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0` RAM-loads and reaches the Berry prompt
 - Non-destructive SD smoke tests now live under `tests/p2/` and can be driven
  from the host with `make p2-smoke`, `make p2-smoke-quick`, and
  `make p2-smoke-edge32` once that directory and `modules/` have been copied to
- the SD card. Use `make p2-sd-sync PORT=/dev/cu.usbserial-P97cvdxp` at a
+ the SD card. Use `make p2-sd-sync TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0` at a
  running Berry prompt to copy repo `modules/` to `/modules` and `tests/p2/` to
  `/tests/p2` through the REPL uploader.
 - P2 VMs add `/modules` as a default lazy import root, so optional `.be`
@@ -92,7 +92,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
  - `p2.psram_info()`, `p2.psram_test()`, bounded `p2.psram_read()` /
  `p2.psram_write()`, and `libstore.cache_source()` are now exposed for the P2
  Edge 32 MB RAM profile and live-verified on the P2 Edge 32 MB board
- - `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp ...` boots from flash,
+ - `make p2-edge32-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0 ...` boots from flash,
  and the quick REPL smoke passes: `print(6*7)` -> `42`, string concat ->
  `abcdef`, and map lookup -> `7`
  - standalone XMM flash boot passes core REPL checks:
@@ -129,7 +129,7 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
  - `import spi`; `spi.init(10,11,12,13,0,1000)` returns to the prompt
  - `import task`; cooperative scheduler helpers are native and are the supported scheduler API
  - `p2.cog.spawn(blinker, 38, 250)` / `p2.cog.spawn(blinker, 39, 700)` launch native LED blinkers on separate cogs and `p2.cog.stop(handle)` stops them
- - `import spin2`; `print(spin2.path())` -> `/spin2`
+ - `import introspect`; `print(introspect.module("spin2"))` -> `nil` on the normal default image because Spin2 is archived/opt-in
  - `import wifi` compiles and imports when `modules/wifi.be` is present on SD/module path; hardware detection on the ESP32-C6 AirLift board is still pending READY/BUSY troubleshooting
 - P2 pins on the no-PSRAM P2 Edge path:
  - `p2.pinmode(56,p2.OUTPUT); p2.low(56); print(p2.read(56))` -> `0`
@@ -141,11 +141,11 @@ On the current macOS Catalina P2 Edge path (latest silicon / Rev C focus):
  - `print(i2c.present(0x77))` -> `true`
  - `print(i2c.writeread(0x77,"\xD0",1))` -> `U` (`0x55`, BMP180 chip id)
 - Retired RTOS path: `rtos` is no longer part of the active P2 API; use `task` for cooperative scheduling and `p2.cog` for native cog handles.
-- `spin2.path()` returns `/spin2`; `spin2.list()` returned `[]` when no compatible binaries were present on the SD-visible path
+- Spin2 is archived/opt-in on the normal default image; use `introspect.module("spin2")` before calling any old Spin2 loader helpers
 - `os.listdir("/")` returns the current SD root after filtering stale/non-printable DOSFS entries; the latest card listed `SPIN2`, `HELLO.TXT`, `NEWTEST.BIN`, `INDEX.TXT`, `SPN2`, `SPN3`, `SPN4`, `SPT0`, `SPT1`, `SPT2`, `SPT3`, `EXAMPLES`, `WIFI.BE`, and `DETECT.BE`
 - SD write/read/remove was live-verified with `/BERRYTMP.TXT`; the file and directory handles now use fixed P2 pools instead of Catalina libc `malloc`
 - `spi.read(1)` returns a one-byte raw string after `spi.init(10,11,12,13,0,1000)`; full JEDEC validation still needs a known attached SPI target
-- `make p2-run TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp` loads and reaches the Berry prompt
+- `make p2-run TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0` loads and reaches the Berry prompt
 - startup banner is now a single Berry-style banner instead of the old duplicated `Berry on Propeller 2` / `Berry on P2`
 - basic REPL usage is live-verified:
  - `print(1+2)` -> `3`
@@ -237,7 +237,7 @@ Current machine focus to preserve:
 - toolchain: Catalina
 - board profile: `P2_EDGE`
 - silicon path: `P2_SILICON=latest`
-- normal serial port: `/dev/cu.usbserial-P97cvdxp`
+- normal serial port: `/dev/ttyUSB0`
 
 Known limitation:
 
@@ -283,11 +283,11 @@ Known limitation:
 
 1. Continue first on macOS with Catalina and `P2_EDGE`.
 2. Keep the local environment configured with:
- - `make configure TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=`
+ - `make configure TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0 P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=`
 3. Start with:
  - `make p2-run`
  - or `make p2-ram`
- - for the 32 MB RAM board, `make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp`
+ - for the 32 MB RAM board, `make p2-edge32-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0`
 4. Re-verify:
  - `print(1+2)`
  - `a=6`
@@ -313,5 +313,5 @@ When asked to continue porting Berry to P2, start by summarizing:
 - where the port currently is
 - what was last verified on hardware
 - that the primary focus is macOS + Catalina + `P2_EDGE` + latest silicon
-- that the usual board port is `/dev/cu.usbserial-P97cvdxp`
+- that the usual board port is `/dev/ttyUSB0`
 - that the first command to try is `make p2-run`

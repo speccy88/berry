@@ -8,7 +8,8 @@ end
 
 var caps = p2.cog.capabilities()
 print("closure cog handle policy:", caps["handle_model"])
-print("closure cog native blink:", caps["native_blink"], "stack", caps["native_blink_stack"])
+print("closure cog native blink:", p2.cog.capability("native_blink"), "stack", p2.cog.capability("native_blink_stack"))
+print("closure cog cleanup:", p2.cog.capability("cleanup_all"), p2.cog.capability("cleanup_all_policy"))
 
 var fast = p2.cog.spawn(blinker, 38, 150)
 var slow = p2.cog.spawn(blinker, 39, 450)
@@ -32,10 +33,9 @@ print("slow result/error:", p2.cog.result(slow), p2.cog.error(slow))
 
 p2.clock.waitms(1500)
 
-var stopped = p2.cog.stop(fast)
-var killed = p2.cog.kill(slow)
-print("stop fast running:", stopped["running"])
-print("kill slow running:", killed["running"])
+var cleanup = p2.cog.cleanup_result()
+print("cleanup released:", cleanup["released_handles"], "pins", cleanup["pins_floated"])
+print("cleanup empty:", cleanup["registry_empty"], "active", cleanup["active_after"])
 
 p2.pin.float(38)
 p2.pin.float(39)

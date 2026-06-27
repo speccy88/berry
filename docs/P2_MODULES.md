@@ -12,7 +12,7 @@ the active Berry object heap in Hub RAM.
 The normal board profile is the no-PSRAM P2 Edge build:
 
 ```sh
-make configure TOOLCHAIN=catalina PORT=/dev/cu.usbserial-P97cvdxp \
+make configure TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0 \
   P2_SILICON=latest P2_BOARD=p2edge CATALINA_PLATFORM=P2_EDGE \
   CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
 ```
@@ -25,7 +25,7 @@ on pins `38` and `39`; PSRAM builds reserve pins `40..57`.
 For a P2 Edge with the 32 MB RAM module, use the `edge32` profile:
 
 ```sh
-make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp
+make p2-edge32-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
 ```
 
 This profile enables Catalina `-lpsram`. PSRAM is exposed to Berry as a
@@ -275,7 +275,7 @@ or stopped.
 
 Current helpers:
 
-- `p2.cog.spawn(function, ...args)`: pass a Berry function entity as the setup function. The currently supported default shape is `spawn(closure, pin, rate_ms)` for the native p38/p39 blinker path; the function is called once on the current cog and must return a positive integer period.
+- `p2.cog.spawn(function, ...args)`: pass a Berry function entity as the setup function. The currently supported default shape is `spawn(closure, pin, rate_ms)` for the native blinker path on pins 38 and 39; the function is called once on the current cog and must return a positive integer period.
 - `p2.cog.stop(handle)`: stop a spawned native task.
 - `p2.cog.info(handle)` / `p2.cog.info()`: inspect one handle or all active handles.
 - `p2.cog.capabilities()`: report supported native task-handle features.
@@ -318,10 +318,14 @@ cog handle experiments should use `p2.cog`.
 
 ## `spin2`
 
-`spin2` loads compiled Spin2/PASM binaries from the SD card. Mailbox-aware
-binaries can be called from Berry with integer arguments. Raw standalone PASM
-can be launched, but normal high-level FlexSpin images are not relocatable and
-are rejected.
+`spin2` is archived out of the default P2 firmware. The old native module can
+still be built intentionally with the archived Spin2 build flag for historical
+or debug work, but normal Edge32/XMM builds do not provide `import spin2`.
+
+When that archived module is enabled, it loads compiled Spin2/PASM binaries
+from the SD card. Mailbox-aware binaries can be called from Berry with integer
+arguments. Raw standalone PASM can be launched, but normal high-level FlexSpin
+images are not relocatable and are rejected.
 
 - `spin2.path(path=nil) -> string`: get or set the base SD directory. Default is
   `/spin2`.
@@ -334,13 +338,18 @@ are rejected.
 Example:
 
 ```berry
-import spin2
+import introspect
 
-print(spin2.path())
-print(spin2.list())
-# handle = spin2.start("MBOXDEMO.BIN")
-# print(spin2.call(handle, 1, 123))
-# spin2.stop(handle)
+var spin2 = introspect.module("spin2")
+if spin2 == nil
+    print("spin2 default build:", "module archived")
+else
+    print(spin2.path())
+    print(spin2.list())
+    # handle = spin2.start("MBOXDEMO.BIN")
+    # print(spin2.call(handle, 1, 123))
+    # spin2.stop(handle)
+end
 ```
 
 ## `wifi`
@@ -416,10 +425,9 @@ and probes the current SD-first library store:
 - `libstore.exists(name) -> bool`: true when `/modules/<name>.be` exists.
 - `libstore.source_path(name) -> string or nil`: returns the SD source path.
 - `libstore.compiled_path(name) -> string or nil`: returns a staged `.bec`
-  candidate path if present. The current P2 port detects `.bec` files but does
-  not execute them yet.
+  candidate path if present.
 - `libstore.compiled_manifest_path(name) -> string or nil`: returns a staged
-  `<module>.bec.json` freshness sidecar when present.
+  8.3-safe `<module>.jsn` freshness sidecar when present.
 - `libstore.compile_cache_plan_many(names) -> map`: returns bulk `.bec` emit
   plans for an explicit module list, including emit blocker-reason counts.
 - `libstore.compile_cache_plan_many_text(names) -> string`: returns bulk `.bec`
@@ -494,17 +502,18 @@ and probes the current SD-first library store:
   and a recommendation.
 - `libstore.compiled_provision_plan_text() -> string`: returns the provisioning
   diagnostics map as JSON text.
-- `libstore.load_compiled(name)`: future explicit `.bec` execution hook. Current
-  default builds raise `unsupported_error` with the load-plan reason instead of
-  silently pretending bytecode execution is available.
+- `libstore.load_compiled(name)`: explicit `.bec` execution hook. Builds that
+  report bytecode loader plus execution support can run a fresh, validated
+  staged bytecode file; unsupported builds raise `unsupported_error` with the
+  load-plan reason.
 - `libstore.compiled_freshness(name) -> map`: compares staged source,
   bytecode, and optional sidecar metadata. Matching sidecars can prove
-  `fresh == true`, but default `.bec` execution remains disabled until an
-  opt-in `BE_P2_ENABLE_BYTECODE_LOADER` build plus
-  `BE_P2_ENABLE_BYTECODE_EXECUTION` policy reports support.
+  `fresh == true`; a staged file is only usable when the runtime reports
+  bytecode loader/execution support and the bytecode header is valid.
 - `libstore.resolve(name) -> map`: returns source/compiled candidates plus the
-  selected path, selected kind, and decision reason. Current `.bec` candidates
-  report source fallback when matching `.be` source is present.
+  selected path, selected kind, and decision reason. Fresh valid `.bec`
+  candidates are selected on bytecode-capable builds; otherwise matching `.be`
+  source remains the fallback.
 - `libstore.info(name) -> map`: return SD path/cache metadata for one module,
   including `compiled_path`, `compiled_exists`, `compiled_supported`,
   `compiled_loader_supported`, `compiled_validator_supported`,

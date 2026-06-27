@@ -4,6 +4,7 @@
 # that unsupported modes still need explicit hardware validation.
 
 import p2 as _p2
+import introspect
 
 var p2smart = module("p2smart")
 
@@ -12,9 +13,8 @@ if _p2 == nil
 end
 
 var _smart = nil
-try
+if introspect.contains(_p2, "smart")
     _smart = _p2.smart
-except .. as e
 end
 
 if _smart == nil
@@ -34,6 +34,7 @@ if _smart == nil
     _smart.minus3_a = 0x50000000
     _smart.minus2_a = 0x60000000
     _smart.minus1_a = 0x70000000
+    _smart.invert_a = -2147483648
     _smart.plus1_b = 0x01000000
     _smart.plus2_b = 0x02000000
     _smart.plus3_b = 0x03000000
@@ -134,9 +135,8 @@ end
 p2smart.smart = _smart
 
 var _pin = nil
-try
+if introspect.contains(_p2, "pin")
     _pin = _p2.pin
-except .. as e
 end
 
 if _pin == nil
@@ -153,9 +153,8 @@ end
 p2smart.pin = _pin
 
 var _clock = nil
-try
+if introspect.contains(_p2, "clock")
     _clock = _p2.clock
-except .. as e
 end
 
 if _clock == nil
@@ -177,7 +176,9 @@ p2smart.DEFAULT_PWM_DUTY = 100
 p2smart.DEFAULT_PWM_DIVISOR = 1
 p2smart.DEFAULT_NCO_BIT_PERIOD = 16000
 p2smart.DEFAULT_NCO_INCREMENT = 0x20000000
-p2smart.DEFAULT_NCO_DUTY = 1
+p2smart.DEFAULT_NCO_DUTY_PRESCALER = 1
+p2smart.DEFAULT_NCO_DUTY_VALUE = 0x40000000
+p2smart.DEFAULT_NCO_DUTY = p2smart.DEFAULT_NCO_DUTY_VALUE
 p2smart.DEFAULT_PULSE_HIGH = 100
 p2smart.DEFAULT_PULSE_LOW = 100
 p2smart.DEFAULT_PULSE_COUNT = 8
@@ -186,7 +187,7 @@ p2smart.DEFAULT_TRANSITION_COUNT = 8
 p2smart.DEFAULT_SERIAL_BAUD = 115200
 p2smart.DEFAULT_SERIAL_BITS = 8
 p2smart.DEFAULT_REPOSITORY_VALUE = 0x00c0ffee
-p2smart.DEFAULT_ADC_SAMPLE_TICKS = 256
+p2smart.DEFAULT_ADC_SAMPLE_TICKS = 32
 p2smart.DEFAULT_DAC_FRAME = 256
 p2smart.DEFAULT_DAC_VALUE = 128
 p2smart.DEFAULT_JUMPER_PAIRS = [[0, 1], [2, 3], [4, 5], [6, 7]]
@@ -436,6 +437,19 @@ end
 
 p2smart._serial_x = def(bit_ticks, bits)
     return p2smart._require_16_bit(bit_ticks, "bit_ticks") * 65536 + p2smart._require_serial_bits(bits) - 1
+end
+
+p2smart._sync_serial_x = def(bits)
+    return (p2smart._require_serial_bits(bits) - 1) | 0x20
+end
+
+p2smart._serial_mask = def(bits)
+    return (1 << p2smart._require_serial_bits(bits)) - 1
+end
+
+p2smart._sync_serial_value = def(raw, bits)
+    var width = p2smart._require_serial_bits(bits)
+    return (raw >> (32 - width)) & p2smart._serial_mask(width)
 end
 
 p2smart.serial_bit_ticks = def(baud)
@@ -1105,42 +1119,33 @@ end
 
 class NCODuty
     var pin
-    var bit_period
+    var prescaler
     var duty
     var mode
     var started
 
-    def init(pin, bit_period, duty, mode)
+    def init(pin, prescaler, duty, mode)
         self.pin = p2smart._require_pin(pin)
-        self.bit_period = p2smart._require_positive_int(bit_period == nil ? p2smart.DEFAULT_NCO_BIT_PERIOD : bit_period, "bit_period")
-        self.duty = p2smart._require_positive_int(duty == nil ? p2smart.DEFAULT_NCO_DUTY : duty, "duty")
-        if self.duty > self.bit_period
-            raise "value_error", "duty must be between 1 and bit_period"
-        end
+        self.prescaler = p2smart._require_positive_int(prescaler == nil ? p2smart.DEFAULT_NCO_DUTY_PRESCALER : prescaler, "prescaler")
+        self.duty = p2smart._require_non_negative_int(duty == nil ? p2smart.DEFAULT_NCO_DUTY_VALUE : duty, "duty")
         self.mode = mode == nil ? p2smart.smart.oe + p2smart.smart.nco_duty : p2smart._require_non_negative_int(mode, "mode")
         self.started = false
     end
 
     def start()
-        p2smart.smart.start(self.pin, self.mode, self.bit_period, self.duty)
+        p2smart.smart.start(self.pin, self.mode, self.prescaler, self.duty)
         self.started = true
         return self
     end
 
     def set_duty(duty)
-        self.duty = p2smart._require_positive_int(duty, "duty")
-        if self.duty > self.bit_period
-            raise "value_error", "duty must be between 1 and bit_period"
-        end
+        self.duty = p2smart._require_non_negative_int(duty, "duty")
         p2smart.smart.wypin(self.pin, self.duty)
         return self
     end
 
     def set_duty_result(duty, settle_us)
-        var next_duty = p2smart._require_positive_int(duty, "duty")
-        if next_duty > self.bit_period
-            raise "value_error", "duty must be between 1 and bit_period"
-        end
+        var next_duty = p2smart._require_non_negative_int(duty, "duty")
         var delay = settle_us == nil ? 0 : p2smart._require_non_negative_int(settle_us, "settle_us")
         self.set_duty(next_duty)
         if delay > 0
@@ -1149,8 +1154,10 @@ class NCODuty
         return {
             "ok": true,
             "pin": self.pin,
-            "bit_period": self.bit_period,
+            "prescaler": self.prescaler,
+            "bit_period": self.prescaler,
             "duty": self.duty,
+            "value": self.duty,
             "mode": self.mode,
             "settled": delay > 0,
             "settle_us": delay
@@ -1168,8 +1175,10 @@ class NCODuty
         return {
             "kind": "NCODuty",
             "pin": self.pin,
-            "bit_period": self.bit_period,
+            "prescaler": self.prescaler,
+            "bit_period": self.prescaler,
             "duty": self.duty,
+            "value": self.duty,
             "mode": self.mode,
             "started": self.started
         }
@@ -1534,7 +1543,7 @@ class SyncSerialPair
     end
 
     def x()
-        return p2smart._serial_x(self.bit_ticks, self.bits)
+        return p2smart._sync_serial_x(self.bits)
     end
 
     def start()
@@ -1577,7 +1586,7 @@ class SyncSerialPair
             "ready": true,
             "event": event,
             "raw": raw,
-            "value": raw,
+            "value": p2smart._sync_serial_value(raw, self.bits),
             "error": nil,
             "message": nil
         }
@@ -1595,6 +1604,9 @@ class SyncSerialPair
 
     def transfer_result(value, wait_us, clock)
         var sent = p2smart._require_non_negative_int(value, "value")
+        if sent > p2smart._serial_mask(self.bits)
+            raise "value_error", "value must fit in configured sync serial bits"
+        end
         self.ack()
         self.send(sent)
         if clock != nil
@@ -1830,11 +1842,15 @@ p2smart.capabilities = def()
         "normal_pin_diagnostics": "diagnostic",
         "raw_smartpin": "verified",
         "raw_smartpin_probe": "diagnostic",
+        "raw_smartpin_reserved_pin_policy": "diagnostic",
+        "raw_smartpin_reserved_pin_rejection": "staged",
         "counter": "verified",
         "counter_sample_diagnostics": "diagnostic",
         "counter_variant_sample_probe": "diagnostic",
         "counter_variant_drive_probe": "diagnostic",
         "counter_variant_drive_modes_probe": "diagnostic",
+        "counter_timer_calibration_policy": "diagnostic",
+        "counter_timer_calibrated_probe": "unsupported",
         "high_counter_probe": "diagnostic",
         "counter_mode_variants": "setup_only",
         "repository": "verified",
@@ -1845,13 +1861,15 @@ p2smart.capabilities = def()
         "pwm_duty_diagnostics": "diagnostic",
         "pwm_counter_probe": "diagnostic",
         "pwm_variant_counter_probe": "diagnostic",
+        "pwm_duty_shape_probe": "verified",
         "pwm_mode_variants": "setup_only",
         "nco": "verified",
         "nco_increment_diagnostics": "diagnostic",
         "nco_counter_probe": "diagnostic",
-        "nco_duty": "setup_only",
-        "nco_duty_diagnostics": "diagnostic",
-        "nco_duty_counter_probe": "diagnostic",
+        "nco_duty": "verified",
+        "nco_duty_diagnostics": "verified",
+        "nco_duty_counter_probe": "verified",
+        "nco_duty_waveform_probe": "verified",
         "pulse": "verified",
         "pulse_trigger_diagnostics": "diagnostic",
         "pulse_counter_probe": "diagnostic",
@@ -1861,7 +1879,7 @@ p2smart.capabilities = def()
         "adc": "setup_readback",
         "adc_sample_diagnostics": "diagnostic",
         "adc_variant_sample_probe": "diagnostic",
-        "adc_variant_dac_sampled_probe": "verified",
+        "adc_variant_dac_sampled_probe": "diagnostic",
         "adc_mode_variants": "setup_only",
         "dac": "setup_output",
         "dac_set_diagnostics": "diagnostic",
@@ -1870,33 +1888,40 @@ p2smart.capabilities = def()
         "adc_dac_sampled_probe": "verified",
         "dac_variant_adc_probe": "diagnostic",
         "dac_variant_adc_sampled_probe": "verified",
-        "adc_dac_variants_sampled_probe": "verified",
+        "adc_dac_variants_sampled_probe": "diagnostic",
         "adc_dac_delta_policy": "diagnostic",
         "adc_dac_delta": "unverified",
+        "adc_dac_calibrated_probe": "unsupported",
         "quadrature": "setup_only",
         "quadrature_sample_diagnostics": "diagnostic",
         "quadrature_sample_probe": "diagnostic",
+        "quadrature_mechanical_policy": "diagnostic",
+        "quadrature_mechanical_encoder": "unsupported",
         "async_serial": "verified",
         "async_serial_zero_byte": "verified",
         "async_serial_paced_exchange": "verified",
         "async_serial_probe": "diagnostic",
         "async_serial_drain": "diagnostic",
         "async_serial_drain_probe": "diagnostic",
+        "async_serial_burst_probe": "diagnostic",
         "async_serial_buffer_policy": "diagnostic",
         "async_serial_buffer": "unsupported",
-        "sync_serial": "setup_only",
-        "sync_serial_result_diagnostics": "staged",
-        "sync_serial_transfer_diagnostics": "staged",
+        "async_serial_buffered_pair": "unsupported",
+        "sync_serial": "verified",
+        "sync_serial_result_diagnostics": "verified",
+        "sync_serial_transfer_diagnostics": "verified",
         "sync_serial_probe": "staged",
-        "sync_serial_clocked_probe": "staged",
+        "sync_serial_clocked_probe": "verified",
         "sync_serial_clocked_variant_probe": "staged",
-        "sync_serial_clocked_jumper_probes": "staged",
+        "sync_serial_clocked_jumper_probes": "verified",
         "sync_serial_clocked_jumper_variant_probes": "staged",
-        "sync_serial_default_clocked_probe": "staged",
+        "sync_serial_default_clocked_probe": "verified",
         "sync_serial_default_clocked_variant_probe": "staged",
         "sync_serial_receive_policy": "diagnostic",
-        "sync_serial_receive": "unverified",
-        "usb_pair": "unsupported"
+        "sync_serial_receive": "verified",
+        "usb_pair_policy": "diagnostic",
+        "usb_pair": "unsupported",
+        "usb_pair_probe": "unsupported"
     }
 end
 
@@ -1918,11 +1943,15 @@ p2smart.required_capability_keys = def()
         "normal_pin_diagnostics",
         "raw_smartpin",
         "raw_smartpin_probe",
+        "raw_smartpin_reserved_pin_policy",
+        "raw_smartpin_reserved_pin_rejection",
         "counter",
         "counter_sample_diagnostics",
         "counter_variant_sample_probe",
         "counter_variant_drive_probe",
         "counter_variant_drive_modes_probe",
+        "counter_timer_calibration_policy",
+        "counter_timer_calibrated_probe",
         "high_counter_probe",
         "counter_mode_variants",
         "repository",
@@ -1933,6 +1962,7 @@ p2smart.required_capability_keys = def()
         "pwm_duty_diagnostics",
         "pwm_counter_probe",
         "pwm_variant_counter_probe",
+        "pwm_duty_shape_probe",
         "pwm_mode_variants",
         "nco",
         "nco_increment_diagnostics",
@@ -1940,6 +1970,7 @@ p2smart.required_capability_keys = def()
         "nco_duty",
         "nco_duty_diagnostics",
         "nco_duty_counter_probe",
+        "nco_duty_waveform_probe",
         "pulse",
         "pulse_trigger_diagnostics",
         "pulse_counter_probe",
@@ -1961,17 +1992,22 @@ p2smart.required_capability_keys = def()
         "adc_dac_variants_sampled_probe",
         "adc_dac_delta_policy",
         "adc_dac_delta",
+        "adc_dac_calibrated_probe",
         "quadrature",
         "quadrature_sample_diagnostics",
         "quadrature_sample_probe",
+        "quadrature_mechanical_policy",
+        "quadrature_mechanical_encoder",
         "async_serial",
         "async_serial_zero_byte",
         "async_serial_paced_exchange",
         "async_serial_probe",
         "async_serial_drain",
         "async_serial_drain_probe",
+        "async_serial_burst_probe",
         "async_serial_buffer_policy",
         "async_serial_buffer",
+        "async_serial_buffered_pair",
         "sync_serial",
         "sync_serial_result_diagnostics",
         "sync_serial_transfer_diagnostics",
@@ -1984,8 +2020,44 @@ p2smart.required_capability_keys = def()
         "sync_serial_default_clocked_variant_probe",
         "sync_serial_receive_policy",
         "sync_serial_receive",
-        "usb_pair"
+        "usb_pair_policy",
+        "usb_pair",
+        "usb_pair_probe"
     ]
+end
+
+p2smart.raw_smartpin_reserved_pin_policy = def()
+    return {
+        "ok": true,
+        "capability": "raw_smartpin_reserved_pin_rejection",
+        "status": p2smart.status("raw_smartpin_reserved_pin_rejection"),
+        "policy": "deferred_current_image_hangs",
+        "safe_test_pins": [0, 1, 2, 3, 4, 5, 6, 7],
+        "reserved_pin_classes": ["psram", "sd", "serial"],
+        "attempted_probe": "/tests/p2/smoke_smartpins_reserved_pins.be",
+        "attempt_result": "hung_before_begin_marker",
+        "recommendation": "do not include raw p2.smart reserved-pin negative probes in routine first-four priority smokes until isolated"
+    }
+end
+
+p2smart.usb_pair_policy = def()
+    return {
+        "ok": true,
+        "supported": false,
+        "capability": "usb_pair",
+        "status": p2smart.status("usb_pair"),
+        "policy": "unsupported_no_usb_stack",
+        "raw_mode": p2smart.smart.usb_pair,
+        "implemented_helpers": [],
+        "safe_claim": "raw_constant_only",
+        "reason": "the P2 smart-pin USB pair mode constant is exposed for completeness, but Berry does not yet provide USB packet, HID, host, or device stack ownership"
+    }
+end
+
+p2smart.usb_pair_probe = def(pin_a, pin_b)
+    p2smart._require_pin(pin_a)
+    p2smart._require_pin(pin_b)
+    raise "unsupported_error", "USB smart-pin pair is not implemented; use usb_pair_policy() for the explicit boundary"
 end
 
 p2smart.async_serial_buffer_policy = def()
@@ -1996,30 +2068,48 @@ p2smart.async_serial_buffer_policy = def()
         "status": p2smart.status("async_serial_buffer"),
         "policy": "unsupported_no_fifo_buffer",
         "receive_model": "single_smartpin_sample",
-        "safe_receive_helpers": ["read_result", "read_byte", "read_result_after", "read_byte_after", "exchange_results_after", "read_available_results", "read_available"],
+        "safe_receive_helpers": ["read_result", "read_byte", "read_result_after", "read_byte_after", "exchange_results_after", "read_available_results", "read_available", "async_serial_burst_probe"],
+        "unsupported_helpers": ["async_serial_buffered_pair"],
         "cleanup_required": true,
         "clear_releases_state": true,
-        "reason": "current AsyncSerialPair exposes direct smart-pin samples only; buffered RX/FIFO ownership is not implemented"
+        "reason": "current AsyncSerialPair exposes direct smart-pin samples only; buffered RX/FIFO ownership is not implemented, so unpaced bursts must be treated as latest-sample diagnostics rather than queued bytes"
     }
+end
+
+p2smart.async_serial_buffered_pair = def(tx_pin, rx_pin, baud, bits, depth)
+    var checked_tx = p2smart._require_pin(tx_pin)
+    var checked_rx = p2smart._require_pin(rx_pin)
+    if checked_tx == checked_rx
+        raise "value_error", "tx_pin and rx_pin must differ"
+    end
+    if baud != nil
+        p2smart.serial_bit_ticks(baud)
+    end
+    p2smart._require_serial_bits(bits == nil ? p2smart.DEFAULT_SERIAL_BITS : bits)
+    p2smart._require_positive_int(depth == nil ? 16 : depth, "depth")
+    raise "unsupported_error", "background async serial RX buffering/FIFO is not implemented; use async_serial_buffer_policy() for the explicit boundary"
 end
 
 p2smart.sync_serial_receive_policy = def()
     return {
         "ok": true,
-        "supported": false,
+        "supported": true,
         "capability": "sync_serial_receive",
         "status": p2smart.status("sync_serial_receive"),
-        "policy": "unverified_no_matched_receive_words",
+        "policy": "verified_clocked_jumper_receive",
         "setup_status": p2smart.status("sync_serial"),
         "diagnostic_status": p2smart.status("sync_serial_receive_policy"),
-        "receive_model": "smartpin_sync_io_result_sample",
-        "safe_probe_helpers": ["sync_serial_probe", "sync_serial_clocked_probe", "sync_serial_clocked_jumper_probes", "sync_serial_default_clocked_probe"],
+        "receive_model": "smartpin_sync_io_left_aligned_word",
+        "safe_probe_helpers": ["sync_serial_probe", "sync_serial_clocked_probe", "sync_serial_clocked_variant_probe", "sync_serial_clocked_jumper_probes", "sync_serial_default_clocked_probe", "sync_serial_default_clocked_variant_probe"],
         "bounded_clocked_probe": true,
+        "bounded_variant_probe": true,
+        "variant_execution_supported": false,
+        "deferred_sync_variants": ["normal_clock", "inverted_rx_clock", "inverted_clock_output", "inverted_output_and_rx_clock"],
         "unclocked_constant_raw_observed": true,
-        "clocked_ready_observed": false,
-        "matched_receive_words": false,
+        "clocked_ready_observed": true,
+        "matched_receive_words": true,
         "default_clocked_jumper_groups": p2smart.default_clocked_jumper_groups(),
-        "reason": "current hardware probes return bounded diagnostics but do not yet show matched sync-serial receive words"
+        "reason": "clocked jumper probes use sync X=(bits-1)|0x20 and decode left-aligned receive words; phase-variant execution is still reported but not run by the source wrapper because repeated variant execution can wedge the current smart-pin setup"
     }
 end
 
@@ -2036,8 +2126,74 @@ p2smart.adc_dac_delta_policy = def()
         "calibrated_voltage": false,
         "polarity_verified": false,
         "safe_claim": "setup_readback_only",
+        "safe_probe_helpers": ["dac_adc_sampled_probe", "dac_variant_adc_sampled_probe"],
+        "unsupported_helpers": ["adc_dac_calibrated_probe"],
         "reason": "DAC output to ADC input can be staged and sampled, but calibrated voltage and polarity thresholds are not yet hardware-validated"
     }
+end
+
+p2smart.adc_dac_calibrated_probe = def(out_pin, in_pin, low_value, high_value, min_mv)
+    var checked_out = p2smart._require_pin(out_pin)
+    var checked_in = p2smart._require_pin(in_pin)
+    if checked_out == checked_in
+        raise "value_error", "out_pin and in_pin must differ"
+    end
+    p2smart._require_byte(low_value == nil ? 0 : low_value, "low_value")
+    p2smart._require_byte(high_value == nil ? 255 : high_value, "high_value")
+    p2smart._require_positive_int(min_mv == nil ? 1 : min_mv, "min_mv")
+    raise "unsupported_error", "calibrated ADC/DAC voltage and polarity interpretation is not implemented; use adc_dac_delta_policy() for the explicit boundary"
+end
+
+p2smart.counter_timer_calibration_policy = def()
+    return {
+        "ok": true,
+        "supported": false,
+        "capability": "counter_timer_calibrated_probe",
+        "status": p2smart.status("counter_timer_calibrated_probe"),
+        "policy": "unsupported_no_calibrated_timer_scaling",
+        "raw_diagnostic_status": p2smart.status("counter_variant_drive_probe"),
+        "matrix_target": "p2-smoke-smartpins-counter-timer-matrix",
+        "observed_modes": ["state_ticks", "events_ticks", "periods_ticks", "periods_highs", "counter_ticks", "counter_highs", "counter_periods"],
+        "verified_raw_claim": "selected-input observations can move and be recorded",
+        "unsupported_claims": ["microsecond_scaling", "absolute_frequency", "mode_to_unit_mapping", "jitter_bounds"],
+        "safe_probe_helpers": ["counter_variant_sample_probe", "counter_variant_drive_probe", "counter_variant_drive_modes_probe"],
+        "unsupported_helpers": ["counter_timer_calibrated_probe"],
+        "reason": "current hardware diagnostics show positive selected-input observations but not stable scaling across pulse widths, so calibrated timer/counter interpretation is not implemented"
+    }
+end
+
+p2smart.counter_timer_calibrated_probe = def(out_pin, in_pin, mode_name, pulse_us, pulses)
+    var checked_out = p2smart._require_pin(out_pin)
+    var checked_in = p2smart._require_pin(in_pin)
+    if checked_out == checked_in
+        raise "value_error", "out_pin and in_pin must differ"
+    end
+    p2smart.counter_mode(mode_name == nil ? "counter_ticks" : mode_name)
+    p2smart._require_positive_int(pulse_us == nil ? 100 : pulse_us, "pulse_us")
+    p2smart._require_positive_int(pulses == nil ? 4 : pulses, "pulses")
+    raise "unsupported_error", "calibrated smart-pin timer/counter interpretation is not implemented; use counter_timer_calibration_policy() for the explicit boundary"
+end
+
+p2smart.quadrature_mechanical_policy = def()
+    return {
+        "ok": true,
+        "supported": false,
+        "capability": "quadrature_mechanical_encoder",
+        "status": p2smart.status("quadrature_mechanical_encoder"),
+        "policy": "unsupported_no_mechanical_encoder_validation",
+        "setup_status": p2smart.status("quadrature"),
+        "synthetic_motion_status": p2smart.status("quadrature_sample_probe"),
+        "verified_motion_model": "jumper_driven_synthetic_quadrature",
+        "verified_helpers": ["quadrature", "quadrature_sample_probe"],
+        "unsupported_helpers": ["quadrature_mechanical_encoder"],
+        "unsupported_claims": ["real_encoder_bounce", "detent_direction", "missed_step_bounds", "mechanical_noise_filtering"],
+        "reason": "current hardware evidence covers setup and jumper-driven synthetic forward/reverse motion only; no real mechanical encoder debounce/noise/missed-step behavior has been validated"
+    }
+end
+
+p2smart.quadrature_mechanical_encoder = def(pin_a, pin_b, mode)
+    p2smart.quadrature(pin_a, pin_b, mode)
+    raise "unsupported_error", "mechanical quadrature encoder behavior is not implemented; use quadrature_mechanical_policy() for the explicit boundary"
 end
 
 p2smart.statuses = def()
@@ -2461,6 +2617,48 @@ p2smart.pwm_variant_counter_probe = def(out_pin, in_pin, frame, duty, divisor, m
     }
 end
 
+p2smart.pwm_duty_shape_probe = def(out_pin, in_pin, frame, low_duty, high_duty, divisor, mode_name, sample_us, settle_us)
+    var period = p2smart._require_pwm_frame(frame == nil ? p2smart.DEFAULT_PWM_FRAME : frame)
+    var lo = p2smart._require_pwm_duty(low_duty == nil ? period / 4 : low_duty, period)
+    var hi = p2smart._require_pwm_duty(high_duty == nil ? (period * 3) / 4 : high_duty, period)
+    var div = p2smart._require_pwm_divisor(divisor == nil ? p2smart.DEFAULT_PWM_DIVISOR : divisor)
+    var sample = sample_us == nil ? 5000 : p2smart._require_non_negative_int(sample_us, "sample_us")
+    var settle = settle_us == nil ? 1000 : p2smart._require_non_negative_int(settle_us, "settle_us")
+    var name = mode_name == nil ? "triangle" : mode_name
+    var counter = p2smart.counter(in_pin, p2smart.smart.count_highs)
+    var pwm = p2smart.pwm_variant(out_pin, period, lo, div, name)
+    counter.start()
+    pwm.start()
+    if settle > 0
+        p2smart.waitus(settle)
+    end
+    var low_sample = counter.sample_after(sample)
+    pwm.set_duty(hi)
+    if settle > 0
+        p2smart.waitus(settle)
+    end
+    var high_sample = counter.sample_after(sample)
+    pwm.clear()
+    counter.clear()
+    var delta = high_sample["delta"] - low_sample["delta"]
+    return {
+        "ok": high_sample["delta"] > low_sample["delta"],
+        "out_pin": pwm.pin,
+        "in_pin": counter.pin,
+        "mode_name": name,
+        "frame": period,
+        "low_duty": lo,
+        "high_duty": hi,
+        "divisor": div,
+        "low": low_sample,
+        "high": high_sample,
+        "delta": delta,
+        "sample_us": sample,
+        "settle_us": settle,
+        "pwm": pwm.info()
+    }
+end
+
 p2smart.nco_counter_probe = def(out_pin, in_pin, bit_period, increment, settle_us)
     var settle = settle_us == nil ? 2000 : p2smart._require_non_negative_int(settle_us, "settle_us")
     var counter = p2smart.counter(in_pin, nil)
@@ -2480,10 +2678,10 @@ p2smart.nco_counter_probe = def(out_pin, in_pin, bit_period, increment, settle_u
     }
 end
 
-p2smart.nco_duty_counter_probe = def(out_pin, in_pin, bit_period, duty, settle_us)
+p2smart.nco_duty_counter_probe = def(out_pin, in_pin, prescaler, duty, settle_us)
     var settle = settle_us == nil ? 2000 : p2smart._require_non_negative_int(settle_us, "settle_us")
     var counter = p2smart.counter(in_pin, nil)
-    var nco = p2smart.nco_duty(out_pin, bit_period, duty, nil)
+    var nco = p2smart.nco_duty(out_pin, prescaler, duty, nil)
     counter.start()
     nco.start()
     var sample = counter.sample_after(settle)
@@ -2496,6 +2694,47 @@ p2smart.nco_duty_counter_probe = def(out_pin, in_pin, bit_period, duty, settle_u
         "nco_duty": nco.info(),
         "counter": sample,
         "settle_us": settle
+    }
+end
+
+p2smart.nco_duty_waveform_probe = def(out_pin, in_pin, prescaler, low_duty, high_duty, sample_us, settle_us)
+    var scale = p2smart._require_positive_int(prescaler == nil ? p2smart.DEFAULT_NCO_DUTY_PRESCALER : prescaler, "prescaler")
+    var lo = p2smart._require_non_negative_int(low_duty == nil ? 0x20000000 : low_duty, "low_duty")
+    var hi = p2smart._require_non_negative_int(high_duty == nil ? 0x60000000 : high_duty, "high_duty")
+    var sample = sample_us == nil ? 5000 : p2smart._require_non_negative_int(sample_us, "sample_us")
+    var settle = settle_us == nil ? 1000 : p2smart._require_non_negative_int(settle_us, "settle_us")
+    var counter = p2smart.counter(in_pin, p2smart.smart.count_highs)
+    var nco = p2smart.nco_duty(out_pin, scale, lo, nil)
+    counter.start()
+    nco.start()
+    if settle > 0
+        p2smart.waitus(settle)
+    end
+    var low_sample = counter.sample_after(sample)
+    nco.set_duty(hi)
+    if settle > 0
+        p2smart.waitus(settle)
+    end
+    var high_sample = counter.sample_after(sample)
+    nco.clear()
+    counter.clear()
+    var delta = high_sample["delta"] - low_sample["delta"]
+    return {
+        "ok": high_sample["delta"] > low_sample["delta"],
+        "out_pin": nco.pin,
+        "in_pin": counter.pin,
+        "prescaler": scale,
+        "bit_period": scale,
+        "low_duty": lo,
+        "high_duty": hi,
+        "low_value": lo,
+        "high_value": hi,
+        "low": low_sample,
+        "high": high_sample,
+        "delta": delta,
+        "sample_us": sample,
+        "settle_us": settle,
+        "nco_duty": nco.info()
     }
 end
 
@@ -2880,6 +3119,52 @@ p2smart.async_serial_drain_probe = def(tx_pin, rx_pin, value, wait_us, baud, bit
     }
 end
 
+p2smart.async_serial_burst_probe = def(tx_pin, rx_pin, values, wait_us, baud, bits)
+    if values == nil
+        raise "value_error", "values must be a list of bytes"
+    end
+    if type(values) != "list"
+        raise "type_error", "values must be a list"
+    end
+    if values.size() == 0
+        raise "value_error", "values must not be empty"
+    end
+    var bytes = []
+    for value : values
+        bytes.push(p2smart._require_byte(value, "value"))
+    end
+    var delay = wait_us == nil ? 100 : p2smart._require_non_negative_int(wait_us, "wait_us")
+    var serial = p2smart.async_serial_pair(tx_pin, rx_pin, baud, bits, nil, nil)
+    serial.start()
+    for value : bytes
+        serial.send(value)
+    end
+    if delay > 0
+        p2smart.waitus(delay)
+    end
+    var event = serial.available()
+    var raw = serial.read_raw()
+    var sampled = (raw >> 24) & 255
+    var expected = bytes[bytes.size() - 1]
+    serial.clear()
+    return {
+        "ok": sampled == expected,
+        "tx_pin": serial.tx_pin,
+        "rx_pin": serial.rx_pin,
+        "values": bytes,
+        "count": bytes.size(),
+        "expected_latest": expected,
+        "event": event,
+        "raw": raw,
+        "sampled": sampled,
+        "latest_matched": sampled == expected,
+        "wait_us": delay,
+        "receive_model": "single_smartpin_sample",
+        "fifo_buffered": false,
+        "serial": serial.info()
+    }
+end
+
 p2smart.sync_serial_probe = def(tx_pin, rx_pin, values, wait_us, baud, bits)
     if values == nil
         raise "value_error", "values must be a list of sync serial words"
@@ -2978,11 +3263,18 @@ p2smart._sync_serial_clocked_probe_with_modes = def(data_tx_pin, data_rx_pin, cl
         "data_rx_pin": serial.rx_pin,
         "clock_tx_pin": clock.pin,
         "clock_rx_pin": clock_rx,
+        "tx_mode": tx_mode,
+        "rx_mode": rx_mode,
+        "clock_mode": clock_mode,
         "values": words,
         "results": results,
         "count": results.size(),
         "ready_count": ready_count,
         "matched_count": matched_count,
+        "matched_receive_words": ok,
+        "receive_status": p2smart.status("sync_serial_receive"),
+        "receive_policy": p2smart.sync_serial_receive_policy()["policy"],
+        "execution_supported": true,
         "wait_us": delay,
         "serial": serial.info(),
         "clock": clock.info()
@@ -3055,16 +3347,30 @@ p2smart.sync_serial_clocked_variant_probe = def(data_tx_pin, data_rx_pin, clock_
     for variant : variants
         var result = {
             "ok": false,
-            "ready": false,
-            "variant": variant["name"],
-            "tx_mode": variant["tx_mode"],
-            "rx_mode": variant["rx_mode"],
-            "clock_mode": variant["clock_mode"],
+            "data_tx_pin": p2smart._require_pin(data_tx_pin),
+            "data_rx_pin": p2smart._require_pin(data_rx_pin),
+            "clock_tx_pin": p2smart._require_pin(clock_tx_pin),
+            "clock_rx_pin": p2smart._require_pin(clock_rx_pin),
+            "values": words,
+            "results": [],
+            "count": words.size(),
             "ready_count": 0,
             "matched_count": 0,
+            "matched_receive_words": false,
+            "receive_status": p2smart.status("sync_serial_receive"),
+            "receive_policy": p2smart.sync_serial_receive_policy()["policy"],
+            "wait_us": delay,
+            "serial": nil,
+            "clock": nil,
+            "executed": false,
+            "execution_supported": false,
             "error": "execution_deferred",
-            "message": "clocked sync-serial TX/RX execution is deferred until a bounded native probe exists"
+            "message": "sync-serial phase variants are reported but not executed because repeated source-wrapper variant execution can wedge the current smart-pin setup"
         }
+        result["variant"] = variant["name"]
+        result["tx_mode"] = variant["tx_mode"]
+        result["rx_mode"] = variant["rx_mode"]
+        result["clock_mode"] = variant["clock_mode"]
         results.push(result)
     end
     return {
@@ -3078,13 +3384,18 @@ p2smart.sync_serial_clocked_variant_probe = def(data_tx_pin, data_rx_pin, clock_
         "count": words.size(),
         "ready_count": 0,
         "matched_count": 0,
+        "matched_receive_words": false,
+        "receive_status": p2smart.status("sync_serial_receive"),
+        "receive_policy": p2smart.sync_serial_receive_policy()["policy"],
         "wait_us": delay,
         "variant_count": results.size(),
+        "executed_variant_count": 0,
+        "deferred_variant_count": results.size(),
         "selected_variant": nil,
         "selected": nil,
         "execution_supported": false,
         "error": "execution_deferred",
-        "message": "clocked sync-serial TX/RX execution is deferred until a bounded native probe exists"
+        "message": "sync-serial phase variants are reported but not executed because repeated source-wrapper variant execution can wedge the current smart-pin setup"
     }
 end
 
@@ -3171,6 +3482,7 @@ p2smart.sync_serial_clocked_jumper_variant_probes = def(groups, values, wait_us,
     var failed_groups = []
     var failures = []
     var words = []
+    var ok_count = 0
     if values == nil
         raise "value_error", "values must be a list of sync serial words"
     end
@@ -3208,31 +3520,39 @@ p2smart.sync_serial_clocked_jumper_variant_probes = def(groups, values, wait_us,
             "count": words.size(),
             "ready_count": 0,
             "matched_count": 0,
+            "matched_receive_words": false,
+            "receive_status": p2smart.status("sync_serial_receive"),
+            "receive_policy": p2smart.sync_serial_receive_policy()["policy"],
             "wait_us": delay,
-            "variants": variants,
             "variant_count": variants.size(),
             "selected_variant": nil,
             "selected": nil,
             "execution_supported": false,
             "error": "execution_deferred",
-            "message": "clocked sync-serial TX/RX execution is deferred until a bounded native probe exists"
+            "message": "aggregate sync-serial phase variants are reported but not executed because repeated source-wrapper variant execution can wedge the current smart-pin setup"
         }
         results.push(result)
-        failed_groups.push(normalized)
-        failures.push({
-            "group": normalized,
-            "variant_count": variants.size(),
-            "selected_variant": nil,
-            "error": "execution_deferred",
-            "message": "clocked sync-serial TX/RX execution is deferred until a bounded native probe exists"
-        })
+        if result["ok"]
+            ok_count += 1
+        else
+            failed_groups.push(normalized)
+            failures.push({
+                "group": normalized,
+                "variant_count": result.contains("variant_count") ? result["variant_count"] : 0,
+                "selected_variant": result.contains("selected_variant") ? result["selected_variant"] : nil,
+                "ready_count": result.contains("ready_count") ? result["ready_count"] : 0,
+                "matched_count": result.contains("matched_count") ? result["matched_count"] : 0,
+                "error": result.contains("error") ? result["error"] : nil,
+                "message": result.contains("message") ? result["message"] : nil
+            })
+        end
     end
     return {
-        "ok": false,
+        "ok": ok_count == results.size(),
         "groups": normalized_groups,
         "results": results,
         "count": results.size(),
-        "ok_count": 0,
+        "ok_count": ok_count,
         "failed_count": failed_groups.size(),
         "failed_groups": failed_groups,
         "failures": failures,
@@ -3254,7 +3574,7 @@ p2smart.dac_adc_probe = def(out_pin, in_pin, low_value, high_value, settle_us, t
     var hi = p2smart._require_byte(high_value == nil ? 255 : high_value, "high_value")
     var settle = settle_us == nil ? 5000 : p2smart._require_non_negative_int(settle_us, "settle_us")
     var min_delta = threshold == nil ? 1 : p2smart._require_non_negative_int(threshold, "threshold")
-    var adc = p2smart.adc(in_pin, nil, 256)
+    var adc = p2smart.adc(in_pin, nil, nil)
     var dac = p2smart.dac(out_pin, lo, 256, nil)
     adc.start()
     dac.start()
@@ -3320,7 +3640,7 @@ p2smart.dac_adc_sampled_probe = def(out_pin, in_pin, low_value, high_value, sett
     if sample_count > 32
         raise "value_error", "samples must be <= 32"
     end
-    var adc = p2smart.adc(in_pin, nil, 256)
+    var adc = p2smart.adc(in_pin, nil, nil)
     var dac = p2smart.dac(out_pin, lo, 256, nil)
     adc.start()
     dac.start()
@@ -3388,7 +3708,7 @@ p2smart.dac_variant_adc_probe = def(out_pin, in_pin, low_value, high_value, fram
     var dac_frame = p2smart._require_16_bit(frame == nil ? p2smart.DEFAULT_DAC_FRAME : frame, "frame")
     var settle = settle_us == nil ? 5000 : p2smart._require_non_negative_int(settle_us, "settle_us")
     var min_delta = threshold == nil ? 1 : p2smart._require_non_negative_int(threshold, "threshold")
-    var adc = p2smart.adc(in_pin, nil, 256)
+    var adc = p2smart.adc(in_pin, nil, nil)
     var dac = p2smart.dac_variant(out_pin, lo, dac_frame, resistor, dither)
     adc.start()
     dac.start()
@@ -3436,7 +3756,7 @@ p2smart.dac_variant_adc_sampled_probe = def(out_pin, in_pin, low_value, high_val
     if sample_count > 32
         raise "value_error", "samples must be <= 32"
     end
-    var adc = p2smart.adc(in_pin, nil, 256)
+    var adc = p2smart.adc(in_pin, nil, nil)
     var dac = p2smart.dac_variant(out_pin, lo, dac_frame, resistor, dither)
     adc.start()
     dac.start()
@@ -3503,7 +3823,7 @@ end
 p2smart.adc_variant_dac_sampled_probe = def(out_pin, in_pin, low_value, high_value, source, family, sample_ticks, settle_us, threshold, samples, sample_interval_us)
     var lo = p2smart._require_byte(low_value == nil ? 0 : low_value, "low_value")
     var hi = p2smart._require_byte(high_value == nil ? 255 : high_value, "high_value")
-    var ticks = sample_ticks == nil ? 256 : p2smart._require_positive_int(sample_ticks, "sample_ticks")
+    var ticks = sample_ticks == nil ? p2smart.DEFAULT_ADC_SAMPLE_TICKS : p2smart._require_positive_int(sample_ticks, "sample_ticks")
     var settle = settle_us == nil ? 5000 : p2smart._require_non_negative_int(settle_us, "settle_us")
     var min_delta = threshold == nil ? 1 : p2smart._require_non_negative_int(threshold, "threshold")
     var sample_count = samples == nil ? 4 : p2smart._require_positive_int(samples, "samples")
@@ -3579,7 +3899,7 @@ end
 p2smart.adc_dac_variants_sampled_probe = def(out_pin, in_pin, low_value, high_value, source, family, sample_ticks, frame, resistor, dither, settle_us, threshold, samples, sample_interval_us)
     var lo = p2smart._require_byte(low_value == nil ? 0 : low_value, "low_value")
     var hi = p2smart._require_byte(high_value == nil ? 255 : high_value, "high_value")
-    var ticks = sample_ticks == nil ? 256 : p2smart._require_positive_int(sample_ticks, "sample_ticks")
+    var ticks = sample_ticks == nil ? p2smart.DEFAULT_ADC_SAMPLE_TICKS : p2smart._require_positive_int(sample_ticks, "sample_ticks")
     var dac_frame = p2smart._require_16_bit(frame == nil ? p2smart.DEFAULT_DAC_FRAME : frame, "frame")
     var settle = settle_us == nil ? 5000 : p2smart._require_non_negative_int(settle_us, "settle_us")
     var min_delta = threshold == nil ? 1 : p2smart._require_non_negative_int(threshold, "threshold")
@@ -3764,8 +4084,8 @@ p2smart.nco = def(pin, bit_period, increment, mode)
     return NCO(pin, bit_period, increment, mode)
 end
 
-p2smart.nco_duty = def(pin, bit_period, duty, mode)
-    return NCODuty(pin, bit_period, duty, mode)
+p2smart.nco_duty = def(pin, prescaler, duty, mode)
+    return NCODuty(pin, prescaler, duty, mode)
 end
 
 p2smart.pulse = def(pin, high_ticks, low_ticks, count, mode)

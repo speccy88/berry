@@ -74,15 +74,22 @@ var missing_name = "host_bec_missing"
 var only_name = "host_bec_only"
 var source_path = lib_dir + "/host_bec_mod.be"
 var compiled_path = cache_dir + "/host_bec_mod.bec"
-var manifest_path = cache_dir + "/host_bec_mod.bec.json"
+var manifest_path = cache_dir + "/host_bec_mod.jsn"
 var only_path = cache_dir + "/host_bec_only.bec"
-var only_manifest_path = cache_dir + "/host_bec_only.bec.json"
+var only_manifest_path = cache_dir + "/host_bec_only.jsn"
+var builtins_name = "host_bec_builtins"
+var builtins_source_path = lib_dir + "/host_bec_builtins.be"
+var builtins_compiled_path = cache_dir + "/host_bec_builtins.bec"
+var builtins_manifest_path = cache_dir + "/host_bec_builtins.jsn"
 
 remove_quiet(source_path)
 remove_quiet(compiled_path)
 remove_quiet(manifest_path)
 remove_quiet(only_path)
 remove_quiet(only_manifest_path)
+remove_quiet(builtins_source_path)
+remove_quiet(builtins_compiled_path)
+remove_quiet(builtins_manifest_path)
 
 assert(libstore.valid_module_name("host_bec_mod"))
 assert(libstore.valid_module_name("host_bec_pkg.mod"))
@@ -300,6 +307,121 @@ assert(summary["compiled_exists"] == 1)
 assert(summary["can_load"] == 0)
 assert(summary["can_emit"] == 0)
 
+var emit_name = "host_bec_emit"
+var emit_source_path = lib_dir + "/host_bec_emit.be"
+var emit_compiled_path = cache_dir + "/host_bec_emit.bec"
+var emit_manifest_path = cache_dir + "/host_bec_emit.jsn"
+remove_quiet(emit_source_path)
+remove_quiet(emit_compiled_path)
+remove_quiet(emit_manifest_path)
+var emit_source = "var host_bec_emit = module('host_bec_emit')\n"
+emit_source += "host_bec_emit.answer = 77\n"
+emit_source += "return host_bec_emit\n"
+var ef = open(emit_source_path, "w")
+ef.write(emit_source)
+ef.close()
+p2.status_info = def()
+    return {
+        "profile": "host_fake",
+        "board": "host_fake",
+        "memory": p2.heap_info(),
+        "psram": p2.psram_info(),
+        "build": {
+            "bytecode_saver": true,
+            "bytecode_loader": true,
+            "bytecode_execution": true
+        }
+    }
+end
+var emit_probe = libstore.compile_cache_probe()
+assert(emit_probe["supported"])
+assert(emit_probe["reason"] == "ok")
+var emit_plan = libstore.compile_cache_plan(emit_name)
+assert(emit_plan["can_emit"])
+assert(emit_plan["reason"] == "ok")
+assert(emit_plan["target_path"] == emit_compiled_path)
+assert(emit_plan["manifest_target_path"] == emit_manifest_path)
+var emitted = libstore.compile_cache_emit(emit_name)
+assert(emitted["ok"])
+assert(emitted["compiled_size"] > 0)
+assert(emitted["manifest_valid"])
+assert(emitted["fresh"])
+assert(emitted["usable"])
+assert(emitted["reason"] == "fresh")
+var emit_fresh = libstore.compiled_freshness(emit_name)
+assert(emit_fresh["fresh"])
+assert(emit_fresh["usable"])
+assert(emit_fresh["reason"] == "fresh")
+var emit_validation = libstore.compiled_validation(emit_name)
+assert(emit_validation["valid"])
+assert(emit_validation["reason"] == "ok")
+var emit_load_plan = libstore.compiled_load_plan(emit_name)
+assert(emit_load_plan["can_load"])
+assert(emit_load_plan["reason"] == "ok")
+var emit_resolved = libstore.resolve(emit_name)
+assert(emit_resolved["selected_kind"] == "compiled")
+assert(emit_resolved["selected_path"] == emit_compiled_path)
+assert(emit_resolved["reason"] == "compiled_supported")
+assert(emit_resolved["compiled_blocked_reason"] == nil)
+assert(libstore.load_compiled(emit_name).answer == 77)
+assert(libstore.load(emit_name).answer == 77)
+
+p2.status_info = def()
+    return {
+        "profile": "host_fake",
+        "board": "host_fake",
+        "memory": p2.heap_info(),
+        "psram": p2.psram_info(),
+        "build": {
+            "bytecode_saver": false,
+            "bytecode_loader": true,
+            "bytecode_execution": true,
+            "bytecode_sizeinfo": 0,
+            "builtin_count": 25
+        }
+    }
+end
+var builtins_source = "var host_bec_builtins = module('host_bec_builtins')\n"
+builtins_source += "host_bec_builtins.answer = 88\n"
+builtins_source += "return host_bec_builtins\n"
+var bf = open(builtins_source_path, "w")
+bf.write(builtins_source)
+bf.close()
+var builtins_bytecode = bytes().fromhex("becdfe04000000001a00000000000000")
+bf = open(builtins_compiled_path, "w")
+bf.write(builtins_bytecode)
+bf.close()
+bf = open(builtins_manifest_path, "w")
+bf.write(json.dump({
+    "format": libstore.MANIFEST_FORMAT,
+    "module": builtins_name,
+    "source_size": size(builtins_source),
+    "source_hash": libstore.hash_text(builtins_source),
+    "compiled_size": builtins_bytecode.size(),
+    "compiled_hash": libstore.hash_bytes(builtins_bytecode)
+}))
+bf.close()
+var builtins_header = libstore.compiled_header(builtins_name)
+assert(builtins_header["valid"] == false)
+assert(builtins_header["reason"] == "incompatible_bytecode_builtins")
+assert(builtins_header["sizeinfo"] == 0)
+assert(builtins_header["expected_sizeinfo"] == 0)
+assert(builtins_header["builtin_count"] == 26)
+assert(builtins_header["expected_builtin_count"] == 25)
+var builtins_fresh = libstore.compiled_freshness(builtins_name)
+assert(builtins_fresh["fresh"])
+assert(builtins_fresh["usable"] == false)
+assert(builtins_fresh["reason"] == "incompatible_bytecode_builtins")
+var builtins_resolved = libstore.resolve(builtins_name)
+assert(builtins_resolved["selected_kind"] == "source")
+assert(builtins_resolved["compiled_blocked_reason"] == "incompatible_bytecode_builtins")
+
+remove_quiet(emit_source_path)
+remove_quiet(emit_compiled_path)
+remove_quiet(emit_manifest_path)
+remove_quiet(builtins_source_path)
+remove_quiet(builtins_compiled_path)
+remove_quiet(builtins_manifest_path)
 remove_quiet(source_path)
 remove_quiet(compiled_path)
 remove_quiet(manifest_path)

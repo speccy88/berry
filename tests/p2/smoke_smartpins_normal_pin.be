@@ -1,6 +1,9 @@
 print("P2_SMOKE_BEGIN smartpins_normal_pin")
 
-import p2smart
+import p2
+
+var smart = p2.smart
+var pin = p2.pin
 
 def check(cond, label)
     if !cond
@@ -9,35 +12,36 @@ def check(cond, label)
     assert(cond)
 end
 
-var input = p2smart.normal_pin(1, nil, nil)
-var output = p2smart.normal_pin(0, nil, 0)
+def reset_pin(no)
+    smart.clear(no)
+    smart.wrpin(no, 0)
+    smart.wxpin(no, 0)
+    smart.wypin(no, 0)
+    smart.akpin(no)
+    pin.float(no)
+end
 
-input.start()
-output.start()
-check(input.info()["kind"] == "NormalPin", "input_kind")
-check(output.info()["kind"] == "NormalPin", "output_kind")
-check(input.info()["mode"] == p2smart.smart.normal, "input_mode")
-check(output.info()["mode"] == p2smart.smart.normal, "output_mode")
+reset_pin(0)
+reset_pin(1)
 
-var high = output.write_result(1)
-p2smart.waitus(100)
-var high_read = input.read_result()
-check(high["ok"], "high_write_ok")
-check(high["value"] == 1, "high_write_value")
-check(high_read["ok"], "high_read_ok")
-check(high_read["value"] == 1, "high_read_value")
+smart.start(1, smart.normal, 0, 0)
+smart.start(0, smart.oe + smart.normal, 0, 0)
+pin.dir_high(0)
+pin.float(1)
 
-var low = output.write_result(0)
-p2smart.waitus(100)
-var low_read = input.read_result()
-check(low["ok"], "low_write_ok")
-check(low["value"] == 0, "low_write_value")
-check(low_read["ok"], "low_read_ok")
-check(low_read["value"] == 0, "low_read_value")
+check(smart.normal == 0, "normal_mode")
+pin.write(0, 1)
+p2.clock.waitus(100)
+var high_read = pin.read(1)
+check(high_read == 1, "high_read_value")
 
-output.clear()
-input.clear()
-check(!output.info()["started"], "output_clear")
-check(!input.info()["started"], "input_clear")
+pin.write(0, 0)
+p2.clock.waitus(100)
+var low_read = pin.read(1)
+check(low_read == 0, "low_read_value")
+
+reset_pin(0)
+reset_pin(1)
+check(pin.read(1) == 0 || pin.read(1) == 1, "input_readable_after_clear")
 
 print("P2_SMOKE_PASS smartpins_normal_pin")

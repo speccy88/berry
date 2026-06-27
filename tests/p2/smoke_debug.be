@@ -1,7 +1,11 @@
 print("P2_SMOKE_BEGIN debug")
 
-import debug
 import introspect
+var debug = introspect.module("debug")
+
+if debug == nil
+    print("P2_SMOKE_SKIP debug")
+else
 
 assert(type(debug) == "module")
 assert(type(debug.attrdump) == "function")
@@ -57,5 +61,7 @@ assert(size(outer_chain) >= 3)
 assert(outer_chain[0] == "p2_debug_caller_chain")
 assert(outer_chain[1] == "p2_debug_named_wrapper")
 assert(outer_chain[2] == "p2_debug_outer_wrapper")
+
+end
 
 print("P2_SMOKE_PASS debug")

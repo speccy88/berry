@@ -12,7 +12,13 @@ This roadmap preserves the full ambition in `port/p2/goal.md` while keeping impl
 - Use PSRAM for inactive/cache/source/large-buffer tiers unless a profile has proven safe allocator-backed external memory.
 - Do not fake APIs. Implemented functions must work, be tested, or raise a clear unsupported error.
 - Keep the no-PSRAM P2 Edge Catalina path working while Edge32 and XMM work continues.
-- Use Catalina as the normal P2 validation toolchain.
+- Use Catalina from the sibling checkout as the normal P2 validation toolchain:
+  `TOOLCHAIN=catalina CATALINA_DIR=../Catalina`.
+- Keep routine validation focused. Current-image-unsafe or hanging paths get
+  one narrow attempt, an exact TODO/DONE defer reason, and no more routine
+  first-four-priority time until they are explicitly chosen again.
+- Treat "Priority" labels as roadmap order, not Propeller hardware names. The
+  target hardware remains Propeller 2 / P2 throughout.
 
 ## Phase 1: Baseline and tracking
 
@@ -29,22 +35,28 @@ Current progress:
 - `port/p2/TODO.md` and `port/p2/DONE.md` are the live progress trackers.
 - `make p2-baseline-guards TOOLCHAIN=catalina CATALINA_DIR=../Catalina` now
  runs the non-hardware Priority 0 guard bundle for build-log pipefail behavior,
- profile invariants, Catalina XMM `cx` sync, warning classes, and SD-write
- smoke discipline, plus required P2 documentation presence and active Catalina
- path policy.
+ profile invariants, Catalina XMM `cx` sync, warning classes, SD-write smoke
+ discipline, required P2 documentation presence, user-facing example
+ compilation/safety/final-marker checks, source-module metadata contracts, and
+ active Catalina/serial-path policy.
+- `make p2-smoke-priority1-4-min PORT=/dev/ttyUSB0 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` is the routine minimal hardware health path for the first four priority areas when hardware evidence is needed.
 
 Remaining work:
 
 - Keep `docs/source-research.md` refined as deeper Berry, Catalina, P2,
  smart-pin, PASM, memory, and RTOS implementation choices are made.
-- Run the full scripted SD smoke suite against the provisioned card.
-- Record smoke output for `p2.fs_info("/")`, `import math`, and `math.sqrt(81)`.
+- Run the full scripted SD smoke suite against the provisioned card only when
+ broad regression evidence is needed.
+- Keep narrow smoke output current for SD mount, native module import, and the
+ first-four minimal aggregate.
 - Keep documentation current after every feature addition.
 
 Risks:
 
-- Existing docs contain a mix of older status and current status. Prefer the newest handoff and live evidence when they disagree.
-- A narrow manual smoke does not prove broad standard-library coverage.
+- Historical handoff/release files can preserve old ports or captures. Active
+ user guidance should use `/dev/ttyUSB0` plus `CATALINA_DIR=../Catalina`.
+- A narrow manual smoke does not prove broad standard-library coverage; do not
+ cite minimal gates as broad regression evidence.
 
 ## Phase 2: Berry compatibility and SD filesystem
 
@@ -122,7 +134,9 @@ Acceptance evidence:
 
 - Raw smart pin operations are tested.
 - Each high-level wrapper has an example and hardware test or a documented skip condition.
-- VGA/video and USB are documented honestly until implemented.
+- VGA/video, USB, calibrated analog behavior, true UART FIFO buffering, and
+ mechanical quadrature are documented honestly until backed by implementation
+ and harness evidence.
 
 ## Phase 6: PASM2 integration
 
@@ -153,6 +167,8 @@ Work:
 - Run the child in another cog with a safe VM model.
 - Define capture behavior.
 - Reject unsafe native pointers and file handles.
+- Keep primitive child-VM transfer and `vm_partition_*` diagnostics queryable
+  while production isolated VM-cog execution remains unsupported.
 - Add handles, join, stop, kill, result, and error propagation.
 - Add channels, mailboxes, shared buffers, mutexes, and resource management.
 
@@ -162,6 +178,8 @@ Acceptance evidence:
 - Child return values and errors propagate.
 - Stress tests prove cleanup.
 - Implementation is not a fake worker queue.
+- Partition diagnostics are used as sizing evidence only when the native
+  partition allocator or isolated child-VM cog runtime changes.
 
 ## Phase 8: Cooperative tasks and RTOS-inspired primitives
 
@@ -169,8 +187,11 @@ Goal: provide Spin2-shaped cooperative multitasking inside a cog.
 
 Work:
 
-- Harden `taskspin.be` or replace it with a proven VM-safe scheduler.
-- Implement 32-slot task semantics where memory allows.
+- Keep the native P2 `task` backend as the practical current hardware path and
+ the source `modules/task.be` scheduler as richer host/non-default regression
+ coverage while the source module remains too heavy for routine P2 loading.
+- Implement 32-slot task semantics where memory allows and report the active
+ backend limit honestly.
 - Add independent stack/coroutine proof.
 - Add semaphores, mutexes, queues, event flags, and timers.
 - Add host-simulatable tests where possible.
@@ -210,7 +231,10 @@ Work:
 - Add the full requested examples set.
 - Complete user-facing docs.
 - Run host, P2, smoke, soak, and benchmark suites.
-- Audit `port/p2/TODO.md` to zero open required items.
+- Audit `port/p2/TODO.md` so all current-scope required items are done, tested,
+ or explicitly deferred/unsupported with evidence. Do not count a known unsafe
+ or hanging path as a blocker when the tracker records the focused attempt and
+ the remaining work is intentionally out of routine first-four-priority scope.
 - Confirm `port/p2/DONE.md` has evidence for every moved item.
 - Confirm `docs/coverage-matrix.md` honestly lists no hidden gaps for claimed features.
 

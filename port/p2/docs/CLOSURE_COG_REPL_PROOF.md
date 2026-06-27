@@ -2,7 +2,7 @@
 
 Target board: P2 Edge32-style board with LEDs on pins 38 and 39.
 
-This proof exercises the hardware-safe p38/p39 blinker shape for
+This proof exercises the hardware-safe pin 38 / pin 39 blinker shape for
 `p2.cog.spawn(closure, pin, rate_ms)`. The closure is still passed through the
 `spawn()` API and is invoked once on the main REPL cog during setup. Its
 positive integer return value seeds the blink period. This two-integer GPIO
@@ -77,7 +77,7 @@ separate handle namespace.
 - A final `p2.cog.info()` no longer lists the stopped handles.
 
 The repeatable source smoke for this contract is
-`/tests/p2/smoke_cog_closure.be`. It checks the accepted p38/p39 native blinker
+`/tests/p2/smoke_cog_closure.be`. It checks the accepted pin 38 / pin 39 native blinker
 shape and also checks that unsupported closure-cog shapes fail loudly without
 leaking handles.
 
@@ -93,7 +93,7 @@ python3 scripts/p2/repl_smoke.py --port /dev/cu.usbserial-P97cvdxp --suite cog-c
 The verified two-LED blinker path is a GPIO-specific native fast path. The
 passed Berry closure is called once during `spawn()` setup, but repeated
 shared-VM Berry callback execution from multiple background cogs proved unsafe
-on hardware: two active p38/p39 callbacks could wedge the REPL before
+on hardware: two active pin 38 / pin 39 callbacks could wedge the REPL before
 `p2.cog.info()` or `p2.cog.stop(handle)` could run. The broader arbitrary
 closure-on-another-cog model still needs an independent-VM, independent-heap,
 independent-GC design before it can be considered complete.

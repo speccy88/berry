@@ -2,6 +2,9 @@
 
 This guide is the short path for bringing up Berry on a Propeller 2 board from this repository.
 
+For a current one-page status summary, read `docs/P2_PORT_STATUS.md` first.
+This page stays focused on the first build, flash, and smoke commands.
+
 ## Preferred path
 
 Use Catalina for normal P2 work. FlexC remains in the tree for historical and debugging work, but Catalina is the verified path for this port.
@@ -13,7 +16,7 @@ make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 For the verified P2 Edge 32 MB RAM board path, use the convenience target and the known serial port when available:
 
 ```sh
-make p2-edge32-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-edge32-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
 ```
 
 For the no-external-RAM P2 Edge profile, keep the default COMPACT Catalina setup with `CATALINA_CLIB=-lcx` and no `-lpsram`.
@@ -21,7 +24,7 @@ For the no-external-RAM P2 Edge profile, keep the default COMPACT Catalina setup
 For the experimental huge-heap PSRAM/XMM profile on the P2 Edge 32 MB board:
 
 ```sh
-make p2-xmm-flash PORT=/dev/cu.usbserial-P97cvdxp TOOLCHAIN=catalina CATALINA_DIR=../Catalina
+make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
 ```
 
 Standalone XMM flash boot now shows an `Initializing PSRAM` spinner followed by a VM startup spinner. Current captures reach the prompt about 3 seconds after attach, and `p2.status()` reports a `15728640 B` main heap with `Berry heap in PSRAM`.
@@ -46,8 +49,8 @@ Expected current Edge32 SD result: `p2.fs_info("/")["mount_result_name"] == "ok"
 Use these only when hardware is connected and the board is already at a stable `berry>` prompt:
 
 ```sh
-make test-p2 PORT=/dev/cu.usbserial-P97cvdxp BOARD=p2edge32
-make soak-p2 PORT=/dev/cu.usbserial-P97cvdxp BOARD=p2edge32 HOURS=1
+make test-p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0 BOARD=p2edge32
+make soak-p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0 BOARD=p2edge32 HOURS=1
 ```
 
 These commands provision `/modules` and `/tests/p2` through the serial uploader before running the selected smoke suite.

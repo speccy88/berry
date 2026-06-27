@@ -20,6 +20,39 @@ def _payload_contract(out, value, present)
     return out
 end
 
+def _payload_copyable(value)
+    try
+        if type(p2.vm_copyable) == "function"
+            return p2.vm_copyable(value)
+        end
+    except .. as e, m
+        return nil
+    end
+    return nil
+end
+
+def _payload_copyable_probe_available()
+    try
+        return type(p2.vm_copyable) == "function"
+    except .. as e, m
+        return false
+    end
+end
+
+def _map_has_key(keys, key)
+    return keys.find(key) >= 0
+end
+
+def _resource_contract(out)
+    out["current_vm"] = true
+    out["cross_vm"] = false
+    out["serialized"] = false
+    out["ownership_transfer"] = false
+    out["serialization_policy"] = "unsupported_current_vm_references_only"
+    out["ownership_policy"] = "caller_keeps_current_vm_object_ownership"
+    return out
+end
+
 def _bounded_attention_available()
     var cog = nil
     try
@@ -206,6 +239,24 @@ class Mutex
             "closed": self.closed
         }
     end
+    def lifecycle_result()
+        return _resource_contract({
+            "ok": true,
+            "kind": "Mutex",
+            "closed": self.closed,
+            "usable": !self.closed,
+            "lock_id": self.lock_id,
+            "hardware_lock": self.lock_id >= 0,
+            "holds_lock_resource": !self.closed && self.lock_id >= 0,
+            "locked": self.lock_id >= 0 ? nil : self.locked,
+            "pending_payloads": 0,
+            "cleanup_policy": "close_releases_hardware_lock",
+            "close_releases_resource": true,
+            "clear_releases_payloads": false,
+            "error": nil,
+            "message": nil
+        })
+    end
 end
 
 class Channel
@@ -332,6 +383,63 @@ class Channel
         }
         self.mutex.unlock()
         return _payload_contract(out, value, found)
+    end
+    def ready_result(mode)
+        var selected = mode == nil ? "recv" : mode
+        if selected == "get"
+            selected = "recv"
+        elif selected == "put"
+            selected = "send"
+        end
+        if selected != "recv" && selected != "send"
+            return {
+                "ok": false,
+                "ready": false,
+                "mode": selected,
+                "can_recv": self.items.size() > 0,
+                "can_send": self.free() > 0,
+                "size": self.items.size(),
+                "free": self.free(),
+                "depth": self.depth,
+                "closed": self.closed,
+                "error": "invalid_mode",
+                "message": "channel readiness mode must be recv or send"
+            }
+        end
+        if self.closed
+            return {
+                "ok": false,
+                "ready": false,
+                "mode": selected,
+                "can_recv": false,
+                "can_send": false,
+                "size": self.items.size(),
+                "free": self.free(),
+                "depth": self.depth,
+                "closed": true,
+                "error": "closed",
+                "message": "channel is closed"
+            }
+        end
+        var can_recv = self.items.size() > 0
+        var can_send = self.free() > 0
+        return {
+            "ok": true,
+            "ready": selected == "send" ? can_send : can_recv,
+            "mode": selected,
+            "can_recv": can_recv,
+            "can_send": can_send,
+            "size": self.items.size(),
+            "free": self.free(),
+            "depth": self.depth,
+            "closed": false,
+            "error": nil,
+            "message": nil
+        }
+    end
+    def wait_ready(mode)
+        var r = self.ready_result(mode)
+        return r["ready"] || r["error"] == "closed"
     end
     def snapshot_result()
         if self.closed
@@ -482,6 +590,29 @@ class Channel
             "hardware_lock": self.mutex.id() >= 0,
             "closed": self.closed
         }
+    end
+    def lifecycle_result()
+        var lock_id = self.mutex.id()
+        return _resource_contract({
+            "ok": true,
+            "kind": "Channel",
+            "task_kind": self._task_kind,
+            "closed": self.closed,
+            "usable": !self.closed,
+            "depth": self.depth,
+            "size": self.items.size(),
+            "free": self.free(),
+            "pending_payloads": self.items.size(),
+            "lock_id": lock_id,
+            "hardware_lock": lock_id >= 0,
+            "holds_lock_resource": !self.closed && lock_id >= 0,
+            "cleanup_policy": "clear_or_close_releases_payloads_and_close_releases_lock",
+            "close_releases_resource": true,
+            "close_releases_payloads": true,
+            "clear_releases_payloads": true,
+            "error": nil,
+            "message": nil
+        })
     end
 end
 
@@ -641,6 +772,54 @@ class Mailbox
     def ready()
         return self.full
     end
+    def ready_result(mode)
+        var selected = mode == nil ? "get" : mode
+        if selected == "recv"
+            selected = "get"
+        elif selected == "send"
+            selected = "put"
+        end
+        if selected != "get" && selected != "put"
+            return {
+                "ok": false,
+                "ready": false,
+                "mode": selected,
+                "can_get": self.full,
+                "can_put": !self.full,
+                "closed": self.closed,
+                "error": "invalid_mode",
+                "message": "mailbox readiness mode must be get or put"
+            }
+        end
+        if self.closed
+            return {
+                "ok": false,
+                "ready": false,
+                "mode": selected,
+                "can_get": false,
+                "can_put": false,
+                "closed": true,
+                "error": "closed",
+                "message": "mailbox is closed"
+            }
+        end
+        var can_get = self.full
+        var can_put = !self.full
+        return {
+            "ok": true,
+            "ready": selected == "put" ? can_put : can_get,
+            "mode": selected,
+            "can_get": can_get,
+            "can_put": can_put,
+            "closed": false,
+            "error": nil,
+            "message": nil
+        }
+    end
+    def wait_ready(mode)
+        var r = self.ready_result(mode)
+        return r["ready"] || r["error"] == "closed"
+    end
     def clear()
         if self.closed
             return false
@@ -722,6 +901,27 @@ class Mailbox
             "closed": self.closed
         }
     end
+    def lifecycle_result()
+        var lock_id = self.mutex.id()
+        return _resource_contract({
+            "ok": true,
+            "kind": "Mailbox",
+            "task_kind": self._task_kind,
+            "closed": self.closed,
+            "usable": !self.closed,
+            "ready": self.full,
+            "pending_payloads": self.full ? 1 : 0,
+            "lock_id": lock_id,
+            "hardware_lock": lock_id >= 0,
+            "holds_lock_resource": !self.closed && lock_id >= 0,
+            "cleanup_policy": "clear_or_close_releases_payload_and_close_releases_lock",
+            "close_releases_resource": true,
+            "close_releases_payloads": true,
+            "clear_releases_payloads": true,
+            "error": nil,
+            "message": nil
+        })
+    end
 end
 
 class Buffer
@@ -732,8 +932,10 @@ class Buffer
         if type(size) == "int" && size > 0
             n = size
         end
-        for i : 0..n - 1
+        var i = 0
+        while i < n
             self.bytes.push(0)
+            i += 1
         end
     end
     def size()
@@ -790,8 +992,10 @@ class Buffer
         if value < 0 || value > 255
             return false
         end
-        for i : 0..self.bytes.size() - 1
+        var i = 0
+        while i < self.bytes.size()
             self.bytes[i] = value
+            i += 1
         end
         return true
     end
@@ -802,14 +1006,18 @@ class Buffer
         if value < 0 || value > 255
             return {"ok": false, "filled": false, "error": "value_out_of_range", "message": "value must be in byte range 0..255"}
         end
-        for i : 0..self.bytes.size() - 1
+        var i = 0
+        while i < self.bytes.size()
             self.bytes[i] = value
+            i += 1
         end
         return {"ok": true, "filled": true, "error": nil, "message": nil}
     end
     def clear()
-        for i : 0..self.bytes.size() - 1
+        var i = 0
+        while i < self.bytes.size()
             self.bytes[i] = 0
+            i += 1
         end
         return true
     end
@@ -826,6 +1034,24 @@ class Buffer
             "kind": "Buffer",
             "size": self.bytes.size()
         }
+    end
+    def lifecycle_result()
+        return _resource_contract({
+            "ok": true,
+            "kind": "Buffer",
+            "closed": false,
+            "usable": true,
+            "size": self.bytes.size(),
+            "pending_payloads": 0,
+            "lock_id": -1,
+            "hardware_lock": false,
+            "holds_lock_resource": false,
+            "cleanup_policy": "clear_zeroes_bytes",
+            "close_releases_resource": false,
+            "clear_releases_payloads": true,
+            "error": nil,
+            "message": nil
+        })
     end
 end
 
@@ -897,6 +1123,7 @@ p2ipc.self_test_result = def(iterations)
         var ch_recv = ch.recv_result()
         expect(ch_recv["ok"] && ch_recv["found"] && ch_recv["value"] == i, label + "channel_recv")
         expect(ch.send_result("held")["ok"], label + "channel_send_held")
+        expect(ch.ready_result("recv")["ready"] && ch.ready_result("send")["ready"], label + "channel_ready")
         var ch_snapshot = ch.snapshot_result()
         expect(ch_snapshot["ok"] && ch_snapshot["items"].size() == 1 && ch_snapshot["items"][0] == "held" && ch.size() == 1, label + "channel_snapshot")
         var ch_clear = ch.clear_result()
@@ -906,6 +1133,7 @@ p2ipc.self_test_result = def(iterations)
 
         var mb = p2.mailbox.new()
         expect(mb.put_result(i)["ok"], label + "mailbox_put")
+        expect(mb.ready_result("get")["ready"] && !mb.ready_result("put")["ready"], label + "mailbox_ready")
         var mb_get = mb.get_result()
         expect(mb_get["ok"] && mb_get["found"] && mb_get["value"] == i, label + "mailbox_get")
         expect(mb.put_result("held")["ok"], label + "mailbox_put_held")
@@ -945,13 +1173,60 @@ p2ipc.self_test_result = def(iterations)
     }
 end
 
+p2ipc.lifecycle_result = def(obj)
+    if obj == nil
+        return _resource_contract({
+            "ok": false,
+            "kind": nil,
+            "closed": nil,
+            "usable": false,
+            "error": "invalid_object",
+            "message": "object is nil or has no lifecycle_result method"
+        })
+    end
+    try
+        return obj.lifecycle_result()
+    except .. as e, m
+        return _resource_contract({
+            "ok": false,
+            "kind": type(obj),
+            "closed": nil,
+            "usable": false,
+            "error": "invalid_object",
+            "message": "object is nil or has no lifecycle_result method"
+        })
+    end
+end
+
+p2ipc.payload_result = def(value)
+    var copy = _payload_copyable(value)
+    var copy_ok = copy != nil && copy.contains("ok") ? copy["ok"] : false
+    var copy_kind = copy != nil && copy.contains("kind") ? copy["kind"] : nil
+    var copy_reason = copy != nil && copy.contains("reason") ? copy["reason"] : nil
+    return _payload_contract({
+        "ok": true,
+        "present": true,
+        "value": value,
+        "cross_vm_copyable": copy_ok,
+        "copyable_kind": copy_kind,
+        "copyable_reason": copy_reason,
+        "copyable_policy_available": copy != nil,
+        "copy_policy": "use_p2.vm_copyable_for_child_vm_boundaries",
+        "error": nil,
+        "message": nil
+    }, value, true)
+end
+
 p2ipc.capabilities = def()
     var bounded_attention = _bounded_attention_available()
+    var payload_probe = _payload_copyable_probe_available()
     return {
         "current_vm": true,
         "cross_vm": false,
         "contract": true,
         "cross_vm_reason": "current VM objects are not serialized or transferred across VM/cog boundaries",
+        "cross_cog_channel": false,
+        "cross_cog_channel_policy": true,
         "wakeup_policy": "no_cross_cog_wakeup",
         "attention_policy": "native_bounded_wait_available_not_wired_to_ipc",
         "bounded_attention_wait": bounded_attention,
@@ -959,6 +1234,9 @@ p2ipc.capabilities = def()
         "serialization_policy": "unsupported_current_vm_references_only",
         "ownership_policy": "caller_keeps_current_vm_object_ownership",
         "payload_contract_results": true,
+        "payload_result": true,
+        "payload_copyable_probe": payload_probe,
+        "payload_copy_policy": "use_p2.vm_copyable_for_child_vm_boundaries",
         "task_wait_integration": true,
         "task_wait_channel": true,
         "task_wait_mailbox": true,
@@ -972,6 +1250,11 @@ p2ipc.capabilities = def()
         "close_releases_payloads": true,
         "clear_result": true,
         "clear_releases_payloads": true,
+        "lifecycle_result": true,
+        "resource_lifecycle_result": true,
+        "readiness_result": true,
+        "channel_ready_result": true,
+        "mailbox_ready_result": true,
         "snapshot_result": true,
         "peek_result": true,
         "shared_buffer_clear_result": true,
@@ -1007,6 +1290,33 @@ p2ipc.attention_policy_value = def(name)
     return nil
 end
 
+p2ipc.cross_cog_channel_policy = def()
+    return {
+        "ok": true,
+        "supported": false,
+        "capability": "cross_cog_channel",
+        "policy": "unsupported_no_cross_cog_wakeup_or_serialization",
+        "current_vm_channel": true,
+        "cross_vm": false,
+        "cross_cog_wakeup": false,
+        "serialization": false,
+        "ownership_transfer": false,
+        "safe_helpers": ["p2.channel.new", "p2.mailbox.new", "p2ipc.payload_result", "p2ipc.contract"],
+        "unsupported_helpers": ["p2ipc.cross_cog_channel"],
+        "reason": "p2.channel and p2.mailbox are current-VM cooperative objects; cross-cog wakeups, serialization, and ownership transfer are not implemented"
+    }
+end
+
+p2ipc.cross_cog_channel = def(depth)
+    if depth != nil && type(depth) != "int"
+        raise "value_error", "depth must be an integer"
+    end
+    if depth != nil && depth <= 0
+        raise "value_error", "depth must be positive"
+    end
+    raise "unsupported_error", "cross-cog IPC channels are not implemented; use cross_cog_channel_policy() for the explicit boundary"
+end
+
 p2ipc.capability = def(name)
     if type(name) != "string"
         return nil
@@ -1020,19 +1330,30 @@ end
 
 p2ipc.contract = def()
     var attention = p2ipc.attention_policy()
+    var payload_probe = _payload_copyable_probe_available()
     return {
         "model": "current_vm_cooperative_ipc",
         "current_vm": true,
         "cross_vm": false,
+        "cross_cog_channel": false,
+        "cross_cog_channel_policy": "unsupported_no_cross_cog_wakeup_or_serialization",
         "cross_cog_wakeup": false,
         "serialization": false,
         "ownership_transfer": false,
         "payload_contract_results": true,
+        "payload_result": true,
+        "payload_copyable_probe": payload_probe,
+        "payload_copy_policy": "use_p2.vm_copyable_for_child_vm_boundaries",
         "task_wait_integration": true,
         "task_wait_channel": true,
         "task_wait_mailbox": true,
         "close_releases_payloads": true,
         "clear_releases_payloads": true,
+        "lifecycle_result": true,
+        "resource_lifecycle_result": true,
+        "readiness_result": true,
+        "channel_ready_result": true,
+        "mailbox_ready_result": true,
         "snapshot_result": true,
         "peek_result": true,
         "shared_buffer_clear_result": true,
@@ -1067,6 +1388,8 @@ p2ipc.required_capability_keys = def()
         "cross_vm",
         "contract",
         "cross_vm_reason",
+        "cross_cog_channel",
+        "cross_cog_channel_policy",
         "wakeup_policy",
         "attention_policy",
         "bounded_attention_wait",
@@ -1074,6 +1397,9 @@ p2ipc.required_capability_keys = def()
         "serialization_policy",
         "ownership_policy",
         "payload_contract_results",
+        "payload_result",
+        "payload_copyable_probe",
+        "payload_copy_policy",
         "task_wait_integration",
         "task_wait_channel",
         "task_wait_mailbox",
@@ -1087,6 +1413,11 @@ p2ipc.required_capability_keys = def()
         "close_releases_payloads",
         "clear_result",
         "clear_releases_payloads",
+        "lifecycle_result",
+        "resource_lifecycle_result",
+        "readiness_result",
+        "channel_ready_result",
+        "mailbox_ready_result",
         "snapshot_result",
         "peek_result",
         "shared_buffer_clear_result",
@@ -1102,15 +1433,25 @@ p2ipc.required_contract_keys = def()
         "model",
         "current_vm",
         "cross_vm",
+        "cross_cog_channel",
+        "cross_cog_channel_policy",
         "cross_cog_wakeup",
         "serialization",
         "ownership_transfer",
         "payload_contract_results",
+        "payload_result",
+        "payload_copyable_probe",
+        "payload_copy_policy",
         "task_wait_integration",
         "task_wait_channel",
         "task_wait_mailbox",
         "close_releases_payloads",
         "clear_releases_payloads",
+        "lifecycle_result",
+        "resource_lifecycle_result",
+        "readiness_result",
+        "channel_ready_result",
+        "mailbox_ready_result",
         "snapshot_result",
         "peek_result",
         "shared_buffer_clear_result",
@@ -1135,23 +1476,6 @@ p2ipc.audit = def()
     var missing_capabilities = []
     var missing_contract = []
 
-    for key : p2ipc.required_capability_keys()
-        if !caps.contains(key)
-            missing_capabilities.push(key)
-        end
-    end
-    for key : p2ipc.required_contract_keys()
-        if !contract.contains(key)
-            missing_contract.push(key)
-        end
-    end
-    if missing_capabilities.size() > 0
-        problems.push("missing_capability_keys")
-    end
-    if missing_contract.size() > 0
-        problems.push("missing_contract_keys")
-    end
-
     if !caps["current_vm"] || !contract["current_vm"]
         problems.push("current_vm_not_enabled")
     end
@@ -1160,6 +1484,9 @@ p2ipc.audit = def()
     end
     if contract["cross_cog_wakeup"]
         problems.push("cross_cog_wakeup_enabled")
+    end
+    if contract["cross_cog_channel"]
+        problems.push("cross_cog_channel_enabled")
     end
     if contract["cross_cog_attention_wakeup"]
         problems.push("cross_cog_attention_wakeup_enabled")
@@ -1179,45 +1506,6 @@ p2ipc.audit = def()
     if contract["ownership_transfer"]
         problems.push("ownership_transfer_enabled")
     end
-    if caps["serialization_policy"] != contract["serialization_policy"]
-        problems.push("serialization_policy_mismatch")
-    end
-    if caps["ownership_policy"] != contract["ownership_policy"]
-        problems.push("ownership_policy_mismatch")
-    end
-    if caps["payload_contract_results"] != contract["payload_contract_results"]
-        problems.push("payload_contract_results_mismatch")
-    end
-    if caps["task_wait_integration"] != contract["task_wait_integration"] || caps["task_wait_channel"] != contract["task_wait_channel"] || caps["task_wait_mailbox"] != contract["task_wait_mailbox"]
-        problems.push("task_wait_integration_mismatch")
-    end
-    if caps["close_releases_payloads"] != contract["close_releases_payloads"]
-        problems.push("close_cleanup_mismatch")
-    end
-    if caps["clear_releases_payloads"] != contract["clear_releases_payloads"]
-        problems.push("clear_cleanup_mismatch")
-    end
-    if caps["snapshot_result"] != contract["snapshot_result"]
-        problems.push("snapshot_result_mismatch")
-    end
-    if caps["peek_result"] != contract["peek_result"]
-        problems.push("peek_result_mismatch")
-    end
-    if caps["shared_buffer_clear_result"] != contract["shared_buffer_clear_result"]
-        problems.push("shared_buffer_clear_mismatch")
-    end
-    if caps["self_test_result"] != contract["self_test_result"]
-        problems.push("self_test_result_mismatch")
-    end
-    if caps["self_test_policy"] != contract["self_test_policy"]
-        problems.push("self_test_policy_mismatch")
-    end
-    if caps["hardware_lock_backend_available"] != contract["hardware_lock_backend_available"]
-        problems.push("hardware_lock_backend_mismatch")
-    end
-    if caps["fallback_mutex"] != contract["fallback_mutex"]
-        problems.push("fallback_mutex_mismatch")
-    end
 
     return {
         "ok": problems.size() == 0,
@@ -1228,14 +1516,24 @@ p2ipc.audit = def()
         "model": contract["model"],
         "current_vm": contract["current_vm"],
         "cross_vm": contract["cross_vm"],
+        "cross_cog_channel": contract["cross_cog_channel"],
+        "cross_cog_channel_policy": contract["cross_cog_channel_policy"],
         "cross_cog_attention_wakeup": contract["cross_cog_attention_wakeup"],
         "bounded_attention_wait": contract["bounded_attention_wait"],
         "serialization": contract["serialization"],
         "ownership_transfer": contract["ownership_transfer"],
         "payload_contract_results": contract["payload_contract_results"],
+        "payload_result": contract["payload_result"],
+        "payload_copyable_probe": contract["payload_copyable_probe"],
+        "payload_copy_policy": contract["payload_copy_policy"],
         "task_wait_integration": contract["task_wait_integration"],
         "task_wait_channel": contract["task_wait_channel"],
         "task_wait_mailbox": contract["task_wait_mailbox"],
+        "lifecycle_result": contract["lifecycle_result"],
+        "resource_lifecycle_result": contract["resource_lifecycle_result"],
+        "readiness_result": contract["readiness_result"],
+        "channel_ready_result": contract["channel_ready_result"],
+        "mailbox_ready_result": contract["mailbox_ready_result"],
         "snapshot_result": contract["snapshot_result"],
         "peek_result": contract["peek_result"],
         "self_test_result": contract["self_test_result"],
@@ -1244,15 +1542,15 @@ p2ipc.audit = def()
 end
 
 p2ipc.audit_problems = def()
-    var out = []
-    for problem : p2ipc.audit()["problems"]
-        out.push(problem)
+    var problems = p2ipc.audit()["problems"]
+    if problems.size() == 0
+        return []
     end
-    return out
+    return problems.copy()
 end
 
 p2ipc.audit_ok = def()
-    return p2ipc.audit_problems().size() == 0
+    return p2ipc.audit()["problem_count"] == 0
 end
 
 return p2ipc

@@ -52,10 +52,14 @@ p2mem._gc_collect = def()
 end
 
 p2mem._cache_item_for = def(report, name)
-    for item : report["items"]
+    var items = report["items"]
+    var i = 0
+    while i < items.size()
+        var item = items[i]
         if item["name"] == name
             return item
         end
+        i += 1
     end
     return nil
 end
@@ -90,6 +94,8 @@ p2mem.capabilities = def()
         "gc": true,
         "gc_result": true,
         "evict": true,
+        "memory_pressure_policy": true,
+        "memory_pressure_result": true,
         "native_cache": true,
         "native_cache_result_wrappers": true,
         "native_cache_owner_helpers": true,
@@ -125,6 +131,8 @@ p2mem.required_capability_keys = def()
         "gc",
         "gc_result",
         "evict",
+        "memory_pressure_policy",
+        "memory_pressure_result",
         "native_cache",
         "native_cache_result_wrappers",
         "native_cache_owner_helpers",
@@ -156,6 +164,9 @@ p2mem.audit = def()
     end
     if p2mem.capability("stats_result") != caps["stats_result"]
         problems.push("stats_result_lookup_mismatch")
+    end
+    if p2mem.capability("memory_pressure_policy") != caps["memory_pressure_policy"]
+        problems.push("memory_pressure_policy_lookup_mismatch")
     end
     if p2mem.capability("missing") != nil
         problems.push("missing_lookup_not_nil")
@@ -207,6 +218,8 @@ p2mem.audit = def()
         "module_result": caps["module_result"],
         "cache_result": caps["cache_result"],
         "gc_result": caps["gc_result"],
+        "memory_pressure_policy": caps["memory_pressure_policy"],
+        "memory_pressure_result": caps["memory_pressure_result"],
         "native_cache_result_wrappers": caps["native_cache_result_wrappers"],
         "invalid_module_name_diagnostics": caps["invalid_module_name_diagnostics"],
         "snapshot_diagnostics": caps["snapshot_diagnostics"]
@@ -222,64 +235,68 @@ p2mem.audit_ok = def()
 end
 
 p2mem._module_record = def(name, report)
-    var info = libstore.info(name)
+    var source_path = libstore.source_path(name)
+    var compiled_path = libstore.compiled_path(name)
     var cached = p2mem._cache_item_for(report, name)
     var psram_bytes = cached == nil ? 0 : cached["size"]
     var storage_tier = cached == nil ? "sd" : "sd+psram_source_cache"
+    var compiled_exists = compiled_path != nil
+    var compile_reason = source_path == nil ? "source_missing" : libstore.compile_cache_reason
+    var compiled_reason = compiled_exists ? "unchecked_fast_summary" : "compiled_missing"
 
     return {
         "module": name,
         "name": name,
-        "source_path": info["path"],
-        "compiled_path": info["compiled_path"],
-        "compiled_exists": info["compiled_exists"],
-        "compiled_supported": info["compiled_supported"],
-        "compiled_manifest_path": info["compiled_manifest_path"],
-        "compiled_manifest_exists": info["compiled_manifest_exists"],
-        "compiled_manifest_valid": info["compiled_manifest_valid"],
-        "compiled_manifest_reason": info["compiled_manifest_reason"],
-        "compiled_fresh": info["compiled_fresh"],
-        "compiled_usable": info["compiled_usable"],
-        "compiled_freshness_reason": info["compiled_freshness_reason"],
-        "compiled_loader_supported": info["compiled_loader_supported"],
-        "compiled_bytecode_loader": info["compiled_bytecode_loader"],
-        "compiled_validator_supported": info["compiled_validator_supported"],
-        "compiled_loader_reason": info["compiled_loader_reason"],
-        "compiled_validation_supported": info["compiled_validation_supported"],
-        "compiled_validation_valid": info["compiled_validation_valid"],
-        "compiled_validation_reason": info["compiled_validation_reason"],
-        "compiled_load_can": info["compiled_load_can"],
-        "compiled_load_reason": info["compiled_load_reason"],
-        "compiled_status_can_load": info["compiled_status_can_load"],
-        "compiled_status_can_emit": info["compiled_status_can_emit"],
-        "compiled_status_reason": info["compiled_status_reason"],
-        "compile_cache_supported": info["compile_cache_supported"],
-        "compile_cache_can_emit": info["compile_cache_can_emit"],
-        "compile_cache_reason": info["compile_cache_reason"],
-        "compile_cache_blocked_reason": info["compile_cache_blocked_reason"],
-        "compile_cache_target_path": info["compile_cache_target_path"],
-        "compile_cache_manifest_target_path": info["compile_cache_manifest_target_path"],
-        "compile_cache_manifest_format": info["compile_cache_manifest_format"],
-        "compile_cache_manifest_template_available": info["compile_cache_manifest_template_available"],
-        "compile_cache_manifest_template_reason": info["compile_cache_manifest_template_reason"],
-        "selected_path": info["selected_path"],
-        "selected_kind": info["selected_kind"],
-        "resolve_reason": info["resolve_reason"],
-        "source_fallback": info["source_fallback"],
+        "source_path": source_path,
+        "compiled_path": compiled_path,
+        "compiled_exists": compiled_exists,
+        "compiled_supported": libstore.compiled_supported,
+        "compiled_manifest_path": libstore.compiled_manifest_candidate_path(name),
+        "compiled_manifest_exists": false,
+        "compiled_manifest_valid": false,
+        "compiled_manifest_reason": "missing",
+        "compiled_fresh": false,
+        "compiled_usable": false,
+        "compiled_freshness_reason": compiled_reason,
+        "compiled_loader_supported": libstore.compiled_loader_supported,
+        "compiled_bytecode_loader": libstore.compiled_loader_supported,
+        "compiled_validator_supported": libstore.compiled_validator_supported,
+        "compiled_loader_reason": libstore.compiled_loader_reason,
+        "compiled_validation_supported": libstore.compiled_validator_supported,
+        "compiled_validation_valid": false,
+        "compiled_validation_reason": compiled_reason,
+        "compiled_load_can": false,
+        "compiled_load_reason": compiled_reason,
+        "compiled_status_can_load": false,
+        "compiled_status_can_emit": false,
+        "compiled_status_reason": compiled_reason,
+        "compile_cache_supported": libstore.compile_cache_supported,
+        "compile_cache_can_emit": false,
+        "compile_cache_reason": compile_reason,
+        "compile_cache_blocked_reason": compile_reason,
+        "compile_cache_target_path": libstore.compiled_candidate_path(name),
+        "compile_cache_manifest_target_path": libstore.compiled_manifest_candidate_path(name),
+        "compile_cache_manifest_format": libstore.MANIFEST_FORMAT,
+        "compile_cache_manifest_template_available": compiled_exists && source_path != nil,
+        "compile_cache_manifest_template_reason": source_path == nil ? "source_missing" : (compiled_exists ? "ok" : "compiled_missing"),
+        "selected_path": source_path,
+        "selected_kind": source_path == nil ? nil : "source",
+        "resolve_reason": source_path == nil ? "missing" : "source",
+        "source_fallback": source_path != nil && compiled_exists,
         "storage_tier": storage_tier,
-        "source_size": info["source_size"],
-        "source_hash": info["source_hash"],
-        "compiled_size": info["compiled_size"],
-        "compiled_hash": info["compiled_hash"],
+        "source_size": cached == nil ? 0 : cached["size"],
+        "source_hash": cached == nil ? nil : cached["source_hash"],
+        "compiled_size": 0,
+        "compiled_hash": nil,
         "mtime": nil,
         "hub_bytes_used": 0,
         "psram_bytes_used": psram_bytes,
-        "cache_hit_count": info["cache_hit_count"],
-        "cache_miss_count": info["cache_miss_count"],
+        "cache_hit_count": libstore.cache_hits_for(name),
+        "cache_miss_count": libstore.cache_misses_for(name),
         "refcount": nil,
         "pinned": false,
-        "last_used": info["last_used"],
-        "exists": info["exists"],
+        "last_used": cached == nil ? nil : cached["last_used"],
+        "exists": source_path != nil,
         "cached": cached != nil,
         "cache": cached
     }
@@ -339,6 +356,89 @@ p2mem.native_cache = def()
         "limit": status["limit"],
         "libstore_base": status["libstore_base"]
     }
+end
+
+p2mem._map_value = def(m, name, fallback)
+    if type(m) == "map" || type(m) == "instance"
+        if m.contains(name)
+            return m[name]
+        end
+    end
+    return fallback
+end
+
+p2mem.memory_pressure_policy = def()
+    var heap = p2.heap_info()
+    var psram = p2.psram_info()
+    var native = p2mem.native_cache()
+    var store = libstore.status()
+
+    var heap_total = p2mem._map_value(heap, "total", 0)
+    var heap_free = p2mem._map_value(heap, "free", p2mem._map_value(heap, "main", 0))
+    var heap_used = p2mem._map_value(heap, "used", heap_total > heap_free ? heap_total - heap_free : 0)
+    var psram_bytes = p2mem._map_value(psram, "bytes", 0)
+    var psram_heap = p2mem._map_value(psram, "heap", false)
+    var psram_block_bytes = p2mem._map_value(psram, "block_bytes", 0)
+    var pointer_window_bytes = p2mem._map_value(heap, "pointer_window_bytes", 0)
+    var main_inside_window = p2mem._map_value(heap, "main_inside_pointer_window", nil)
+
+    return {
+        "model": "p2_memory_pressure_diagnostics",
+        "source": "p2.heap_info_p2.psram_info_p2.psram_cache_info_libstore.status",
+        "heap_total": heap_total,
+        "heap_free": heap_free,
+        "heap_used": heap_used,
+        "heap_high_water_bytes": nil,
+        "heap_high_water_tracking": false,
+        "heap_high_water_policy": "not_instrumented_yet",
+        "psram_available": p2mem._map_value(psram, "available", false),
+        "psram_bytes": psram_bytes,
+        "psram_heap": psram_heap,
+        "psram_block_bytes": psram_block_bytes,
+        "pointer_window_bytes": pointer_window_bytes,
+        "main_inside_pointer_window": main_inside_window,
+        "native_cache_available": native["available"],
+        "native_cache_limit": native["limit"],
+        "native_cache_used": native["used"],
+        "native_cache_free": native["free"],
+        "native_cache_items": native["entry_count"],
+        "source_cache_items": store["psram_cache_items"],
+        "source_cache_used": store["psram_cache_used"],
+        "source_cache_free": store["psram_cache_free"],
+        "low_memory_churn_anchor": "tests/p2/smoke_import_churn.be",
+        "low_memory_behavior_status": "bounded_import_churn_covered_broader_pressure_soak_open",
+        "production_release_gate": false,
+        "retry_policy": "stop_routine_priority_work_unless_native_high_water_or_allocator_changes"
+    }
+end
+
+p2mem.memory_pressure_value = def(name)
+    if type(name) != "string"
+        return nil
+    end
+    var policy = p2mem.memory_pressure_policy()
+    if policy.contains(name)
+        return policy[name]
+    end
+    return nil
+end
+
+p2mem.memory_pressure_result = def()
+    try
+        return {
+            "ok": true,
+            "policy": p2mem.memory_pressure_policy(),
+            "error": nil,
+            "message": nil
+        }
+    except .. as e, m
+        return {
+            "ok": false,
+            "policy": nil,
+            "error": e,
+            "message": m
+        }
+    end
 end
 
 p2mem.native_cache_reserve = def(size, owner)
@@ -1322,7 +1422,10 @@ p2mem.cache = def()
     var report = libstore.cache_report()
     var items = []
 
-    for item : report["items"]
+    var report_items = report["items"]
+    var i = 0
+    while i < report_items.size()
+        var item = report_items[i]
         items.push({
             "module": item["name"],
             "name": item["name"],
@@ -1343,6 +1446,7 @@ p2mem.cache = def()
             "chunk_count": item["chunks"],
             "chunks": item["chunks"]
         })
+        i += 1
     end
 
     return {

@@ -6,6 +6,12 @@ import sys
 
 
 MARKER_RE = re.compile(r"P2_SD_WRITE_AUDIT\s+max_write_opens=(\d+)")
+BROAD_WRITE_EXCEPTIONS = {
+    "tests/p2/smoke_bec_fallback.be": (
+        "broad .bec fallback regression intentionally rewrites cache/source "
+        "fixtures; routine validation uses smoke_bec_fallback_min.be"
+    ),
+}
 WRITE_OPEN_RE = re.compile(
     r"\bopen\s*\([^,\n]+,\s*(['\"])(?:w|w\+|a|a\+|r\+)\1"
 )
@@ -55,6 +61,22 @@ def audit_file(path):
     return problems
 
 
+def has_direct_write_open(path):
+    return WRITE_OPEN_RE.search(path.read_text(errors="replace")) is not None
+
+
+def broad_write_exception_reason(path):
+    normalized = path.as_posix()
+    if normalized in BROAD_WRITE_EXCEPTIONS:
+        return BROAD_WRITE_EXCEPTIONS[normalized]
+    cwd = Path.cwd()
+    try:
+        relative = path.resolve().relative_to(cwd.resolve()).as_posix()
+    except ValueError:
+        return None
+    return BROAD_WRITE_EXCEPTIONS.get(relative)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Audit marked P2 SD-writing smokes for small cleanup-oriented writes."
@@ -75,6 +97,11 @@ def main():
             continue
         if MARKER_RE.search(path.read_text(errors="replace")):
             marked += 1
+        elif has_direct_write_open(path) and broad_write_exception_reason(path) is None:
+            problems.append(
+                f"{path}: writes to SD but is missing P2_SD_WRITE_AUDIT "
+                "max_write_opens marker"
+            )
         problems.extend(audit_file(path))
 
     if problems:

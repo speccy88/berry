@@ -1,23 +1,31 @@
-import p2smart
+import p2
 
 var pin = 0
 var frame = 200
-var pwm = p2smart.pwm(pin, frame, 0, 1, nil)
+var divisor = 1
+var mode = p2.smart.oe + p2.smart.pwm_triangle
 
 print("PWM fade on pin", pin)
-pwm.start()
+p2.smart.start(pin, mode, frame * 65536 + divisor, 0)
 
-for step : 0..5
+var step = 0
+while step <= 5
     var duty = step * 40
-    var result = pwm.set_duty_result(duty, 50000)
-    print("duty", result["ok"], "pin", result["pin"], "value", result["duty"], "frame", result["frame"], "divisor", result["divisor"], "settle", result["settle_us"])
+    p2.smart.wypin(pin, duty)
+    p2.waitus(50000)
+    print("duty", duty, "pin", pin, "frame", frame, "divisor", divisor)
+    step += 1
 end
 
-for step : 5..0
+step = 5
+while step >= 0
     var duty = step * 40
-    var result = pwm.set_duty_result(duty, 50000)
-    print("duty", result["ok"], "pin", result["pin"], "value", result["duty"], "frame", result["frame"], "divisor", result["divisor"], "settle", result["settle_us"])
+    p2.smart.wypin(pin, duty)
+    p2.waitus(50000)
+    print("duty", duty, "pin", pin, "frame", frame, "divisor", divisor)
+    step -= 1
 end
 
-pwm.clear()
+p2.smart.clear(pin)
+p2.pin.float(pin)
 print("pwm fade done")

@@ -13,8 +13,10 @@
 - `p2.asm.cogstop(cog)`
 - `p2.asm.cogcheck(cog)`
 - `p2.asm.capabilities()`
+- `p2.asm.capability(name)`
 - `p2.asm.required_capability_keys()`
 - `p2.asm.abi()`
+- `p2.asm.abi_value(name)`
 - `p2.asm.required_abi_keys()`
 - `p2.asm.audit()`
 - `p2.asm.audit_problems()`
@@ -22,6 +24,8 @@
 - `p2.asm.marker_blob()`
 - `p2.asm.launch_probe(target_cog=nil)`
 - `p2.asm.launch_loaded_probe(blob, target_cog=nil)`
+- `p2.asm.fixture_call(operation, lhs, rhs, target_cog=nil)`
+- `p2.asm.fixture_add(lhs, rhs, target_cog=nil)`
 
 `p2.asm.load(path)` reads a non-empty 4-byte-aligned PASM blob file into a Berry
 `bytes` object. The current focused hardware smoke verifies loading staged
@@ -41,18 +45,34 @@ PASM image can wedge or consume a cog, so supported launch still needs a
 documented ABI and broader safe fixture coverage.
 
 `p2.asm.capabilities()` and `p2.asm.abi()` report the current contract in code:
-safe intrinsics, SD loading, raw cog controls, and exact marker-fixture launch
-are available; arbitrary SD blob launch, function bridges, inline assembler, and
-unsafe assembly are reported unsupported with policy/reason metadata.
+safe intrinsics, SD loading, raw cog controls, exact marker-fixture launch, and
+fixed named-operation fixture-call mailbox proofs are available; arbitrary SD
+blob launch, general function bridges, inline assembler, and unsafe assembly
+are reported unsupported with policy/reason metadata.
 `p2.asm.audit()` self-checks that the duplicated policy metadata exposed through
 `capabilities()` and `abi()` is still consistent. `required_capability_keys()`
 and `required_abi_keys()` expose the expected metadata fields, while `audit()`
 reports `missing_capability_keys` and `missing_abi_keys`; `audit_problems()` and
-`audit_ok()` provide compact status for smoke tooling.
+`audit_ok()` provide compact status for smoke tooling. `capability(name)` and
+`abi_value(name)` return one field from those maps, or `nil` for unknown or
+non-string names, for compact policy probes.
 
 `p2.asm.launch_probe()` is the current safe launch proof. It starts a known-good
 mailbox-marker PASM fixture, waits for the marker and child cog id, stops the
 child cog, and returns diagnostics confirming the marker and cleanup.
+
+`p2.asm.fixture_call(operation, lhs, rhs, target_cog=nil)` is the current safe
+fixture-call proof. It starts a Catalina-assembled PASM fixture generated from
+`tools/p2/pasm/fixture_call.pasm`, passes two integer arguments through a Hub
+mailbox in `PTRA`, dispatches one named built-in operation, waits for
+completion, stops the child cog, and returns a map with `ok`, `operation`,
+`result`, `cog_seen_matches`, `stopped`, and
+`policy == "fixed_named_operation_fixture_mailbox_only"`. Supported operation
+names are reported by `fixture_call_ops` and currently are `add`, `sub`, `xor`,
+`and`, and `or`. `p2.asm.fixture_add(lhs, rhs, target_cog=nil)` is a
+compatibility wrapper for `fixture_call("add", lhs, rhs, target_cog)`. This
+proves a small mailbox argument/return path, but it is not a general
+arbitrary-function bridge.
 
 `p2.asm.marker_blob()` returns that fixture as bytes. The supported SD-loaded
 launch proof is:
@@ -73,10 +93,12 @@ bytes. Non-matching blobs fail instead of becoming arbitrary PASM execution; the
 PASM layout smoke now asserts that a staged dummy blob is rejected.
 
 `examples/pasm_direct.be` demonstrates the same safe surface for users: guarded
-intrinsics, policy fields from `capabilities()` / `abi()`, and
-`launch_probe()`. It also prints the policy-audit result. It deliberately
-reports the unsupported arbitrary-blob and function-bridge policies instead of
-trying to execute arbitrary PASM.
+intrinsics, policy fields from `capabilities()` / `abi()` plus direct
+`capability(name)` / `abi_value(name)` lookups, `launch_probe()`, and
+`fixture_add(40, 2)` plus named `fixture_call("sub", ...)` and
+`fixture_call("xor", ...)` operations. It also prints the policy-audit result.
+It deliberately reports the unsupported arbitrary-blob and general
+function-bridge policies instead of trying to execute arbitrary PASM.
 
 ## Unsafe assembly policy
 
@@ -93,29 +115,33 @@ The ABI metadata lists the missing parser, code-generation, clobber, label,
 relocation, source-mapping, optimizer, and safety rules before inline assembly
 can be considered.
 
-## Current marker fixture ABI
+## Current fixture ABIs
 
-The only documented launch ABI today is the built-in marker fixture used by
-`launch_probe()` and `launch_loaded_probe()`:
+The only documented launch/call ABIs today are built-in fixtures:
 
-- `status`: `marker_fixture_only`
+- `status`: `marker_and_fixture_call_only`
 - Entry path: `_cogstart_PASM(cog, program, mailbox)`
 - Argument passing: the fixture receives a hub mailbox pointer in `PTRA`.
-- Return value: there is no function-call return ABI. The child writes a marker
-  and its cog id into the mailbox; the caller validates both fields.
+- Marker return value: the child writes a marker and its cog id into the
+  mailbox; the caller validates both fields.
+- Fixture-call return value: the fixed operation fixture reads an operation code
+  plus `lhs` and `rhs` longs from the mailbox, writes one integer result, writes
+  its cog id, marks the mailbox done, and parks until the caller stops it.
 - Cleanup: the caller stops the child cog after the marker is observed or after
-  timeout handling.
+  fixture-call completion or timeout handling.
 - Hub pointer rule: the fixture executes from a copied hub buffer.
-- PSRAM pointer rule: no PSRAM pointers are passed to the fixture.
+- PSRAM pointer rule: no PSRAM pointers are passed to the fixtures.
 - Cog/LUT rule: no caller-visible cog RAM or LUT state contract exists yet.
 - Interrupt rule: no interrupt contract exists yet.
-- Stack rule: no stack is provided to the marker fixture.
+- Stack rule: no stack is provided to the fixtures.
 
-These fields are queryable from Berry through `p2.asm.abi()`. The hardware
-smoke asserts `status == "marker_fixture_only"`, `argument == "mailbox pointer
-in PTRA"`, and that both `arbitrary_blob_abi` and `function_bridge_abi` are
-false. It also asserts the unsafe assembly gate metadata remains default-off and
-that `p2.asm.audit()` reports the policy fields as internally consistent.
+These fields are queryable from Berry through `p2.asm.abi()` or direct
+`p2.asm.abi_value(name)` lookups. The hardware smoke asserts
+`status == "marker_and_fixture_call_only"`,
+`argument == "mailbox pointer in PTRA"`, `fixture_call_abi == true`, and that
+both `arbitrary_blob_abi` and general `function_bridge_abi` are false. It also
+asserts the unsafe assembly gate metadata remains default-off and that
+`p2.asm.audit()` reports the policy fields as internally consistent.
 
 ## ABI rules still required before arbitrary blobs
 
@@ -144,10 +170,13 @@ only through explicit unsafe/diagnostic work.
 
 ## Function bridge status
 
-There is no supported PASM function bridge yet. A future bridge must define a
-call shape before exposing helpers such as `load_function(...)`: accepted
-argument types, marshalling, return type, timeout behavior, child cog reuse,
-resource cleanup, and error propagation. The current `p2.asm.abi()` reports
+There is no supported general PASM function bridge yet. The fixed
+`fixture_call(...)` mailbox path proves a handful of built-in integer
+operations, but a future general bridge must define a call shape before exposing
+helpers such as
+`load_function(...)`: accepted argument types, marshalling, return type, timeout
+behavior, child cog reuse, resource cleanup, and error propagation. The current
+`p2.asm.abi()` reports
 `function_bridge_abi == false` and
 `function_bridge_policy == "unsupported_no_calling_convention"`.
 `p2.asm.capabilities()["function_bridge_reason"]` and
@@ -159,9 +188,13 @@ tooling can distinguish this from a hidden or partially enabled bridge.
 PASM blob loading into `bytes` is implemented through `p2.asm.load()` and
 `libstore.pasm_load()`. The known-good launch path is verified through
 `p2.asm.launch_probe()` and through an SD-staged exact fixture using
-`p2.asm.marker_blob()` plus `p2.asm.launch_loaded_probe()`. The current ABI and
-capability state is queryable through `p2.asm.abi()` and
-`p2.asm.capabilities()`, with `p2.asm.audit()` available for consistency checks.
+`p2.asm.marker_blob()` plus `p2.asm.launch_loaded_probe()`. The current
+fixture-call path is verified through `p2.asm.fixture_call(operation, lhs, rhs)`
+and `p2.asm.fixture_add(lhs, rhs)`. The current ABI and capability state is
+queryable through `p2.asm.abi()` and
+`p2.asm.capabilities()` or the direct `p2.asm.abi_value(name)` and
+`p2.asm.capability(name)` helpers, with `p2.asm.audit()` available for
+consistency checks.
 Arbitrary SD-loaded PASM launch still needs a public ABI and broader fixture
-coverage before it should be called supported. PASM function bridges remain
-open.
+coverage before it should be called supported. General PASM function bridges
+remain open.

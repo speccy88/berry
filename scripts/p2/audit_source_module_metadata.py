@@ -10,6 +10,7 @@ MODULE_DIR = Path("modules")
 CAPABILITIES_DEF = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\.capabilities = def\(\)")
 KEY_RE = re.compile(r'"([^"]+)"\s*:')
 STRING_RE = re.compile(r'"([^"]+)"')
+P2COMPAT_UNSAFE_LINE_RE = re.compile(r"^\s*(for|try|except)\b")
 
 
 def find_function_body(lines, start_index):
@@ -41,6 +42,14 @@ def audit_file(path):
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
     problems = []
+
+    if path.name == "p2compat.be":
+        for lineno, line in enumerate(lines, 1):
+            match = P2COMPAT_UNSAFE_LINE_RE.match(line)
+            if match:
+                problems.append(
+                    f"{path}:{lineno}: p2compat source smoke unsafe syntax: {match.group(1)}"
+                )
 
     for index, line in enumerate(lines):
         match = CAPABILITIES_DEF.match(line)
@@ -88,7 +97,10 @@ def main():
     if problems:
         return 1
 
-    print(f"ok: {checked} source modules expose required capability metadata")
+    print(
+        f"ok: {checked} source modules expose required capability metadata; "
+        "p2compat source smoke avoids current-image-unsafe syntax"
+    )
     return 0
 
 

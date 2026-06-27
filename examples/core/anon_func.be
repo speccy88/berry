@@ -1,7 +1,8 @@
 # anonymous function and closure
 def count(x)
     var arr = []
-    for i : 0 .. x
+    var i = 0
+    while i <= x
         arr.push(
             def (n) # loop variable cannot be used directly as free variable
                 return def ()
@@ -9,12 +10,16 @@ def count(x)
                 end
             end(i) # define and call anonymous function
         )
+        i += 1
     end
     return arr
 end
 
-for xx : count(6)
-    print(xx()) # 0, 1, 4 ... n * n
+var closures = count(6)
+var i = 0
+while i < closures.size()
+    print("closure square:", i, closures[i]()) # 0, 1, 4 ... n * n
+    i += 1
 end
 
-return count
+print("anonymous closure demo done")

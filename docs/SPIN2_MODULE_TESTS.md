@@ -34,17 +34,18 @@ make spin2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 Temporary RAM SD-loader build:
 
 ```sh
-make spin2-sd-loader TOOLCHAIN=catalina \
- CATALINA_DIR=../Catalina
+make spin2-sd-loader TOOLCHAIN=catalina CATALINA_DIR=../Catalina
 ```
 
 Direct hardware transfer requires a connected P2 serial port:
 
 ```sh
-make spin2-sd-put TOOLCHAIN=catalina PORT=/dev/cu.usbserial-XXXX \
+make spin2-sd-put TOOLCHAIN=catalina CATALINA_DIR=../Catalina \
+ PORT=/dev/ttyUSB0 \
  SPIN2_SD_FILE=spin2/build/MB_01ALU.BIN
 
-make spin2-sd-sync TOOLCHAIN=catalina PORT=/dev/cu.usbserial-XXXX
+make spin2-sd-sync TOOLCHAIN=catalina CATALINA_DIR=../Catalina \
+ PORT=/dev/ttyUSB0
 ```
 
 `make spin2` writes uppercase DOS 8.3 binaries to `spin2/build/*.BIN`, records
@@ -142,9 +143,12 @@ mb_20pat event/interrupt syntax matrix, runtime-safe return
 sample integer arguments, prints the result, and stops the cog. Hardware results
 for the generated binaries are recorded in `spin2/SPIN2_BINARY_TEST_REPORT.md`.
 
-`examples/spin2/standalone_suite.be` checks that high-level `S2_*.BIN`
-images are rejected safely with `value_error`, then starts and stops the raw
-standalone PASM image without invoking the mailbox call path.
+`examples/spin2/standalone_suite.be` reports the archived/default module
+boundary on normal P2 builds without using `try/except`, because exception
+capture can hang current normal images. On an explicit Spin2-enabled regression
+build, keep high-level `S2_*.BIN` rejection checks in a dedicated harness rather
+than the default user-facing example, then start and stop the raw standalone
+PASM image without invoking the mailbox call path.
 
 ## Compile-Only PASM2 Matrix
 
