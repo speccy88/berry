@@ -29,7 +29,40 @@ def registered(profile, extra=()):
     return modules
 
 
+def cached(profile):
+    """Modules cached eagerly by the effective P2 library initializer."""
+    compiler = shutil.which('cc') or shutil.which('gcc')
+    if not compiler:
+        raise RuntimeError('A C preprocessor is required')
+    command = [compiler, '-E', '-P', '-x', 'c',
+               '-I' + str(ROOT / 'port/p2/include'), '-I' + str(ROOT / 'src'),
+               '-DBE_P2_PROFILE=' + str(profile), '-']
+    # Load the real configuration first: this profile deliberately fixes the
+    # precompiled-object flag, so a command-line -D cannot override it. Only
+    # suppress the generated string-table declaration dependency afterwards;
+    # be_libs_p2.c does not select registrations with this flag.
+    source = ('#include "berry_conf.h"\n'
+              '#undef BE_USE_PRECOMPILED_OBJECT\n'
+              '#define BE_USE_PRECOMPILED_OBJECT 0\n'
+              '#include "' + str(ROOT / 'port/p2/overrides/be_libs_p2.c') + '"\n')
+    result = subprocess.run(command, input=source, capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(result.stderr)
+    text = result.stdout
+    modules = set(re.findall(r'be_cache_(\w+)module\(vm\);', text))
+    aliases = set(re.findall(r'be_cache_builtin_value\(vm,\s*"([^"]+)"', text))
+    return modules, aliases
+
+
 class ModuleConfigurationTests(unittest.TestCase):
+    def test_xmm_eager_and_table_inventory_agree(self):
+        eager, aliases = cached(4)
+        self.assertEqual(eager, {'math', 'string', 'json', 'os', 'p2', 'i2c', 'spi', 'task'})
+        self.assertEqual(aliases, {'bytes'})
+        self.assertEqual(registered(4) | eager, {
+            'debug', 'gc', 'global', 'introspect', 'json', 'os', 'strict',
+            'sys', 'task', 'time', 'undefined', 'math', 'string', 'p2', 'i2c', 'spi'})
+
     def test_xmm_includes_core_extended_libraries(self):
         modules = registered(4)
         self.assertTrue(EXTENDED <= modules,
