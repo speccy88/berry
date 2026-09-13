@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shlex
 import shutil
@@ -19,8 +20,9 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 CASES = ["scheduler_reset", "rng_isolation", "rng_sequence", "scheduler_isolation",
          "scheduler_gc", "rng_boundaries", "lifecycle", "allocation_failures",
-         "allocation_reentry", "interrupt_isolation", "cooperative_cancel"]
+         "allocation_reentry", "interrupt_isolation", "cooperative_cancel", "module_name_root"]
 INPUTS = ["tools/test_p2_vm_state.py", "tests/native/test_p2_vm_state.c",
+          "tests/native/p2_module_root_seams.h", "port/p2/overrides/be_p2lib_p2.c",
           "port/p2/overrides/be_tasklib_p2.c",
           "port/p2/overrides/be_math_stringlib_p2.c",
           "port/p2/runtime/p2_clock.c", "port/p2/include/p2_clock.h",
@@ -107,6 +109,23 @@ def main():
                      "cartesian_t _polxy(polar_t);\npolar_t _xypol(cartesian_t);\n#endif\n")
         (snap / "propeller2.h").write_text(registers)
         (snap / "prop2.h").write_text(registers)
+        # Compile the actual cache-builder body. Only the hardware namespace
+        # population is replaced by explicit real-GC allocation-pressure seams.
+        p2_source = (snap / "port/p2/overrides/be_p2lib_p2.c").read_text()
+        signature = "void be_cache_p2module(bvm *vm)"
+        if p2_source.count(signature) != 1:
+            raise RuntimeError("P2 cache-builder profile layout changed")
+        start = p2_source.index(signature)
+        end = p2_source.index("\n}\n", start) + len("\n}\n")
+        body = p2_source[start:end]
+        helpers = sorted(set(re.findall(r"p2_module_add_\w+(?=\(vm\))", body)))
+        if not helpers:
+            raise RuntimeError("cache-builder namespace seams missing")
+        seams = (snap / "tests/native/p2_module_root_seams.h").read_text()
+        seams += "\n".join("static void " + name +
+                             "(bvm *vm) { root_allocation_pressure(vm); }"
+                             for name in helpers)
+        (snap / "tests/native/p2_cache_under_test.h").write_text(seams + "\n" + body)
         target_out = out
         if args.builder:
             host_root = args.docker_host_root

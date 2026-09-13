@@ -624,6 +624,34 @@ static void cooperative_cancel(void)
     delete_checked(a); delete_checked(b);
 }
 
+#include "p2_cache_under_test.h"
+
+static void module_name_root(void)
+{
+    bvm *vm = plain_vm();
+    ptrdiff_t old_top = vm->top - vm->stack;
+    be_cache_p2module(vm);
+    CHECK(vm->top - vm->stack == old_top);
+    be_gc_collect(vm);
+    be_getglobal(vm, "p2");
+    CHECK(be_ismodule(vm, -1));
+    {
+        const char *name = be_module_name(var_toobj(vm->top - 1));
+        CHECK(name != NULL);
+        if (name) CHECK(!strcmp(name, "p2"));
+    }
+    be_setglobal(vm, "expected_p2");
+    be_pop(vm, 1);
+    /* Real module-cache lookup: never treat a global alias as import proof. */
+    script(vm, "import p2");
+    be_getglobal(vm, "expected_p2");
+    be_getglobal(vm, "p2");
+    CHECK(var_ismodule(vm->top - 1));
+    CHECK(var_toobj(vm->top - 1) == var_toobj(vm->top - 2));
+    be_pop(vm, 2);
+    be_vm_delete(vm);
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 2) return 2;
@@ -638,6 +666,7 @@ int main(int argc, char **argv)
     else if (!strcmp(argv[1], "allocation_reentry")) allocation_reentry();
     else if (!strcmp(argv[1], "interrupt_isolation")) interrupt_isolation();
     else if (!strcmp(argv[1], "cooperative_cancel")) cooperative_cancel();
+    else if (!strcmp(argv[1], "module_name_root")) module_name_root();
     else return 2;
     CHECK(live_blocks == 0);
     printf("{\"case\":\"%s\",\"checks\":%u,\"failures\":%u,\"pointer_bits\":%u,\"bint_bits\":%u}\n",

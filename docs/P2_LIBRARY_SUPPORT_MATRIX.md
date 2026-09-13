@@ -86,11 +86,20 @@ LCV3: import plus missing-attribute exception.
 ## Fresh board coverage status
 
 The LCV3 descriptor exercises eight standard-library groups and one bounded P2
-information group. All eight standard-library groups passed on the fresh cancellation
-candidate. The P2 information group timed out and is **not a pass**; a bounded
-per-call trace is being used to locate the failing operation. Source declarations
-and a successful target build are not behavioral evidence. Earlier single-VM board
-receipts remain evidence only for their recorded older images.
+information group. All nine groups passed on the rebuilt module-root candidate,
+including correct `introspect.name(p2)` and `import p2` after standard-library GC
+pressure. The previous candidate's import timeout is retained as red evidence:
+the P2 cache key was unrooted during allocating namespace construction. A real-VM
+forced-GC regression now covers the actual cache-builder body, metadata, import
+identity, stack balance and VM deletion. Hardware namespace population is an
+explicit allocation-pressure seam in that host test, not simulated hardware.
+
+Verified image SHA-256:
+`54f6468089bbee5084af2ed41cbb510643a7e88ad40f2cd07e3267fd23a3161d`
+
+The P2 group is bounded information/smoke coverage, not full numeric, peripheral
+or multicog conformance. Source declarations are not behavioral evidence, and
+earlier single-VM board receipts apply only to their recorded older images.
 
 The portable host case is `tests/p2_stdlib_portable.be`; the explicit-device
 Catalina Lua harness is `tools/p2/hil/stdlib.lua`. Full host CI-body execution also

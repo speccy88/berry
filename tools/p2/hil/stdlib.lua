@@ -38,7 +38,7 @@ send("__lcv3_stdlib(); print(\"LCV3_HIL_OK\", \"stdlib\", 8)\r")
 wait_text("LCV3_HIL_OK stdlib 8", 30)
 
 -- P2-only, informational and bounded: no waits, pin/bus, storage, or cog lifecycle.
-local p2_info = {"def __lcv3_p2_info()", "import p2", "assert(type(p2.clock.freq())=='int' && p2.clock.freq()>0)", "assert(type(p2.clock.mode())=='int')", "assert(type(p2.clock.cnt())=='int')", "assert(type(p2.clock.cnth())=='int')", "assert(p2.math.isqrt(81)==9)", "assert(type(p2.math.muldiv64(7,6,2))=='int')", "assert(type(p2.math.rev(1))=='int')", "assert(type(p2.math.encod(1))=='int')", "assert(type(p2.rng.rnd())=='int')", "assert(type(p2.cog.id())=='int')", "print('LCV3_CASE p2_info')", "end"}
+local p2_info = {"def __lcv3_p2_info()", "import p2", "import introspect", "assert(introspect.name(p2)=='p2')", "assert(type(p2.clock.freq())=='int' && p2.clock.freq()>0)", "assert(type(p2.clock.mode())=='int')", "assert(type(p2.clock.cnt())=='int')", "assert(type(p2.clock.cnth())=='int')", "assert(p2.math.isqrt(81)==9)", "assert(type(p2.math.muldiv64(7,6,2))=='int')", "assert(type(p2.math.rev(1))=='int')", "assert(type(p2.math.encod(1))=='int')", "assert(type(p2.rng.rnd())=='int')", "assert(type(p2.cog.id())=='int')", "print('LCV3_CASE p2_info')", "end"}
 enter(p2_info)
 send("__lcv3_p2_info(); print(\"LCV3_HIL_OK\", \"p2_info\", 1)\r")
 wait_text("LCV3_HIL_OK p2_info 1", 30)

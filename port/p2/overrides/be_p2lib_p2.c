@@ -9383,8 +9383,12 @@ static int m_p2_member(bvm *vm)
 
 void be_cache_p2module(bvm *vm)
 {
-    bstring *name = be_newstr(vm, "p2");
+    bstring *name;
 
+    /* Namespace construction can collect. Keep the cache key on the VM
+     * stack until both the module metadata and import cache own it. */
+    be_pushstring(vm, "p2");
+    name = var_tostr(vm->top - 1);
     be_newmodule(vm);
     p2_module_set_func(vm, "member", m_p2_member);
     p2_module_set_func(vm, "vm_cog_ping", m_p2_vm_cog_ping);
@@ -9406,5 +9410,5 @@ void be_cache_p2module(bvm *vm)
 #endif
     be_cache_module(vm, name);
     be_setglobal(vm, "p2");
-    be_pop(vm, 1);
+    be_pop(vm, 2); /* module and temporary cache-key root */
 }
