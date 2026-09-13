@@ -199,6 +199,11 @@ P2_COMPILE_ARCHIVED_WORKER ?= 0
 P2_RUNTIME_SRCS := \
 	$(P2_RUNTIME_DIR)/berry_port.c \
 	$(P2_RUNTIME_DIR)/main_p2.c \
+	$(P2_RUNTIME_DIR)/p2_clock.c \
+	$(P2_RUNTIME_DIR)/p2_hub_heap.c \
+	$(P2_RUNTIME_DIR)/p2_exception_memory.c \
+	$(P2_RUNTIME_DIR)/p2_vm_state.c \
+	$(P2_RUNTIME_DIR)/p2_cog_registry.c \
 	$(P2_RUNTIME_DIR)/p2_heap.c \
 	$(P2_RUNTIME_DIR)/p2_smartserial.c
 P2_OVERRIDE_SRCS := \

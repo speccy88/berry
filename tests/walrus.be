@@ -51,9 +51,11 @@ if type(global) == "module"
 
     # same bug when using index
     def id(x) return x end
-    l = [10,11]
+    # Inside this block, an implicit local does not populate the global module.
+    global.l = [10,11]
     def walrus_global_index_value() return id(global.l[0] := 42) end
     assert(walrus_global_index_value() == 42)
+    assert(global.l == [42,11])
     # bug: returns [42, 11]
 else
     print("skip walrus global-module member checks")

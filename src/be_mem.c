@@ -210,6 +210,9 @@ BERRY_API void* be_realloc(bvm *vm, void *ptr, size_t old_size, size_t new_size)
 #if BE_USE_PERF_COUNTERS
             vm->counter_mem_realloc++;
 #endif
+#if !defined(BE_P2_NO_SMALL_POOLS) || !BE_P2_NO_SMALL_POOLS
+            /* Slot-size shortcuts are valid only when allocations really use
+             * rounded pool slots. Direct allocations have exact byte sizes. */
             if (new_size <= POOL32_SIZE || old_size <=POOL32_SIZE) {
                 /* complex case with different pools */
                 if (new_size <= POOL16_SIZE && old_size <= POOL16_SIZE) {
@@ -231,7 +234,9 @@ BERRY_API void* be_realloc(bvm *vm, void *ptr, size_t old_size, size_t new_size)
                         free_from_pool(vm, ptr, old_size);
                     }
                 }
-            } else {
+            } else
+#endif
+            {
                 block = realloc(ptr, new_size);
                 // serial_debug("realloc from %p to %p size=%i", ptr, block, new_size);
             }

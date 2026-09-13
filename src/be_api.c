@@ -519,15 +519,7 @@ BERRY_API bbool be_isderived(bvm *vm, int index)
 
 BERRY_API const char *be_typename(bvm *vm, int index)
 {
-    bvalue *v = be_indexof(vm, index);
-    if (var_isinstance(v)) {
-        binstance *instance = var_toobj(v);
-        const char *name = str(be_instance_name(instance));
-        if (!strcmp(name, "map") || !strcmp(name, "list")) {
-            return name;
-        }
-    }
-    return be_vtype2str(v);
+    return be_vtype2str(be_indexof(vm, index));
 }
 
 BERRY_API const char *be_classname(bvm *vm, int index)

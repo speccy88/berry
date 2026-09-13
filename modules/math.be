@@ -25,7 +25,7 @@ math._cordic = false
 try
     import p2
     var _probe = p2.polxy(1, 0)
-    if type(_probe) == "map"
+    if isinstance(_probe, map)
         math._p2 = p2
         math._cordic = true
     end

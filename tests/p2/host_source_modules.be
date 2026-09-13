@@ -659,3 +659,7 @@ try
     os.remove("tmp/p2_host_config")
 except .. as e, m
 end
+
+# Keep collection-class coverage in the existing host gate, in a fresh VM so
+# its test-only module cache registrations cannot affect this fixture.
+assert(os.system("./berry", "tests/p2/host_collection_types.be") == 0)

@@ -186,16 +186,24 @@ static int check2hex(blexer *lexer, int c)
     return c;
 }
 
-static int read_hex(blexer *lexer, const char *src)
+static int read_hex(blexer *lexer, const char *src, const char *end)
 {
-    int c = check2hex(lexer, *src++);
+    int c;
+    if (end - src < 2) {
+        be_lexerror(lexer, "invalid hexadecimal number");
+    }
+    c = check2hex(lexer, *src++);
     return ((unsigned)c << 4) + check2hex(lexer, *src);
 }
 
-static int read_oct(blexer *lexer, const char *src)
+static int read_oct(blexer *lexer, const char *src, const char *token_end)
 {
     int c = 0;
-    const char *end = src + 3;
+    const char *end;
+    if (token_end - src < 3) {
+        be_lexerror(lexer, "invalid octal number");
+    }
+    end = src + 3;
     while (src < end && is_octal(*src)) {
         c = 8 * c + *src++ - '0';
     }
@@ -221,10 +229,10 @@ char* be_load_unicode(char *dst, const char *src)
         }
     }
     /* convert unicode to utf8 */
-    if (ucode < 0x007F) {
+    if (ucode < 0x0080) {
         /* unicode: 0000 - 007F -> utf8: 0xxxxxxx */
         *dst++ = (char)(ucode & 0x7F);
-    } else if (ucode < 0x7FF) {
+    } else if (ucode < 0x800) {
         /* unicode: 0080 - 07FF -> utf8: 110xxxxx 10xxxxxx */
         *dst++ = (char)(((ucode >> 6) & 0x1F) | 0xC0);
         *dst++ = (char)((ucode & 0x3F) | 0x80);
@@ -249,6 +257,9 @@ static void tr_string(blexer *lexer)
             be_lexerror(lexer, "unfinished string");
             break;
         case '\\':
+            if (src == end) {
+                be_lexerror(lexer, "unfinished string");
+            }
             if (*src != 'u') {
                 switch (*src) {
                 case 'a': c = '\a'; break;
@@ -262,9 +273,9 @@ static void tr_string(blexer *lexer)
                 case '\'': c = '\''; break;
                 case '"': c = '"'; break;
                 case '?': c = '?'; break;
-                case 'x': c = read_hex(lexer, ++src); ++src; break;
+                case 'x': c = read_hex(lexer, ++src, end); ++src; break;
                 default:
-                    c = read_oct(lexer, src);
+                    c = read_oct(lexer, src, end);
                     if (c != EOS) {
                         src += 2;
                     }
@@ -274,6 +285,10 @@ static void tr_string(blexer *lexer)
                 *dst++ = (char)c;
             } else {
                 /* unicode encoding, ex "\uF054" is equivalent to "\xEF\x81\x94"*/
+                /* The 'u' and all four digits must belong to this token. */
+                if (end - src < 5) {
+                    be_lexerror(lexer, "incorrect '\\u' encoding");
+                }
                 dst = be_load_unicode(dst, src + 1);
                 src += 5;
                 if (dst == NULL) {

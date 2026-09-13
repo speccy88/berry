@@ -73,7 +73,7 @@ assert(p2.heap_info()["main"] < baseline)
 
 batch = nil
 var gc_report = p2.gc()
-assert(type(gc_report) == "map")
+assert(isinstance(gc_report, map))
 assert(gc_report["freed"] >= 0)
 
 import binary_heap
@@ -106,8 +106,7 @@ assert(configstore.path("demo") == "/berry/config/demo.json")
 assert(libstore.info("math")["exists"])
 assert(p2compat.status("environment") == p2compat.UNSUPPORTED)
 assert(type(p2ipc.Mutex) == "class")
-var p2mem_stats_type = type(p2mem.stats())
-assert(p2mem_stats_type == "map" || p2mem_stats_type == "instance")
+assert(isinstance(p2mem.stats(), map))
 assert(type(p2smart.GPIOInput) == "class")
 assert(type(p2smart.GPIOOutput) == "class")
 assert(type(p2smart.PWM) == "class")

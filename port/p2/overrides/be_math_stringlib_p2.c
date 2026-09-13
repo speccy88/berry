@@ -2,6 +2,7 @@
 #include "be_module.h"
 #include "be_strlib.h"
 #include "be_string.h"
+#include "p2_vm_state.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -102,8 +103,6 @@ static const breal P2_MATH_LN10 = (breal)2.3025850929940456840179914546844;
 static const breal P2_MATH_TURN = (breal)4294967296.0;
 static const breal P2_MATH_NAN_SENTINEL = (breal)-1234567.0;
 static const int32_t P2_MATH_CORDIC_SCALE = 1000000;
-
-static bint p2_math_rand_state = 1357911;
 
 static int p2_math_arg_real(bvm *vm, int idx, breal *out)
 {
@@ -862,27 +861,18 @@ static int p2_math_rad(bvm *vm)
 
 static int p2_math_srand(bvm *vm)
 {
-    if (be_top(vm) >= 1 && be_isint(vm, 1)) {
-        p2_math_rand_state = be_toint(vm, 1);
-    } else {
-        p2_math_rand_state = 1357911;
-    }
-    if (p2_math_rand_state < 0) {
-        p2_math_rand_state = -p2_math_rand_state;
-    }
-    if (p2_math_rand_state <= 0) {
-        p2_math_rand_state = 1;
-    }
+    /* Preserve the argument policy: missing/non-int uses the default seed;
+     * extra arguments are ignored. Integer conversion is modulo 2^32, even
+     * for INT_MIN. Zero uses a fixed nonzero fallback, not entropy. */
+    uint32_t seed = be_top(vm) >= 1 && be_isint(vm, 1)
+        ? (uint32_t)be_toint(vm, 1) : P2_RNG_DEFAULT_SEED;
+    p2_vm_srand(vm, seed);
     be_return_nil(vm);
 }
 
 static int p2_math_rand(bvm *vm)
 {
-    p2_math_rand_state += (bint)7919;
-    if (p2_math_rand_state > (bint)2000000000) {
-        p2_math_rand_state = (bint)7919;
-    }
-    be_pushint(vm, p2_math_rand_state);
+    be_pushint(vm, (bint)p2_vm_rand(vm));
     be_return(vm);
 }
 

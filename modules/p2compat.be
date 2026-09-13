@@ -253,8 +253,8 @@ end
 
 p2compat.build = def()
     var status = p2.status_info()
-    if type(status) == "map"
-        if status.contains("build") && type(status["build"]) == "map"
+    if isinstance(status, map)
+        if status.contains("build") && isinstance(status["build"], map)
             return status["build"]
         end
     end
@@ -263,8 +263,8 @@ end
 
 p2compat.runtime = def()
     var status = p2.status_info()
-    if type(status) == "map"
-        if status.contains("runtime") && type(status["runtime"]) == "map"
+    if isinstance(status, map)
+        if status.contains("runtime") && isinstance(status["runtime"], map)
             return status["runtime"]
         end
     end
@@ -378,7 +378,7 @@ p2compat.child_vm_transfer_policy = def()
 end
 
 p2compat._heap_value = def(heap, name, fallback)
-    if type(heap) == "map" && heap.contains(name)
+    if isinstance(heap, map) && heap.contains(name)
         return heap[name]
     end
     return fallback
@@ -535,7 +535,7 @@ p2compat.board_profile_value = def(name)
         return nil
     end
     var value = policy[name]
-    if type(value) == "list"
+    if isinstance(value, list)
         if name == "reserved_pin_ranges"
             return p2compat._copy_ranges(value)
         end
@@ -630,7 +630,7 @@ p2compat.child_vm_policy = def(name)
         return nil
     end
     var value = policy[name]
-    if type(value) == "list"
+    if isinstance(value, list)
         return p2compat._copy_list(value)
     end
     return value
@@ -645,7 +645,7 @@ p2compat.child_vm_partition_value = def(name)
         return nil
     end
     var value = policy[name]
-    if type(value) == "list"
+    if isinstance(value, list)
         return p2compat._copy_list(value)
     end
     return value

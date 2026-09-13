@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <fs.h>
 #if defined(__CATALINA_LARGE)
-#include <hmalloc.h>
+#include "p2_hub_heap.h"
 #endif
 #include <plugin.h>
 #include <propeller2.h>
@@ -96,7 +96,7 @@ static uint8_t *p2_sector_scratch_alloc(uint8_t *storage)
 {
 #if defined(__CATALINA_LARGE)
     (void)storage;
-    return (uint8_t *)hub_malloc(SECTOR_SIZE);
+    return (uint8_t *)p2_hub_malloc(SECTOR_SIZE);
 #else
     return storage;
 #endif
@@ -106,7 +106,7 @@ static void p2_sector_scratch_free(uint8_t *scratch)
 {
 #if defined(__CATALINA_LARGE)
     if (scratch) {
-        hub_free(scratch);
+        p2_hub_free(scratch);
     }
 #else
     (void)scratch;
@@ -117,7 +117,7 @@ static uint8_t *p2_mount_scratch_get(void)
 {
 #if defined(__CATALINA_LARGE)
     if (!p2_mount_scratch) {
-        p2_mount_scratch = (uint8_t *)hub_malloc(SECTOR_SIZE);
+        p2_mount_scratch = (uint8_t *)p2_hub_malloc(SECTOR_SIZE);
     }
 #endif
     return p2_mount_scratch;

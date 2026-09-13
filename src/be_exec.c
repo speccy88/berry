@@ -421,7 +421,7 @@ void be_stack_expansion(bvm *vm, int n)
 static void fixup_exceptstack(bvm* vm, struct bexecptframe* lbase)
 {
     struct bexecptframe *base = be_stack_base(&vm->exceptstack);
-    if (lbase != base) { /* the address has changed when the stack is expanded */
+    if (lbase != NULL && lbase != base) { /* existing frames moved during growth */
         struct bexecptframe *top = be_stack_top(&vm->exceptstack);
         bbyte *begin = (bbyte*)&lbase->errjmp;
         bbyte *end = (bbyte*)&(lbase + (top - base))->errjmp;

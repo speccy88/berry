@@ -1177,8 +1177,7 @@ libstore.compiled_manifest = def(name)
         }
     end
     var data = json.load(text)
-    var data_type = type(data)
-    var valid = data_type == "map" || data_type == "instance"
+    var valid = isinstance(data, map)
     var reason = valid ? "ok" : "invalid_manifest"
     if valid
         if !data.contains("format") || data["format"] != libstore.MANIFEST_FORMAT
@@ -1264,7 +1263,7 @@ libstore.build_features = def()
         return {}
     end
     var status = p2.status_info()
-    if type(status) == "map" && status.contains("build") && type(status["build"]) == "map"
+    if isinstance(status, map) && status.contains("build") && isinstance(status["build"], map)
         return status["build"]
     end
     return {}

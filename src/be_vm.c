@@ -692,6 +692,13 @@ BERRY_API bvm* be_vm_new(void)
 BERRY_API void be_vm_delete(bvm *vm)
 {
     be_gc_deleteall(vm);
+    if (vm->native_context_delete) {
+        void *context = vm->native_context;
+        void (*cleanup)(bvm *, void *) = vm->native_context_delete;
+        vm->native_context = NULL;
+        vm->native_context_delete = NULL;
+        cleanup(vm, context);
+    }
     be_string_deleteall(vm);
     be_stack_delete(vm, &vm->callstack);
     be_stack_delete(vm, &vm->refstack);
@@ -1291,14 +1298,6 @@ newframe: /* a new call frame */
             bvalue *b = RKB();
             if (var_isstr(b)) {
                 bstring *name = var_tostr(b);
-                int idx = be_global_find(vm, name);
-                if (idx >= 0) {
-                    bvalue *src = be_global_var(vm, idx);
-                    if (var_istype(src, BE_MODULE)) {
-                        *RA() = *src;
-                        dispatch();
-                    }
-                }
                 int res = be_module_load(vm, name);
                 reg = vm->reg;
                 switch (res) {

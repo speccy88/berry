@@ -5,6 +5,7 @@
 #include "berry.h"
 #include "be_bus_common_p2.h"
 #include "be_gc.h"
+#include "be_exec.h"
 #include "be_mem.h"
 #include "be_module.h"
 #include "be_object.h"
@@ -17,13 +18,15 @@
 #include "berry_port.h"
 #include "p2_build_info.h"
 #include "p2_heap.h"
+#include "p2_cog_registry.h"
+#include "p2_vm_state.h"
 
 #include <propeller2.h>
 #include <prop.h>
 #include <smartpin.h>
 #include <cog.h>
 #if defined(__CATALINA_LARGE)
-#include <hmalloc.h>
+#include "p2_hub_heap.h"
 #endif
 #ifdef __CATALINA_libthreads
 #include <threads.h>
@@ -218,13 +221,13 @@ enum {
 };
 
 enum {
-    P2_CLOSURE_COG_MAX = 4,
+    P2_CLOSURE_COG_MAX = P2_COG_REGISTRY_SLOTS,
     P2_CLOSURE_COG_ARGS_MAX = 8,
     P2_CLOSURE_COG_TEXT_MAX = 63,
     P2_CLOSURE_COG_DESCRIPTOR_MAX = 768,
     P2_CLOSURE_COG_STACK_DEFAULT = 8192,
     P2_CLOSURE_COG_STACK_NATIVE_BLINK = 2048,
-    P2_CLOSURE_COG_HANDLE_BASE = 100,
+    P2_CLOSURE_COG_HANDLE_BASE = P2_COG_HANDLE_BASE,
     P2_CLOSURE_COG_IDLE_WAIT_MS = 1
 };
 
@@ -947,7 +950,7 @@ static void p2_cog_stack_free(void *ptr)
 static void *p2_hub_mem_alloc(size_t size)
 {
 #if defined(__CATALINA_LARGE)
-    return hub_malloc(size);
+    return p2_hub_malloc(size);
 #else
     return p2_heap_malloc(size);
 #endif
@@ -956,7 +959,7 @@ static void *p2_hub_mem_alloc(size_t size)
 #if defined(__CATALINA_LARGE)
 static void *p2_hub_mem_calloc(size_t count, size_t size)
 {
-    return hub_calloc(count, size);
+    return p2_hub_calloc(count, size);
 }
 #endif
 
@@ -966,7 +969,7 @@ static void p2_hub_mem_free(void *ptr)
         return;
     }
 #if defined(__CATALINA_LARGE)
-    hub_free(ptr);
+    p2_hub_free(ptr);
 #else
     p2_heap_free(ptr);
 #endif
@@ -1030,25 +1033,25 @@ static void p2_xmm_private_cache_release(int child_cog)
         registry[cache->cache_cog] |= 0xff000000UL;
     }
     if (cache->kernel != NULL) {
-        hub_free(cache->kernel);
+        p2_hub_free(cache->kernel);
     }
     if (cache->init != NULL) {
-        hub_free(cache->init);
+        p2_hub_free(cache->init);
     }
     if (cache->mailbox != NULL) {
-        hub_free(cache->mailbox);
+        p2_hub_free(cache->mailbox);
     }
     if (cache->buffer != NULL) {
-        hub_free(cache->buffer);
+        p2_hub_free(cache->buffer);
     }
     if (cache->child_kernel != NULL) {
-        hub_free(cache->child_kernel);
+        p2_hub_free(cache->child_kernel);
     }
     if (cache->child_lut != NULL) {
-        hub_free(cache->child_lut);
+        p2_hub_free(cache->child_lut);
     }
     if (cache->child_cog_data != NULL) {
-        hub_free(cache->child_cog_data);
+        p2_hub_free(cache->child_cog_data);
     }
     memset(cache, 0, sizeof(*cache));
     cache->cache_cog = -1;
@@ -1078,10 +1081,10 @@ static int p2_xmm_private_cache_start(int child_cog)
     p2_xmm_private_cache_release(child_cog);
 
     cache->cache_cog = cache_cog;
-    cache->kernel = (unsigned long *)hub_malloc(sizeof(p2_xmmcache_array));
-    cache->init = (unsigned long *)hub_malloc(4u * sizeof(unsigned long));
-    cache->mailbox = (unsigned long *)hub_malloc(2u * sizeof(unsigned long));
-    cache->buffer = (unsigned long *)hub_malloc(P2_XMM_CACHE_BYTES);
+    cache->kernel = (unsigned long *)p2_hub_malloc(sizeof(p2_xmmcache_array));
+    cache->init = (unsigned long *)p2_hub_malloc(4u * sizeof(unsigned long));
+    cache->mailbox = (unsigned long *)p2_hub_malloc(2u * sizeof(unsigned long));
+    cache->buffer = (unsigned long *)p2_hub_malloc(P2_XMM_CACHE_BYTES);
     if (cache->kernel == NULL || cache->init == NULL || cache->mailbox == NULL || cache->buffer == NULL) {
         p2_xmm_private_cache_release(child_cog);
         return -1;
@@ -1174,19 +1177,19 @@ static int p2_catalina_cogstart_C(void func(void *), void *arg, void *stack_base
             (uint32_t *)&p2_xmm_large_pasm_marker,
             (uint32_t *)&p2_xmm_large_pasm_seen);
     cache = &p2_xmm_private_caches[child_cog];
-    kernel = (unsigned long *)hub_malloc(P2_XMM_DYNAMIC_KERNEL_LONGS * sizeof(unsigned long));
-    lut = (unsigned long *)hub_malloc(lut_bytes);
-    cog_data = (p2_xmm_cog_data *)hub_malloc(sizeof(*cog_data));
+    kernel = (unsigned long *)p2_hub_malloc(P2_XMM_DYNAMIC_KERNEL_LONGS * sizeof(unsigned long));
+    lut = (unsigned long *)p2_hub_malloc(lut_bytes);
+    cog_data = (p2_xmm_cog_data *)p2_hub_malloc(sizeof(*cog_data));
     if (kernel == NULL || lut == NULL || cog_data == NULL) {
         p2_xmm_private_cache_release(child_cog);
         if (kernel != NULL) {
-            hub_free(kernel);
+            p2_hub_free(kernel);
         }
         if (lut != NULL) {
-            hub_free(lut);
+            p2_hub_free(lut);
         }
         if (cog_data != NULL) {
-            hub_free(cog_data);
+            p2_hub_free(cog_data);
         }
         return -1;
     }
@@ -2153,6 +2156,7 @@ static void p2_child_vm_runtime_lock_leave(int locked)
 
 typedef struct p2_closure_cog_slot {
     int used;
+    int slot_index; /* private Berry-root/partition index, NOT a handle */
     bvm *vm;
     void *stack;
     size_t stack_size;
@@ -2190,6 +2194,7 @@ typedef struct p2_closure_cog_slot {
 } p2_closure_cog_slot;
 
 static p2_closure_cog_slot p2_closure_cog_slots[P2_CLOSURE_COG_MAX];
+static p2_cog_registry p2_closure_cog_identities = P2_COG_REGISTRY_INITIALIZER;
 #if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
 static volatile int p2_closure_cog_main_idle;
 static int p2_closure_cog_main_vm_locked;
@@ -2239,14 +2244,58 @@ static int p2_closure_cog_runtime_lock_enter(p2_closure_cog_slot *slot)
 }
 #endif
 
-static int p2_closure_cog_slot_from_handle(bint handle)
+static void p2_closure_cog_metadata_enter(bvm *vm)
 {
-    bint slot = handle - P2_CLOSURE_COG_HANDLE_BASE;
-
-    if (slot < 0 || slot >= P2_CLOSURE_COG_MAX) {
-        return -1;
+    if (!p2_cog_registry_enter()) {
+        be_raise(vm, "runtime_error", "managed cog registry lock not initialized");
     }
-    return (int)slot;
+}
+
+static void p2_closure_cog_owner_invalidate(uint32_t cookie)
+{
+    /* No scripts, allocation, or physical stopping during VM deletion.
+     * Orphan-running cleanup is still the separate F3 liveness gate. */
+    if (p2_cog_registry_enter()) {
+        p2_cog_registry_invalidate_owner(&p2_closure_cog_identities, cookie);
+        p2_cog_registry_leave();
+    }
+}
+
+static uint32_t p2_closure_cog_owner(bvm *vm)
+{
+    p2_vm_state *state = p2_vm_state_existing(vm);
+    return state ? state->cog_owner_cookie : 0;
+}
+
+static int p2_closure_cog_slot_from_handle(bvm *vm, bint handle)
+{
+    int slot;
+    p2_closure_cog_metadata_enter(vm);
+    slot = p2_cog_registry_lookup(&p2_closure_cog_identities,
+        p2_closure_cog_owner(vm), handle);
+    p2_cog_registry_leave();
+    return slot;
+}
+
+static int p2_closure_cog_owned_live(bvm *vm, int index)
+{
+    int owned;
+    p2_closure_cog_metadata_enter(vm);
+    owned = p2_cog_registry_owned_live(&p2_closure_cog_identities,
+        p2_closure_cog_owner(vm), index);
+    p2_cog_registry_leave();
+    return owned;
+}
+
+static int p2_closure_cog_claim(bvm *vm, int index, bint token)
+{
+    int claimed;
+    if (token <= P2_COG_HANDLE_BASE || token > INT32_MAX) return 0;
+    p2_closure_cog_metadata_enter(vm);
+    claimed = p2_cog_registry_claim(&p2_closure_cog_identities,
+        p2_closure_cog_owner(vm), index, (uint32_t)token);
+    p2_cog_registry_leave();
+    return claimed;
 }
 
 static void p2_closure_cog_capture_function_name(bvm *vm, int index, p2_closure_cog_slot *slot)
@@ -2305,8 +2354,10 @@ static void p2_closure_cog_registry_set(bvm *vm, int slot, int value_index)
 
 static void p2_closure_cog_registry_clear(bvm *vm, int slot)
 {
-    p2_closure_cog_registry_init(vm);
-    (void)be_getglobal(vm, "__p2_closure_cogs");
+    if (!be_getglobal(vm, "__p2_closure_cogs")) {
+        be_pop(vm, 1);
+        return;
+    }
     be_pushint(vm, (bint)slot);
     be_pushnil(vm);
     (void)be_setindex(vm, -3);
@@ -2366,7 +2417,7 @@ static int p2_closure_cog_call_once(p2_closure_cog_slot *slot)
     }
     top_before = be_top(vm);
     if (be_getglobal(vm, "__p2_closure_cogs")) {
-        be_pushint(vm, slot->handle - P2_CLOSURE_COG_HANDLE_BASE);
+        be_pushint(vm, slot->slot_index);
         callable = be_getindex(vm, -2);
         be_remove(vm, -2);
         be_remove(vm, -2);
@@ -2619,16 +2670,77 @@ static void p2_closure_cog_entry(void *arg)
     slot->status = slot->stop ? 2 : 3;
 }
 
-static int p2_closure_cog_first_free(void)
+static int p2_closure_cog_reserve(bvm *vm)
 {
-    int i;
-
-    for (i = 0; i < P2_CLOSURE_COG_MAX; ++i) {
-        if (!p2_closure_cog_slots[i].used) {
-            return i;
+    /* This can run GC/reentrant finalizers: allocate BEFORE taking the lock. */
+    p2_vm_state *state = p2_vm_state_get(vm);
+    uint32_t token = 0;
+    int index;
+    p2_closure_cog_metadata_enter(vm);
+    if (!state->cog_owner_cookie) {
+        if (p2_cog_registry_new_owner(&p2_closure_cog_identities,
+                &state->cog_owner_cookie) != P2_COG_OK) {
+            p2_cog_registry_leave();
+            be_raise(vm, "runtime_error", "managed cog owner cookies exhausted");
         }
+        state->cog_owner_invalidate = p2_closure_cog_owner_invalidate;
     }
-    return -1;
+    index = p2_cog_registry_reserve(&p2_closure_cog_identities,
+        state->cog_owner_cookie, &token);
+    p2_cog_registry_leave();
+    if (index < 0) {
+        be_raise(vm, "runtime_error", index == P2_COG_TOKEN_EXHAUSTED ?
+            "managed cog tokens exhausted" : "no closure cog slots available");
+    }
+    /* Exclusively reserved, invisible to lookup/reap even during setup GC. */
+    memset(&p2_closure_cog_slots[index], 0, sizeof(p2_closure_cog_slots[index]));
+    p2_closure_cog_slots[index].handle = (bint)token;
+    p2_closure_cog_slots[index].slot_index = index;
+    p2_closure_cog_slots[index].vm = vm;
+    p2_closure_cog_slots[index].cog_id = -1;
+    return index;
+}
+
+static void p2_closure_cog_clear_protected(bvm *vm, void *data)
+{
+#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
+    p2_closure_cog_registry_clear(vm, *(int *)data);
+#else
+    (void)vm;
+    (void)data;
+#endif
+}
+
+/* Caller has physically cleaned a RESERVED slot. Clear only this owner's
+ * Berry roots, protected so an allocation error cannot leak the reservation. */
+static int p2_closure_cog_finish_reserved(bvm *vm, int index)
+{
+    bint token;
+    int status = BE_OK;
+    int clear_roots;
+    p2_closure_cog_metadata_enter(vm);
+    if (index < 0 || index >= P2_CLOSURE_COG_MAX ||
+            p2_closure_cog_identities.slots[index].state != P2_COG_RESERVED) {
+        p2_cog_registry_leave();
+        return BE_OK;
+    }
+    token = p2_closure_cog_slots[index].handle;
+    clear_roots = p2_closure_cog_identities.slots[index].owner != 0;
+    if (token <= P2_COG_HANDLE_BASE || token > INT32_MAX ||
+            p2_closure_cog_identities.slots[index].token != (uint32_t)token ||
+            (clear_roots && p2_closure_cog_identities.slots[index].owner != p2_closure_cog_owner(vm))) {
+        p2_cog_registry_leave();
+        return BE_OK;
+    }
+    p2_cog_registry_leave();
+    /* Dead ownership permits native release of a failed start only. The
+     * original claimant still holds RESERVED; no foreign Berry roots touched. */
+    if (clear_roots) status = be_execprotected(vm, p2_closure_cog_clear_protected, &index);
+    p2_closure_cog_metadata_enter(vm);
+    if (p2_cog_registry_release(&p2_closure_cog_identities, index, (uint32_t)token))
+        memset(&p2_closure_cog_slots[index], 0, sizeof(p2_closure_cog_slots[index]));
+    p2_cog_registry_leave();
+    return status;
 }
 
 static void p2_closure_cog_reap_stopped(bvm *vm)
@@ -2638,12 +2750,14 @@ static void p2_closure_cog_reap_stopped(bvm *vm)
     for (i = 0; i < P2_CLOSURE_COG_MAX; ++i) {
         p2_closure_cog_slot *slot = &p2_closure_cog_slots[i];
         int raw_running = 0;
+        int claimed = 0;
 
-        if (!slot->used || slot->status == 1) {
-            p2_closure_cog_sync_native_blink(slot);
-            p2_closure_cog_sync_isolated_source(slot);
+        if (!p2_closure_cog_owned_live(vm, i)) {
+            continue;
         }
-        if (!slot->used || slot->status == 1) {
+        p2_closure_cog_sync_native_blink(slot);
+        p2_closure_cog_sync_isolated_source(slot);
+        if (slot->status == 1 || slot->status == 0) {
             continue;
         }
         if (slot->cog_id >= 0 && slot->cog_id < 8) {
@@ -2654,6 +2768,8 @@ static void p2_closure_cog_reap_stopped(bvm *vm)
             slot->cog_id >= 1 &&
             slot->cog_id < 8 &&
             raw_running) {
+            claimed = p2_closure_cog_claim(vm, i, slot->handle);
+            if (!claimed) continue;
             if (slot->source_job != NULL) {
                 slot->source_job->status = 3;
             }
@@ -2663,11 +2779,8 @@ static void p2_closure_cog_reap_stopped(bvm *vm)
         if (raw_running) {
             continue;
         }
-#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
-        p2_closure_cog_registry_clear(vm, i);
-#else
-        (void)vm;
-#endif
+        /* The source-completed path above already claimed before stopping. */
+        if (!claimed && !p2_closure_cog_claim(vm, i, slot->handle)) continue;
         if (slot->stack != NULL) {
             p2_cog_stack_free(slot->stack);
         }
@@ -2682,16 +2795,19 @@ static void p2_closure_cog_reap_stopped(bvm *vm)
                 p2_hub_mem_free(slot->source_job);
             }
         }
-        memset(slot, 0, sizeof(*slot));
+        {
+            int status = p2_closure_cog_finish_reserved(vm, i);
+            if (status != BE_OK) be_throw(vm, status);
+        }
     }
 }
 
 static p2_closure_cog_slot *p2_closure_cog_require_handle(bvm *vm, int index, int *slot_index)
 {
     bint handle = p2_require_int_arg(vm, index, "closure cog handle must be an int");
-    int slot = p2_closure_cog_slot_from_handle(handle);
+    int slot = p2_closure_cog_slot_from_handle(vm, handle);
 
-    if (slot < 0 || !p2_closure_cog_slots[slot].used) {
+    if (slot < 0) {
         be_raise(vm, "value_error", "invalid closure cog handle");
     }
     if (slot_index != NULL) {
@@ -3280,7 +3396,6 @@ static int p2_closure_cog_call_setup_function(bvm *vm, p2_closure_cog_slot *slot
     for (i = 0; i < slot->argc; ++i) {
         p2_closure_cog_push_arg(vm, slot, i);
     }
-    result_slot = vm->top - slot->argc - 1;
     slot->call_result = be_pcall(vm, slot->argc);
     if (slot->call_result != BE_OK) {
         p2_closure_cog_capture_exception(vm, slot);
@@ -3288,6 +3403,8 @@ static int p2_closure_cog_call_setup_function(bvm *vm, p2_closure_cog_slot *slot
         return 0;
     }
 
+    /* A reentrant setup can grow the Berry stack. Resolve AFTER the call. */
+    result_slot = be_indexof(vm, top_before + 1);
     if (var_isint(result_slot)) {
         slot->last_result_type = 1;
         slot->last_result_int = var_toint(result_slot);
@@ -3333,9 +3450,8 @@ static int p2_closure_cog_call_setup_function(bvm *vm, p2_closure_cog_slot *slot
     return 1;
 }
 
-static int m_p2_closure_cog_spawn(bvm *vm)
+static int p2_closure_cog_spawn_reserved(bvm *vm, int slot_index)
 {
-    int slot_index;
     int argc;
     int i;
     int cog;
@@ -3391,15 +3507,7 @@ static int m_p2_closure_cog_spawn(bvm *vm)
     if (p2_child_vm_runtime_lock < 0) {
         be_raise(vm, "runtime_error", "closure cog requires a hardware VM lock");
     }
-    p2_closure_cog_reap_stopped(vm);
-    slot_index = p2_closure_cog_first_free();
-    if (slot_index < 0) {
-        be_raise(vm, "runtime_error", "no closure cog slots available");
-    }
     slot = &p2_closure_cog_slots[slot_index];
-    memset(slot, 0, sizeof(*slot));
-    slot->vm = vm;
-    slot->handle = P2_CLOSURE_COG_HANDLE_BASE + slot_index;
     slot->cog_id = -1;
     slot->period_ms = 0;
     slot->native_pin = -1;
@@ -3457,14 +3565,12 @@ static int m_p2_closure_cog_spawn(bvm *vm)
                     slot->arg_string[i][P2_CLOSURE_COG_TEXT_MAX] = '\0';
                 }
             } else {
-                memset(slot, 0, sizeof(*slot));
                 be_raise(vm, "type_error", "closure cog args must be int, bool, nil, or string");
             }
         }
     }
     if (!descriptor_native) {
         if (!p2_closure_cog_call_setup_function(vm, slot)) {
-            memset(slot, 0, sizeof(*slot));
             be_raise(vm, "runtime_error", "closure setup function failed");
         }
     }
@@ -3491,7 +3597,6 @@ static int m_p2_closure_cog_spawn(bvm *vm)
         && descriptor_kind != P2_CLOSURE_TASK_SOURCE
 #endif
         ) {
-        memset(slot, 0, sizeof(*slot));
         be_raise(vm, "runtime_error", "unsupported closure cog shape");
     }
 #endif
@@ -3504,25 +3609,16 @@ static int m_p2_closure_cog_spawn(bvm *vm)
         stack = p2_cog_stack_alloc(slot->stack_size);
     }
     if (!slot->native_blink && stack == NULL) {
-#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
-        p2_closure_cog_registry_clear(vm, slot_index);
-#endif
-        memset(slot, 0, sizeof(*slot));
         be_raise(vm, "memory_error", "failed to allocate closure cog stack");
     }
     slot->stack = stack;
-    slot->used = 1;
 #if defined(__CATALINA_LARGE)
     if (descriptor_kind == P2_CLOSURE_TASK_SOURCE && source_task != NULL) {
         int wait_count = 0;
 
         source_job = (p2_child_vm_cog_once_job *)p2_hub_mem_alloc(sizeof(*source_job));
         if (source_job == NULL) {
-            if (stack != NULL) {
-                p2_cog_stack_free(stack);
-            }
             memset(source_task, 0, sizeof(*source_task));
-            memset(slot, 0, sizeof(*slot));
             be_raise(vm, "memory_error", "failed to allocate closure source mailbox");
         }
         memset(source_job, 0, sizeof(*source_job));
@@ -3548,6 +3644,7 @@ static int m_p2_closure_cog_spawn(bvm *vm)
         slot->closure_name[sizeof(slot->closure_name) - 1] = '\0';
         cog = p2_catalina_cogstart_C(p2_child_vm_cog_once_entry, source_job, stack, (int)slot->stack_size);
         if (cog >= 0 && cog < 8) {
+            slot->cog_id = cog;
             source_job->cog_id = cog;
             while (source_job->status == 0 && wait_count < 100) {
                 _waitus(1000);
@@ -3556,6 +3653,9 @@ static int m_p2_closure_cog_spawn(bvm *vm)
             p2_closure_cog_sync_isolated_source(slot);
         }
         memset(source_task, 0, sizeof(*source_task));
+        if (cog >= 0 && cog < 8 && source_job->status == 0) {
+            be_raise(vm, "runtime_error", "closure source cog did not start");
+        }
     } else
 #endif
     if (slot->native_blink) {
@@ -3568,20 +3668,6 @@ static int m_p2_closure_cog_spawn(bvm *vm)
 
         strncpy(spawn_error, slot->last_error[0] ? slot->last_error : "no free cog for closure", sizeof(spawn_error) - 1);
         spawn_error[sizeof(spawn_error) - 1] = '\0';
-#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
-        p2_closure_cog_registry_clear(vm, slot_index);
-#endif
-        if (stack != NULL) {
-            p2_cog_stack_free(stack);
-        }
-#if defined(__CATALINA_LARGE)
-        if (descriptor_kind == P2_CLOSURE_TASK_SOURCE) {
-            if (source_job != NULL) {
-                p2_hub_mem_free(source_job);
-            }
-        }
-#endif
-        memset(slot, 0, sizeof(*slot));
         be_raise(vm, "runtime_error", spawn_error);
     }
     slot->cog_id = cog;
@@ -3590,9 +3676,8 @@ static int m_p2_closure_cog_spawn(bvm *vm)
 }
 
 #if defined(__CATALINA_LARGE)
-static int m_p2_closure_cog_spawn_source(bvm *vm)
+static int p2_closure_cog_spawn_source_reserved(bvm *vm, int slot_index)
 {
-    int slot_index;
     bint bytes = (bint)p2_heap_vm_partition_size();
     const char *source;
     const char *name;
@@ -3632,22 +3717,13 @@ static int m_p2_closure_cog_spawn_source(bvm *vm)
     if (p2_child_vm_runtime_lock < 0) {
         be_raise(vm, "runtime_error", "closure cog requires a hardware VM lock");
     }
-    p2_closure_cog_reap_stopped(vm);
-    slot_index = p2_closure_cog_first_free();
-    if (slot_index < 0) {
-        be_raise(vm, "runtime_error", "no closure cog slots available");
-    }
-
     slot = &p2_closure_cog_slots[slot_index];
     job = (p2_child_vm_cog_once_job *)p2_hub_mem_alloc(sizeof(*job));
     if (job == NULL) {
-        memset(slot, 0, sizeof(*slot));
         be_raise(vm, "memory_error", "failed to allocate closure source mailbox");
     }
-    memset(slot, 0, sizeof(*slot));
     memset(job, 0, sizeof(*job));
-    slot->vm = vm;
-    slot->handle = P2_CLOSURE_COG_HANDLE_BASE + slot_index;
+    slot->source_job = job; /* owned immediately, including validation errors */
     slot->cog_id = -1;
     slot->native_pin = -1;
     slot->argc = argc;
@@ -3682,26 +3758,18 @@ static int m_p2_closure_cog_spawn_source(bvm *vm)
                 job->arg_string[i][sizeof(job->arg_string[i]) - 1] = '\0';
             }
         } else {
-            memset(slot, 0, sizeof(*slot));
-            p2_hub_mem_free(job);
             be_raise(vm, "type_error", "closure cog args must be int, bool, nil, or string");
         }
     }
 
     stack = p2_cog_stack_alloc(slot->stack_size);
     if (stack == NULL) {
-        memset(slot, 0, sizeof(*slot));
-        p2_hub_mem_free(job);
         be_raise(vm, "memory_error", "failed to allocate closure cog stack");
     }
     slot->stack = stack;
-    slot->used = 1;
     slot->source_job = job;
     cog = p2_catalina_cogstart_C(p2_child_vm_cog_once_entry, job, stack, (int)slot->stack_size);
     if (cog < 0 || cog >= 8) {
-        p2_cog_stack_free(stack);
-        memset(slot, 0, sizeof(*slot));
-        p2_hub_mem_free(job);
         be_raise(vm, "runtime_error", "no free cog for closure source");
     }
     slot->cog_id = cog;
@@ -3712,15 +3780,84 @@ static int m_p2_closure_cog_spawn_source(bvm *vm)
     }
     p2_closure_cog_sync_isolated_source(slot);
     if (job->status == 0) {
-        _cogstop(cog);
-        p2_cog_stack_free(stack);
-        (void)p2_heap_vm_partition_release(slot_index);
-        memset(slot, 0, sizeof(*slot));
-        p2_hub_mem_free(job);
         be_raise(vm, "runtime_error", "closure source cog did not start");
     }
     be_pushint(vm, slot->handle);
     be_return(vm);
+}
+#endif
+
+typedef struct p2_closure_cog_start_request {
+    int slot_index;
+    int source;
+    int result;
+} p2_closure_cog_start_request;
+
+static void p2_closure_cog_start_protected(bvm *vm, void *data)
+{
+    p2_closure_cog_start_request *request = (p2_closure_cog_start_request *)data;
+    int published;
+#if defined(__CATALINA_LARGE)
+    if (request->source) {
+        request->result = p2_closure_cog_spawn_source_reserved(vm, request->slot_index);
+    } else
+#endif
+    {
+        request->result = p2_closure_cog_spawn_reserved(vm, request->slot_index);
+    }
+    p2_closure_cog_metadata_enter(vm);
+    published = p2_cog_registry_publish(&p2_closure_cog_identities, request->slot_index,
+        (uint32_t)p2_closure_cog_slots[request->slot_index].handle);
+    if (published) p2_closure_cog_slots[request->slot_index].used = 1;
+    p2_cog_registry_leave();
+    if (!published) be_raise(vm, "runtime_error", "managed cog owner invalidated during start");
+}
+
+static int p2_closure_cog_start(bvm *vm, int source)
+{
+    p2_closure_cog_start_request request;
+    p2_closure_cog_slot *slot;
+    int status;
+    p2_closure_cog_reap_stopped(vm);
+    request.slot_index = p2_closure_cog_reserve(vm);
+    request.source = source;
+    request.result = 0;
+    slot = &p2_closure_cog_slots[request.slot_index];
+    status = be_execprotected(vm, p2_closure_cog_start_protected, &request);
+    if (status != BE_OK) {
+        int exception_top = (int)(vm->top - vm->stack);
+        /* be_raise/be_exit leave their payload just ABOVE top. Root it before
+         * clearing Berry roots, which can allocate/GC and overwrite top. The
+         * payload slots already exist: do not allocate on an error path. */
+        if (status == BE_EXCEPTION) vm->top += 2;
+        else if (status == BE_EXIT) vm->top += 1;
+        /* No Berry operations until all physical resources are cleaned. The
+         * reservation remains hidden throughout setup, exceptions and GC. */
+        if (slot->cog_id >= 0 && slot->cog_id < 8) _cogstop(slot->cog_id);
+        if (slot->native_blink && slot->native_pin >= 0 && slot->native_pin <= 63)
+            _pinf(slot->native_pin);
+        if (slot->stack) p2_cog_stack_free(slot->stack);
+#if defined(__CATALINA_LARGE)
+        if (slot->native_mailbox) p2_hub_mem_free((void *)slot->native_mailbox);
+#endif
+        if (slot->isolated_source) (void)p2_heap_vm_partition_release(request.slot_index);
+        if (slot->source_job) p2_hub_mem_free(slot->source_job);
+        (void)p2_closure_cog_finish_reserved(vm, request.slot_index);
+        vm->top = vm->stack + exception_top;
+        be_throw(vm, status);
+    }
+    return request.result;
+}
+
+static int m_p2_closure_cog_spawn(bvm *vm)
+{
+    return p2_closure_cog_start(vm, 0);
+}
+
+#if defined(__CATALINA_LARGE)
+static int m_p2_closure_cog_spawn_source(bvm *vm)
+{
+    return p2_closure_cog_start(vm, 1);
 }
 #endif
 
@@ -3755,7 +3892,7 @@ static void p2_closure_cog_label(p2_closure_cog_slot *slot, char *buf, size_t le
     }
 }
 
-static p2_closure_cog_slot *p2_closure_cog_find_by_cog(int cog, int *slot_index)
+static p2_closure_cog_slot *p2_closure_cog_find_by_cog(bvm *vm, int cog, int *slot_index)
 {
     if (slot_index) {
         *slot_index = -1;
@@ -3763,7 +3900,7 @@ static p2_closure_cog_slot *p2_closure_cog_find_by_cog(int cog, int *slot_index)
 
     for (int i = 0; i < P2_CLOSURE_COG_MAX; ++i) {
         p2_closure_cog_slot *slot = &p2_closure_cog_slots[i];
-        if (!slot->used) {
+        if (!p2_closure_cog_owned_live(vm, i)) {
             continue;
         }
         p2_closure_cog_sync_native_blink(slot);
@@ -3783,9 +3920,18 @@ static void p2_closure_cog_push_info_map(bvm *vm, int slot_index, p2_closure_cog
 {
     int raw_running = 0;
     char label[128];
+    p2_closure_cog_slot snapshot;
+    p2_child_vm_cog_once_job job_snapshot;
 
     p2_closure_cog_sync_native_blink(slot);
     p2_closure_cog_sync_isolated_source(slot);
+    /* No raw slot/job pointer survives result allocation, GC or finalizers. */
+    snapshot = *slot;
+    if (snapshot.source_job) {
+        job_snapshot = *snapshot.source_job;
+        snapshot.source_job = &job_snapshot;
+    }
+    slot = &snapshot;
     if (slot->cog_id >= 0 && slot->cog_id < 8) {
         raw_running = _cogchk(slot->cog_id) ? 1 : 0;
     }
@@ -3863,7 +4009,7 @@ static int m_p2_closure_cog_info(bvm *vm)
 
         be_newobject(vm, "list");
         for (i = 0; i < P2_CLOSURE_COG_MAX; ++i) {
-            if (p2_closure_cog_slots[i].used) {
+            if (p2_closure_cog_owned_live(vm, i)) {
                 p2_closure_cog_push_info_map(vm, i, &p2_closure_cog_slots[i]);
                 be_data_push(vm, -2);
                 be_pop(vm, 1);
@@ -3888,10 +4034,13 @@ static int m_p2_closure_cog_join(bvm *vm)
 {
     int slot_index;
     int raw_running = 0;
+    p2_closure_cog_slot snapshot;
     p2_closure_cog_slot *slot = p2_closure_cog_require_handle(vm, 1, &slot_index);
 
     p2_closure_cog_sync_native_blink(slot);
     p2_closure_cog_sync_isolated_source(slot);
+    snapshot = *slot;
+    slot = &snapshot;
     if (slot->cog_id >= 0 && slot->cog_id < 8) {
         raw_running = _cogchk(slot->cog_id) ? 1 : 0;
     }
@@ -3958,13 +4107,15 @@ static int m_p2_closure_cog_result(bvm *vm)
 static int m_p2_closure_cog_error(bvm *vm)
 {
     int slot_index;
+    char error[64];
     p2_closure_cog_slot *slot = p2_closure_cog_require_handle(vm, 1, &slot_index);
     (void)slot_index;
 
     p2_closure_cog_sync_native_blink(slot);
     p2_closure_cog_sync_isolated_source(slot);
-    if (slot->last_error[0]) {
-        be_pushstring(vm, slot->last_error);
+    memcpy(error, slot->last_error, sizeof(error));
+    if (error[0]) {
+        be_pushstring(vm, error);
     } else {
         be_pushnil(vm);
     }
@@ -3994,7 +4145,8 @@ static int m_p2_closure_cog_cleanup_result(bvm *vm)
         p2_closure_cog_slot *slot = &p2_closure_cog_slots[i];
         int raw_running = 0;
 
-        if (!slot->used) {
+        if (!p2_closure_cog_owned_live(vm, i) ||
+            !p2_closure_cog_claim(vm, i, slot->handle)) {
             continue;
         }
         ++active_before;
@@ -4024,9 +4176,6 @@ static int m_p2_closure_cog_cleanup_result(bvm *vm)
             _pinf(slot->native_pin);
             ++pins_floated;
         }
-#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
-        p2_closure_cog_registry_clear(vm, i);
-#endif
         if (slot->stack != NULL) {
             p2_cog_stack_free(slot->stack);
             ++stacks_released;
@@ -4045,7 +4194,10 @@ static int m_p2_closure_cog_cleanup_result(bvm *vm)
                 ++source_jobs_released;
             }
         }
-        memset(slot, 0, sizeof(*slot));
+        {
+            int status = p2_closure_cog_finish_reserved(vm, i);
+            if (status != BE_OK) be_throw(vm, status);
+        }
         ++released;
     }
 
@@ -4344,6 +4496,9 @@ static int m_p2_closure_cog_stop(bvm *vm)
     int cog_id = (int)slot->cog_id;
     int native_blink = slot->native_blink;
 
+    if (!p2_closure_cog_claim(vm, slot_index, handle)) {
+        be_raise(vm, "value_error", "invalid closure cog handle");
+    }
     had_stack = slot->stack != NULL;
     had_source_partition = slot->isolated_source ? 1 : 0;
     had_source_job = slot->source_job != NULL;
@@ -4378,9 +4533,6 @@ static int m_p2_closure_cog_stop(bvm *vm)
         p2_closure_cog_sync_native_blink(slot);
     }
     slot->stop_wait_ms = wait_count;
-#if BE_P2_ENABLE_UNSAFE_SHARED_VM_COG
-    p2_closure_cog_registry_clear(vm, slot_index);
-#endif
     if (slot->stack != NULL) {
         p2_cog_stack_free(slot->stack);
         slot->stack = NULL;
@@ -4399,6 +4551,10 @@ static int m_p2_closure_cog_stop(bvm *vm)
             slot->source_job = NULL;
         }
     }
+    {
+        int status = p2_closure_cog_finish_reserved(vm, slot_index);
+        if (status != BE_OK) be_throw(vm, status);
+    }
     be_newobject(vm, "map");
     p2_map_set_int(vm, "slot", (bint)slot_index);
     p2_map_set_int(vm, "handle", (bint)handle);
@@ -4416,7 +4572,6 @@ static int m_p2_closure_cog_stop(bvm *vm)
     p2_map_set_bool(vm, "slot_released", 1);
     p2_map_set_bool(vm, "handle_valid_after_stop", 0);
     be_pop(vm, 1);
-    memset(slot, 0, sizeof(*slot));
     be_return(vm);
 }
 
@@ -7847,7 +8002,7 @@ static int p2_status_cog_registry_type(unsigned long entry)
     return (int)((entry >> 24) & 0xffu);
 }
 
-static void p2_status_cog_describe(int cog, int raw, int current,
+static void p2_status_cog_describe(bvm *vm, int cog, int raw, int current,
     char *role, size_t role_len,
     char *label, size_t label_len,
     unsigned long *registry_entry,
@@ -7857,7 +8012,7 @@ static void p2_status_cog_describe(int cog, int raw, int current,
 {
     unsigned long entry = p2_status_cog_registry_entry(cog);
     int type = p2_status_cog_registry_type(entry);
-    p2_closure_cog_slot *slot = p2_closure_cog_find_by_cog(cog, slot_index);
+    p2_closure_cog_slot *slot = p2_closure_cog_find_by_cog(vm, cog, slot_index);
 
     if (registry_entry) {
         *registry_entry = entry;
@@ -7970,7 +8125,7 @@ static int m_p2_status(bvm *vm)
         int map_index;
         p2_closure_cog_slot *slot = NULL;
 
-        p2_status_cog_describe(cog, raw, (int)cogid,
+        p2_status_cog_describe(vm, cog, raw, (int)cogid,
             role, sizeof(role),
             label, sizeof(label),
             &registry_entry,
@@ -8108,7 +8263,10 @@ static void p2_status_info_cogs(bvm *vm)
         int map_index;
         p2_closure_cog_slot *slot = NULL;
 
-        p2_status_cog_describe(cog, raw, current,
+        p2_closure_cog_slot snapshot;
+        p2_child_vm_cog_once_job job_snapshot;
+
+        p2_status_cog_describe(vm, cog, raw, current,
             role, sizeof(role),
             label, sizeof(label),
             &registry_entry,
@@ -8116,6 +8274,14 @@ static void p2_status_info_cogs(bvm *vm)
             &slot_index,
             &slot);
 
+        if (slot) {
+            snapshot = *slot;
+            if (snapshot.source_job) {
+                job_snapshot = *snapshot.source_job;
+                snapshot.source_job = &job_snapshot;
+            }
+            slot = &snapshot;
+        }
         be_newobject(vm, "map");
         map_index = be_absindex(vm, -2);
         p2_map_set_int(vm, "id", (bint)cog);

@@ -61,13 +61,11 @@ audit["problems"].push("mutated")
 assert(p2.cog.audit()["problems"].size() == 0)
 
 def maplike(value)
-    var kind = type(value)
-    return kind == "map" || kind == "instance"
+    return isinstance(value, map)
 end
 
 def listlike(value)
-    var kind = type(value)
-    return kind == "list" || kind == "instance"
+    return isinstance(value, list)
 end
 
 def check(cond, label)

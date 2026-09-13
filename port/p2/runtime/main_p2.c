@@ -6,6 +6,8 @@
 #include "be_repl.h"
 #include "berry_port.h"
 #include "p2_build_info.h"
+#include "p2_hub_heap.h"
+#include "p2_cog_registry.h"
 
 #ifndef BE_P2_RUN_SD_MAIN
 #define BE_P2_RUN_SD_MAIN 0
@@ -157,6 +159,16 @@ static void berry_p2_main(void)
     int main_res;
 
     p2_serial_init();
+    if (!p2_cog_registry_startup()) {
+        p2_serial_puts("error: cannot initialize managed cog registry lock\n");
+        return;
+    }
+#if defined(__CATALINA_LARGE)
+    if (!p2_hub_heap_init()) {
+        p2_serial_puts("error: cannot initialize shared Hub allocator lock\n");
+        return;
+    }
+#endif
     p2_print_banner();
     p2_serial_puts("[Ctrl-D or Ctrl-C at an empty prompt quits]\n");
     startup_status_cog = p2_startup_status_start();

@@ -95,8 +95,7 @@ assert(p2ipc_ptr_1 == p2ipc_ptr_2)
 
 import p2mem
 var p2mem_ptr_1 = introspect.toptr(p2mem)
-var p2mem_stats_type = type(p2mem.stats())
-assert(p2mem_stats_type == "map" || p2mem_stats_type == "instance")
+assert(isinstance(p2mem.stats(), map))
 import p2mem
 var p2mem_ptr_2 = introspect.toptr(p2mem)
 assert(p2mem_ptr_1 == p2mem_ptr_2)

@@ -114,11 +114,9 @@ assert(type(p2ipc.mutex.Mutex) == "class")
 print("P2_SMOKE_STEP import_cache p2ipc_repeat")
 
 import p2mem
-var p2mem_stats_type = type(p2mem.stats())
-assert(p2mem_stats_type == "map" || p2mem_stats_type == "instance")
+assert(isinstance(p2mem.stats(), map))
 import p2mem
-p2mem_stats_type = type(p2mem.stats())
-assert(p2mem_stats_type == "map" || p2mem_stats_type == "instance")
+assert(isinstance(p2mem.stats(), map))
 print("P2_SMOKE_STEP import_cache p2mem_repeat")
 
 import p2smart

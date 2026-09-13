@@ -22,7 +22,7 @@ assert(psram["block_base"] == 16 * 1024 * 1024)
 assert(psram["block_bytes"] == 16 * 1024 * 1024)
 assert(fs["mount_result_name"] == "ok")
 assert(fs["partition_start"] == 0 || fs["partition_start"] == 1 || fs["partition_start"] == 32 || fs["partition_start"] == 63 || fs["partition_start"] == 128 || fs["partition_start"] == 256 || fs["partition_start"] == 512 || fs["partition_start"] == 1024 || fs["partition_start"] == 2048 || fs["partition_start"] == 4096 || fs["partition_start"] == 8192 || fs["partition_start"] == 16384 || fs["partition_start"] == 32768 || fs["partition_start"] == 65536)
-assert(type(introspect.members(math)) == "list")
+assert(isinstance(introspect.members(math), list))
 assert(math.sqrt(81) == 9)
 
 if info["external_heap"]
@@ -32,7 +32,7 @@ if info["external_heap"]
     assert(info["main_high"] <= 16 * 1024 * 1024)
 
     var gc_report = p2.gc()
-    assert(type(gc_report) == "map")
+    assert(isinstance(gc_report, map))
     var baseline = p2.heap_info()["main"]
     assert(baseline > 8 * 1024 * 1024)
 
@@ -59,7 +59,7 @@ if info["external_heap"]
         i += 1
     end
     gc_report = p2.gc()
-    assert(type(gc_report) == "map")
+    assert(isinstance(gc_report, map))
 
     var after_half_free = p2.heap_info()["main"]
     assert(after_half_free > after_alloc)
@@ -80,7 +80,7 @@ if info["external_heap"]
 
     batch = nil
     gc_report = p2.gc()
-    assert(type(gc_report) == "map")
+    assert(isinstance(gc_report, map))
 
     var after_free = p2.heap_info()["main"]
     assert(after_free > after_refill)

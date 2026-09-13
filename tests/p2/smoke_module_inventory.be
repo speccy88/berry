@@ -13,10 +13,10 @@ assert(size(compiled_inventory) >= size(modules))
 var compiled_text = libstore.compiled_inventory_text()
 assert(type(compiled_text) == "string")
 var compiled_text_data = json.load(compiled_text)
-assert(type(compiled_text_data) == "list")
+assert(isinstance(compiled_text_data, list))
 assert(size(compiled_text_data) == size(compiled_inventory))
 var compiled_summary = libstore.compiled_summary()
-assert(type(compiled_summary) == "map")
+assert(isinstance(compiled_summary, map))
 assert(compiled_summary["modules"] == size(compiled_inventory))
 assert(type(compiled_summary["source_exists"]) == "int")
 assert(type(compiled_summary["compiled_exists"]) == "int")
@@ -28,8 +28,8 @@ assert(type(compiled_summary["can_load"]) == "int")
 assert(type(compiled_summary["can_emit"]) == "int")
 assert(type(compiled_summary["blocked_load"]) == "int")
 assert(type(compiled_summary["blocked_emit"]) == "int")
-assert(type(compiled_summary["load_reasons"]) == "map")
-assert(type(compiled_summary["emit_reasons"]) == "map")
+assert(isinstance(compiled_summary["load_reasons"], map))
+assert(isinstance(compiled_summary["emit_reasons"], map))
 assert(compiled_summary["can_load"] + compiled_summary["blocked_load"] == compiled_summary["modules"])
 assert(compiled_summary["can_emit"] + compiled_summary["blocked_emit"] == compiled_summary["modules"])
 var load_reason_total = 0
@@ -50,8 +50,8 @@ var compiled_summary_data = json.load(libstore.compiled_summary_text())
 assert(compiled_summary_data["modules"] == compiled_summary["modules"])
 assert(compiled_summary_data["can_load"] == compiled_summary["can_load"])
 assert(compiled_summary_data["can_emit"] == compiled_summary["can_emit"])
-assert(type(compiled_summary_data["load_reasons"]) == "map")
-assert(type(compiled_summary_data["emit_reasons"]) == "map")
+assert(isinstance(compiled_summary_data["load_reasons"], map))
+assert(isinstance(compiled_summary_data["emit_reasons"], map))
 var summary_modules = compiled_summary["modules"]
 compiled_summary["modules"] = -1
 assert(libstore.compiled_summary()["modules"] == summary_modules)
@@ -93,13 +93,13 @@ for rec : blocked
     assert(!rec["can_load"] || !rec["can_emit"])
 end
 var provision = libstore.compiled_provision_plan()
-assert(type(provision) == "map")
+assert(isinstance(provision, map))
 assert(provision["ok"])
 assert(type(provision["recommendation"]) == "string")
-assert(type(provision["summary"]) == "map")
-assert(type(provision["loadable"]) == "list")
-assert(type(provision["emittable"]) == "list")
-assert(type(provision["blocked"]) == "list")
+assert(isinstance(provision["summary"], map))
+assert(isinstance(provision["loadable"], list))
+assert(isinstance(provision["emittable"], list))
+assert(isinstance(provision["blocked"], list))
 assert(provision["loadable_count"] == size(loadable))
 assert(provision["emittable_count"] == size(emittable))
 assert(provision["blocked_count"] == size(blocked))
@@ -129,7 +129,7 @@ for name : expected_names
 end
 
 for rec : inventory
-    assert(type(rec) == "map")
+    assert(isinstance(rec, map))
     assert(type(rec["name"]) == "string")
     if expected.contains(rec["name"])
         expected[rec["name"]] = true
@@ -200,7 +200,7 @@ for rec : inventory
         assert(rec["source_hash"] == stats["hash"])
     end
     if expected.contains(rec["name"])
-        assert(type(rec["coverage"]) == "map")
+        assert(isinstance(rec["coverage"], map))
         assert(rec["coverage_status"] != "unknown")
         assert(type(rec["sd_import_smoke"]) == "string")
         assert(rec["sd_import_smoke"] == "/tests/p2/smoke_import_all_libs.be")
@@ -274,7 +274,7 @@ for rec : inventory
 end
 
 for rec : compiled_inventory
-    assert(type(rec) == "map")
+    assert(isinstance(rec, map))
     assert(type(rec["name"]) == "string")
     assert(rec.contains("source_exists"))
     assert(rec.contains("compiled_exists"))

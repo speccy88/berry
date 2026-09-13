@@ -32,7 +32,7 @@ assert(math.inf == math.inf)
 assert(math.inf == math.inf + 1)
 
 var accel = math.accel_info()
-assert(type(accel) == "map")
+assert(isinstance(accel, map))
 assert(type(accel["cordic"]) == "bool")
 assert(type(accel["backend"]) == "string")
 assert(type(accel["reason"]) == "string")

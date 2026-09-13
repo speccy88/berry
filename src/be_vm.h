@@ -142,6 +142,11 @@ struct bvm {
     bvalue hook;
     bbyte hookmask;
 #endif
+    /* Private port-owned C state; append only to preserve existing offsets.
+     * Cleanup runs after native GC finalizers, before allocator teardown.
+     * It must not execute Berry, access Berry objects, allocate, or throw. */
+    void *native_context;
+    void (*native_context_delete)(bvm *vm, void *context);
 };
 
 #define NONE_FLAG           0

@@ -9,6 +9,24 @@
 #include "be_mem.h"
 #include <string.h>
 
+#ifdef BE_EXCEPTSTACK_REALLOC
+#include "be_vm.h"
+extern void *BE_EXCEPTSTACK_REALLOC(bvm *vm, void *ptr,
+    size_t old_size, size_t new_size);
+#endif
+
+/* Some targets require native jump buffers in a distinct memory space. */
+static void *resize_storage(bvm *vm, bvector *vector,
+    size_t old_size, size_t new_size)
+{
+#ifdef BE_EXCEPTSTACK_REALLOC
+    if (vm != NULL && vector == &vm->exceptstack) {
+        return BE_EXCEPTSTACK_REALLOC(vm, vector->data, old_size, new_size);
+    }
+#endif
+    return be_realloc(vm, vector->data, old_size, new_size);
+}
+
 /* initialize a vector, the vector structure itself is usually allocated
  * on the stack, and the data is allocated from the heap.
  **/
@@ -17,14 +35,15 @@ void be_vector_init(bvm *vm, bvector *vector, int size)
     vector->capacity = 2; /* the default capacity */
     vector->size = size;
     vector->count = 0;
-    vector->data = be_malloc(vm, (size_t)vector->capacity * size);
+    vector->data = NULL;
+    vector->data = resize_storage(vm, vector, 0, (size_t)vector->capacity * size);
     vector->end = (char*)vector->data - size;
     memset(vector->data, 0, (size_t)vector->capacity * size);
 }
 
 void be_vector_delete(bvm *vm, bvector *vector)
 {
-    be_free(vm, vector->data, (size_t)vector->capacity * vector->size);
+    resize_storage(vm, vector, (size_t)vector->capacity * vector->size, 0);
 }
 
 void* be_vector_at(bvector *vector, int index)
@@ -36,11 +55,11 @@ void be_vector_push(bvm *vm, bvector *vector, void *data)
 {
     size_t size = vector->size;
     size_t capacity = vector->capacity;
-    size_t count = vector->count++;
+    size_t count = vector->count;
     if (count >= capacity) {
         int newcap = be_nextsize(vector->capacity);
-        vector->data = be_realloc(vm,
-                vector->data, vector->capacity * size, newcap * size);
+        vector->data = resize_storage(vm, vector,
+                vector->capacity * size, newcap * size);
         vector->end = (char*)vector->data + count * size;
         vector->capacity = newcap;
     } else {
@@ -49,6 +68,7 @@ void be_vector_push(bvm *vm, bvector *vector, void *data)
     if (data != NULL) {
         memcpy(vector->end, data, size);
     }
+    vector->count++;
 }
 
 /* clear the expanded portion if the memory expands */
@@ -76,8 +96,8 @@ void be_vector_resize(bvm *vm, bvector *vector, int count)
     if (count != be_vector_count(vector)) {
         int newcap = be_nextsize(count);
         if (newcap > vector->capacity) { /* extended capacity */
-            vector->data = be_realloc(vm,
-                vector->data, vector->capacity * size, newcap * size);
+            vector->data = resize_storage(vm, vector,
+                vector->capacity * size, newcap * size);
             vector->capacity = newcap;
         }
         vector->count = count;
@@ -101,13 +121,13 @@ void* be_vector_release(bvm *vm, bvector *vector)
     size_t size = vector->size;
     int count = be_vector_count(vector);
     if (count == 0) {
-        be_free(vm, vector->data, vector->capacity * size);
+        resize_storage(vm, vector, vector->capacity * size, 0);
         vector->capacity = 0;
         vector->data = NULL;
         vector->end = NULL;
     } else if (count < vector->capacity) {
-        vector->data = be_realloc(vm,
-            vector->data, vector->capacity * size, count * size);
+        vector->data = resize_storage(vm, vector,
+            vector->capacity * size, count * size);
         vector->end = (char*)vector->data + ((size_t)count - 1) * size;
         vector->capacity = count;
     }

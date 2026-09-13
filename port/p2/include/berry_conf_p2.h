@@ -230,7 +230,11 @@
 #endif
 
 #ifndef BE_P2_ENABLE_EXTENDED_MODULES
+#if BE_P2_PROFILE == BE_P2_PROFILE_XMM
+#define BE_P2_ENABLE_EXTENDED_MODULES   1
+#else
 #define BE_P2_ENABLE_EXTENDED_MODULES   0
+#endif
 #endif
 
 #ifndef BE_P2_ENABLE_TIME_MODULE
@@ -318,6 +322,11 @@
 #define BE_EXPLICIT_MALLOC              p2_heap_malloc
 #define BE_EXPLICIT_FREE                p2_heap_free
 #define BE_EXPLICIT_REALLOC             p2_heap_realloc
+
+/* Native jump buffers must be in Hub RAM, even with a PSRAM VM heap. */
+#if defined(__CATALINA_LARGE)
+#define BE_EXCEPTSTACK_REALLOC          be_p2_realloc_exceptstack
+#endif
 
 #define be_assert(expr)                 assert(expr)
 

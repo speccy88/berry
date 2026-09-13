@@ -7,7 +7,7 @@ var string_orig = string
 
 introspect.setmodule("string", 42)
 import string
-assert(type(string) == 'module')
+assert(string == 42)
 
 # set back original value
 introspect.setmodule("string", string_orig)
@@ -42,11 +42,7 @@ import string
 
 # test the new string module
 assert(string.tolower('abCD') == 'abcd')
-if introspect.contains(string, 'foo')
-    assert(string.foo() == 'bar')
-else
-    print("skip module monkey-patch replacement check")
-end
+assert(string.foo() == 'bar')
 
 
 # --- additional tests for be_module.c coverage ---

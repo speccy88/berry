@@ -2382,7 +2382,7 @@ end
 p2smart.gpio_loopback_probe = def(out_pin, in_pin, values, settle_us)
     var settle = settle_us == nil ? 10000 : p2smart._require_non_negative_int(settle_us, "settle_us")
     var pattern = values == nil ? [0, 1] : values
-    if type(pattern) != "list"
+    if !isinstance(pattern, list)
         raise "type_error", "values must be a list"
     end
     if pattern.size() == 0
@@ -2515,7 +2515,7 @@ end
 
 p2smart.counter_variant_drive_modes_probe = def(out_pin, in_pin, modes, high_us, settle_us)
     var names = modes == nil ? ["count_highs"] : modes
-    if type(names) != "list"
+    if !isinstance(names, list)
         raise "type_error", "modes must be a list"
     end
     if names.size() == 0
@@ -2941,7 +2941,7 @@ p2smart.jumper_pairs_probe = def(pairs)
     if pairs == nil
         raise "value_error", "pairs must be a list of two-pin lists"
     end
-    if type(pairs) != "list"
+    if !isinstance(pairs, list)
         raise "type_error", "pairs must be a list"
     end
     if pairs.size() == 0
@@ -2953,7 +2953,7 @@ p2smart.jumper_pairs_probe = def(pairs)
     var failures = []
     var ok_count = 0
     for pair : pairs
-        if type(pair) != "list" || pair.size() != 2
+        if !isinstance(pair, list) || pair.size() != 2
             raise "value_error", "each pair must contain exactly two pins"
         end
         var out_no = p2smart._require_pin(pair[0])
@@ -2969,7 +2969,7 @@ p2smart.jumper_pairs_probe = def(pairs)
             failed_pairs.push([out_no, in_no])
             var result_ok_count = result.contains("ok_count") && type(result["ok_count"]) == "int" ? result["ok_count"] : 0
             var result_failed_count = result.contains("failed_count") && type(result["failed_count"]) == "int" ? result["failed_count"] : 1
-            var result_failed_checks = result.contains("failed_checks") && type(result["failed_checks"]) == "list" ? result["failed_checks"] : []
+            var result_failed_checks = result.contains("failed_checks") && isinstance(result["failed_checks"], list) ? result["failed_checks"] : []
             failures.push({
                 "pair": [out_no, in_no],
                 "ok_count": result_ok_count,
@@ -2999,7 +2999,7 @@ p2smart.jumper_pairs_bidirectional_probe = def(pairs)
     if pairs == nil
         raise "value_error", "pairs must be a list of two-pin lists"
     end
-    if type(pairs) != "list"
+    if !isinstance(pairs, list)
         raise "type_error", "pairs must be a list"
     end
     if pairs.size() == 0
@@ -3008,7 +3008,7 @@ p2smart.jumper_pairs_bidirectional_probe = def(pairs)
     var directions = []
     var source_pairs = []
     for pair : pairs
-        if type(pair) != "list" || pair.size() != 2
+        if !isinstance(pair, list) || pair.size() != 2
             raise "value_error", "each pair must contain exactly two pins"
         end
         var a = p2smart._require_pin(pair[0])
@@ -3048,7 +3048,7 @@ p2smart.async_serial_probe = def(tx_pin, rx_pin, values, wait_us, baud, bits)
     if values == nil
         raise "value_error", "values must be a list of bytes"
     end
-    if type(values) != "list"
+    if !isinstance(values, list)
         raise "type_error", "values must be a list"
     end
     if values.size() == 0
@@ -3123,7 +3123,7 @@ p2smart.async_serial_burst_probe = def(tx_pin, rx_pin, values, wait_us, baud, bi
     if values == nil
         raise "value_error", "values must be a list of bytes"
     end
-    if type(values) != "list"
+    if !isinstance(values, list)
         raise "type_error", "values must be a list"
     end
     if values.size() == 0
@@ -3169,7 +3169,7 @@ p2smart.sync_serial_probe = def(tx_pin, rx_pin, values, wait_us, baud, bits)
     if values == nil
         raise "value_error", "values must be a list of sync serial words"
     end
-    if type(values) != "list"
+    if !isinstance(values, list)
         raise "type_error", "values must be a list"
     end
     if values.size() == 0
@@ -3223,7 +3223,7 @@ p2smart._sync_serial_clocked_probe_with_modes = def(data_tx_pin, data_rx_pin, cl
     if values == nil
         raise "value_error", "values must be a list of sync serial words"
     end
-    if type(values) != "list"
+    if !isinstance(values, list)
         raise "type_error", "values must be a list"
     end
     if values.size() == 0
@@ -3332,7 +3332,7 @@ p2smart.sync_serial_clocked_variant_probe = def(data_tx_pin, data_rx_pin, clock_
     if values == nil
         raise "value_error", "values must be a list of sync serial words"
     end
-    if type(values) != "list"
+    if !isinstance(values, list)
         raise "type_error", "values must be a list"
     end
     if values.size() == 0
@@ -3403,7 +3403,7 @@ p2smart.sync_serial_clocked_jumper_probes = def(groups, values, wait_us, baud, b
     if groups == nil
         raise "value_error", "groups must be a list of four-pin lists"
     end
-    if type(groups) != "list"
+    if !isinstance(groups, list)
         raise "type_error", "groups must be a list"
     end
     if groups.size() == 0
@@ -3415,7 +3415,7 @@ p2smart.sync_serial_clocked_jumper_probes = def(groups, values, wait_us, baud, b
     var failures = []
     var ok_count = 0
     for group : groups
-        if type(group) != "list" || group.size() != 4
+        if !isinstance(group, list) || group.size() != 4
             raise "value_error", "each sync serial group must contain four pins"
         end
         var data_tx = p2smart._require_pin(group[0])
@@ -3471,7 +3471,7 @@ p2smart.sync_serial_clocked_jumper_variant_probes = def(groups, values, wait_us,
     if groups == nil
         raise "value_error", "groups must be a list of four-pin lists"
     end
-    if type(groups) != "list"
+    if !isinstance(groups, list)
         raise "type_error", "groups must be a list"
     end
     if groups.size() == 0
@@ -3486,7 +3486,7 @@ p2smart.sync_serial_clocked_jumper_variant_probes = def(groups, values, wait_us,
     if values == nil
         raise "value_error", "values must be a list of sync serial words"
     end
-    if type(values) != "list"
+    if !isinstance(values, list)
         raise "type_error", "values must be a list"
     end
     if values.size() == 0
@@ -3497,7 +3497,7 @@ p2smart.sync_serial_clocked_jumper_variant_probes = def(groups, values, wait_us,
     end
     var delay = wait_us == nil ? 100 : p2smart._require_non_negative_int(wait_us, "wait_us")
     for group : groups
-        if type(group) != "list" || group.size() != 4
+        if !isinstance(group, list) || group.size() != 4
             raise "value_error", "each sync serial group must contain four pins"
         end
         var data_tx = p2smart._require_pin(group[0])

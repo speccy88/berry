@@ -26,16 +26,8 @@ static void sys_module_set_func(bvm *vm, const char *name, bntvfunc func)
 
 static int m_path(bvm *vm)
 {
-    blist *copy;
-    bvalue *arg;
-
-    be_module_path(vm);
-    copy = be_list_copy(vm, var_toobj(vm->top - 1));
-    be_pop(vm, 1);
-
     be_getbuiltin(vm, "list");
-    arg = be_incrtop(vm);
-    var_setlist(arg, copy);
+    be_module_path(vm);
     be_call(vm, 1);
     be_pop(vm, 1);
     be_return(vm);

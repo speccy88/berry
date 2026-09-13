@@ -57,7 +57,7 @@ def fallback_loop(samples)
 end
 
 var accel = math.accel_info()
-assert(type(accel) == "map")
+assert(isinstance(accel, map))
 assert(accel["backend"] == "p2_cordic")
 assert(accel["cordic"])
 assert(accel["sin"])

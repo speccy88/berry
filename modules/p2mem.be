@@ -16,7 +16,7 @@ end
 p2mem._gc_collect = def()
     try
         var status = p2.status_info()
-        if type(status) == "map" && status.contains("build")
+        if isinstance(status, map) && status.contains("build")
             var heap = p2.heap_info()
             var used = heap.contains("used") ? heap["used"] : 0
             return {
@@ -31,7 +31,7 @@ p2mem._gc_collect = def()
     end
     try
         var report = p2.gc()
-        if type(report) == "map" || type(report) == "instance"
+        if isinstance(report, map)
             return {
                 "before": report.contains("before") ? report["before"] : 0,
                 "after": report.contains("after") ? report["after"] : 0,
@@ -359,7 +359,7 @@ p2mem.native_cache = def()
 end
 
 p2mem._map_value = def(m, name, fallback)
-    if type(m) == "map" || type(m) == "instance"
+    if isinstance(m, map)
         if m.contains(name)
             return m[name]
         end
@@ -1016,7 +1016,7 @@ p2mem.native_module_source_release = def(name)
 end
 
 p2mem._native_module_names_error = def(names)
-    if classname(names) != "list"
+    if !isinstance(names, list)
         return "module names must be a list"
     end
     var i = 0
@@ -1034,7 +1034,7 @@ p2mem._native_module_names_invalid = def(names)
     var message = p2mem._native_module_names_error(names)
     return {
         "ok": false,
-        "requested": classname(names) == "list" ? size(names) : 0,
+        "requested": isinstance(names, list) ? size(names) : 0,
         "error": "invalid_module_names",
         "message": message,
         "items": []

@@ -154,7 +154,7 @@ assert(!os.path.exists(path))
 assert(os.path.exists(renamed))
 assert(os.remove(renamed))
 assert(!os.path.exists(renamed))
-assert(type(os.listdir("/")) == "list")
+assert(isinstance(os.listdir("/"), list))
 print("P2_SMOKE_STAGE sd rename_list")
 
 var start_cwd = os.getcwd()
@@ -176,7 +176,7 @@ assert(inner != nil)
 inner.write("inner")
 inner.close()
 var dir_entries = os.listdir(".")
-assert(type(dir_entries) == "list")
+assert(isinstance(dir_entries, list))
 var saw_inner = false
 for entry : dir_entries
     if entry == "INNER.TXT"

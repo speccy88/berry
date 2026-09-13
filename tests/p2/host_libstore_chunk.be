@@ -4,6 +4,8 @@
 # be tested without a P2 Edge board attached. It is not included by the on-target
 # /tests/p2 smoke suite.
 
+import introspect
+
 var p2 = module("p2")
 p2.mem = {}
 p2.info = {
@@ -56,7 +58,9 @@ p2.psram_read = def(address, n)
     return p2.mem[address]
 end
 
+introspect.setmodule("p2", p2)
 var libstore = run_file("modules/libstore.be")
+introspect.setmodule("libstore", libstore)
 libstore.paths = ["modules"]
 assert(libstore.module_name("MATH.BE") == "math")
 assert(libstore.module_name("notes.txt") == nil)

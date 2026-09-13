@@ -13,14 +13,11 @@
 #include "be_object.h"
 #include "be_string.h"
 #include "be_vm.h"
+#include "p2_clock.h"
+#include "p2_vm_state.h"
 
 #include <propeller2.h>
 #include <string.h>
-
-#define P2_TASK_MAX_TASKS 16
-#define P2_TASK_MAX_EVENTS 16
-#define P2_TASK_EVENT_MAX 31
-#define P2_TASK_ERROR_MAX 63
 
 #define P2_TASK_FREE 0
 #define P2_TASK_READY 1
@@ -40,30 +37,12 @@
 #define P2_TASK_WAIT_FLAGS 8
 #define P2_TASK_WAIT_TIMER 9
 
-typedef struct p2_task_slot {
-    int status;
-    int wait_kind;
-    int runs;
-    int wakeups;
-    int woke_timeout;
-    int wait_value;
-    char wait_event[P2_TASK_EVENT_MAX + 1];
-    char woke_event[P2_TASK_EVENT_MAX + 1];
-    char last_error[P2_TASK_ERROR_MAX + 1];
-    unsigned long deadline;
-} p2_task_slot;
-
-static p2_task_slot p2_task_slots[P2_TASK_MAX_TASKS];
-static int p2_task_current = -1;
-static int p2_task_next = -1;
-static char p2_task_events[P2_TASK_MAX_EVENTS][P2_TASK_EVENT_MAX + 1];
-
 static int p2_task_next_internal(bvm *vm);
-static int p2_task_live_count(void);
-static int p2_task_status_count(int wanted);
-static int p2_task_active_count(void);
+static int p2_task_live_count(bvm *vm);
+static int p2_task_status_count(bvm *vm, int wanted);
+static int p2_task_active_count(bvm *vm);
 static int p2_task_valid(int handle);
-static int p2_task_event_count(void);
+static int p2_task_event_count(bvm *vm);
 static void p2_task_push_events(bvm *vm);
 static int m_task_semaphore_new(bvm *vm);
 static int m_task_mutex_new(bvm *vm);
@@ -75,18 +54,44 @@ static void event_flags_push_ready_result(bvm *vm, int ok, int ready, int value,
 static int timer_ready(bvm *vm, int self_index);
 static int timer_remaining_ms(bvm *vm, int self_index);
 
-static unsigned long p2_task_millis_now(void)
+static uint32_t p2_task_millis_now(bvm *vm)
 {
-    unsigned long hz = (unsigned long)_clockfreq();
-    if (hz == 0) {
-        return 0;
+    uint32_t now = 0;
+    if (!p2_clock_millis_now(&now)) {
+        be_raise(vm, "runtime_error", "P2 clock frequency is not configured");
     }
-    return (unsigned long)(_cnt() / (hz / 1000u));
+    return now;
 }
 
-static int p2_task_time_reached(unsigned long now, unsigned long deadline)
+static uint32_t p2_task_delay_ms(bvm *vm, bint delay)
 {
-    return (long)(now - deadline) >= 0;
+    /* Check before narrowing a Berry integer on either host or Catalina. */
+    if (delay < 0 || delay > (bint)P2_DEADLINE_MAX_DELAY) {
+        be_raise(vm, "value_error", "P2 delay must be in 0..2147483647 milliseconds");
+    }
+    return (uint32_t)delay;
+}
+
+static void p2_task_set_deadline(bvm *vm, p2_deadline *deadline, bint timeout)
+{
+    uint32_t delay;
+    if (timeout < 0) {
+        p2_deadline_cancel(deadline);
+        deadline->at_ms = 0;
+        return;
+    }
+    delay = p2_task_delay_ms(vm, timeout);
+    p2_deadline_arm(deadline, p2_task_millis_now(vm), delay);
+}
+
+static bint p2_task_millis_value(uint32_t millis)
+{
+    /* Preserve the signed 32-bit Berry timestamp projection without
+     * implementation-defined unsigned-to-signed narrowing on either ABI. */
+    if (millis <= P2_DEADLINE_MAX_DELAY) {
+        return (bint)millis;
+    }
+    return -1 - (bint)(0xffffffffU - millis);
 }
 
 static const char *p2_task_status_name(int status)
@@ -343,15 +348,17 @@ static void p2_task_registry_set_wait_object(bvm *vm, int id, int object_index)
 
 static void p2_task_free_slot(bvm *vm, int id)
 {
-    memset(&p2_task_slots[id], 0, sizeof(p2_task_slots[id]));
+    p2_task_state *state = p2_vm_scheduler(vm);
     p2_task_registry_clear(vm, id);
+    memset(&state->slots[id], 0, sizeof(state->slots[id]));
 }
 
-static int p2_task_first_free(void)
+static int p2_task_first_free(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int i;
     for (i = 0; i < P2_TASK_MAX_TASKS; ++i) {
-        if (p2_task_slots[i].status == P2_TASK_FREE) {
+        if (state->slots[i].status == P2_TASK_FREE) {
             return i;
         }
     }
@@ -365,61 +372,66 @@ static int p2_task_valid(int handle)
 
 static int p2_task_activate_slot(bvm *vm, int id, int fn_index, int first_arg, int argc)
 {
-    memset(&p2_task_slots[id], 0, sizeof(p2_task_slots[id]));
-    p2_task_slots[id].status = P2_TASK_READY;
+    p2_task_state *state = p2_vm_scheduler(vm);
     p2_task_registry_set(vm, id, fn_index, first_arg, argc);
+    memset(&state->slots[id], 0, sizeof(state->slots[id]));
+    state->slots[id].status = P2_TASK_READY;
     return id;
 }
 
-static int p2_task_event_index(const char *event)
+static int p2_task_event_index(bvm *vm, const char *event)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int i;
     if (!event || !event[0]) {
         return -1;
     }
     for (i = 0; i < P2_TASK_MAX_EVENTS; ++i) {
-        if (p2_task_events[i][0] && !strcmp(p2_task_events[i], event)) {
+        if (state->events[i][0] && !strcmp(state->events[i], event)) {
             return i;
         }
     }
     return -1;
 }
 
-static int p2_task_event_latched(const char *event)
+static int p2_task_event_latched(bvm *vm, const char *event)
 {
-    return p2_task_event_index(event) >= 0;
+    return p2_task_event_index(vm, event) >= 0;
 }
 
-static int p2_task_signal_event(const char *event)
+static int p2_task_signal_event(bvm *vm, const char *event)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int i;
     if (!event || !event[0]) {
         return 0;
     }
-    if (p2_task_event_latched(event)) {
+    if (p2_task_event_latched(vm, event)) {
         return 1;
     }
     for (i = 0; i < P2_TASK_MAX_EVENTS; ++i) {
-        if (!p2_task_events[i][0]) {
-            p2_task_copy_event(p2_task_events[i], event);
+        if (!state->events[i][0]) {
+            p2_task_copy_event(state->events[i], event);
             return 1;
         }
     }
     return 0;
 }
 
-static int p2_task_clear_event(const char *event)
+static int p2_task_clear_event(bvm *vm, const char *event)
 {
-    int idx = p2_task_event_index(event);
+    p2_task_state *state = p2_vm_scheduler(vm);
+    int idx = p2_task_event_index(vm, event);
     if (idx < 0) {
         return 0;
     }
-    p2_task_events[idx][0] = '\0';
+    state->events[idx][0] = '\0';
     return 1;
 }
 
 static int p2_task_object_wait_ready(bvm *vm, int id)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     p2_task_slot *slot;
     bvalue *ref;
     bmap *map;
@@ -430,7 +442,7 @@ static int p2_task_object_wait_ready(bvm *vm, int id)
     if (!p2_task_valid(id)) {
         return 0;
     }
-    slot = &p2_task_slots[id];
+    slot = &state->slots[id];
     ref = p2_task_registry_value(vm, id);
     if (!ref || !var_ismap(ref)) {
         return 0;
@@ -490,29 +502,29 @@ static int p2_task_is_object_wait_kind(int wait_kind)
 
 static void p2_task_wake_waiting(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int i;
-    unsigned long now = p2_task_millis_now();
+    uint32_t now = p2_task_millis_now(vm);
 
     for (i = 0; i < P2_TASK_MAX_TASKS; ++i) {
-        p2_task_slot *slot = &p2_task_slots[i];
+        p2_task_slot *slot = &state->slots[i];
         if (slot->status != P2_TASK_WAITING) {
             continue;
         }
         slot->woke_timeout = 0;
         slot->woke_event[0] = '\0';
-        if (slot->wait_kind == P2_TASK_WAIT_SLEEP && p2_task_time_reached(now, slot->deadline)) {
+        if (slot->wait_kind == P2_TASK_WAIT_SLEEP && p2_deadline_reached(&slot->deadline, now)) {
             slot->status = P2_TASK_READY;
             slot->woke_timeout = 1;
             ++slot->wakeups;
         } else if (slot->wait_kind == P2_TASK_WAIT_EVENT &&
                 slot->wait_event[0] &&
-                p2_task_event_latched(slot->wait_event)) {
+                p2_task_event_latched(vm, slot->wait_event)) {
             slot->status = P2_TASK_READY;
             p2_task_copy_event(slot->woke_event, slot->wait_event);
             ++slot->wakeups;
         } else if (slot->wait_kind == P2_TASK_WAIT_EVENT &&
-                slot->deadline != 0 &&
-                p2_task_time_reached(now, slot->deadline)) {
+                p2_deadline_reached(&slot->deadline, now)) {
             slot->status = P2_TASK_READY;
             slot->woke_timeout = 1;
             ++slot->wakeups;
@@ -522,12 +534,14 @@ static void p2_task_wake_waiting(bvm *vm)
             ++slot->wakeups;
             p2_task_registry_set_wait_object(vm, i, 0);
         } else if (p2_task_is_object_wait_kind(slot->wait_kind) &&
-                slot->deadline != 0 &&
-                p2_task_time_reached(now, slot->deadline)) {
+                p2_deadline_reached(&slot->deadline, now)) {
             slot->status = P2_TASK_READY;
             slot->woke_timeout = 1;
             ++slot->wakeups;
             p2_task_registry_set_wait_object(vm, i, 0);
+        }
+        if (slot->status == P2_TASK_READY) {
+            p2_deadline_cancel(&slot->deadline);
         }
     }
 }
@@ -583,7 +597,8 @@ static const char *p2_task_map_str_or(bvm *vm, bmap *map, const char *key, const
 
 static void p2_task_apply_p2ipc_wait(bvm *vm, int id, bmap *map, const char *wait_kind)
 {
-    p2_task_slot *slot = &p2_task_slots[id];
+    p2_task_state *state = p2_vm_scheduler(vm);
+    p2_task_slot *slot = &state->slots[id];
     bvalue *objv = p2_task_map_find_cstr(vm, map, "wait_object");
     bint timeout = p2_task_map_int_or(vm, map, "timeout", -1);
     const char *fallback_mode = !strcmp(wait_kind, "p2ipc_channel_send") ? "send" :
@@ -593,9 +608,11 @@ static void p2_task_apply_p2ipc_wait(bvm *vm, int id, bmap *map, const char *wai
 
     if (!objv || var_isnil(objv)) {
         slot->status = P2_TASK_ERROR;
+        p2_deadline_cancel(&slot->deadline);
         strcpy(slot->last_error, "p2ipc wait object missing");
         return;
     }
+    p2_task_set_deadline(vm, &slot->deadline, timeout);
     *vm->top = *objv;
     be_incrtop(vm);
     p2_task_registry_set_wait_object(vm, id, -1);
@@ -603,12 +620,12 @@ static void p2_task_apply_p2ipc_wait(bvm *vm, int id, bmap *map, const char *wai
     slot->status = P2_TASK_WAITING;
     slot->wait_kind = !strncmp(wait_kind, "p2ipc_channel_", 14) ? P2_TASK_WAIT_P2IPC_CHANNEL : P2_TASK_WAIT_P2IPC_MAILBOX;
     p2_task_copy_event(slot->wait_event, mode);
-    slot->deadline = timeout >= 0 ? p2_task_millis_now() + (unsigned long)timeout : 0;
 }
 
 static void p2_task_apply_primitive_wait(bvm *vm, int id, bmap *map, const char *wait_kind)
 {
-    p2_task_slot *slot = &p2_task_slots[id];
+    p2_task_state *state = p2_vm_scheduler(vm);
+    p2_task_slot *slot = &state->slots[id];
     bvalue *objv = p2_task_map_find_cstr(vm, map, "wait_object");
     bint timeout = p2_task_map_int_or(vm, map, "timeout", -1);
     const char *fallback_mode = !strcmp(wait_kind, "queue_put") ? "put" :
@@ -617,9 +634,11 @@ static void p2_task_apply_primitive_wait(bvm *vm, int id, bmap *map, const char 
 
     if (!objv || var_isnil(objv)) {
         slot->status = P2_TASK_ERROR;
+        p2_deadline_cancel(&slot->deadline);
         strcpy(slot->last_error, "primitive wait object missing");
         return;
     }
+    p2_task_set_deadline(vm, &slot->deadline, timeout);
     *vm->top = *objv;
     be_incrtop(vm);
     p2_task_registry_set_wait_object(vm, id, -1);
@@ -642,18 +661,19 @@ static void p2_task_apply_primitive_wait(bvm *vm, int id, bmap *map, const char 
         slot->wait_kind = P2_TASK_WAIT_TIMER;
         p2_task_copy_event(slot->wait_event, "expired");
     }
-    slot->deadline = timeout >= 0 ? p2_task_millis_now() + (unsigned long)timeout : 0;
 }
 
 static void p2_task_interpret_result(bvm *vm, int id, int result_index)
 {
-    p2_task_slot *slot = &p2_task_slots[id];
+    p2_task_state *state = p2_vm_scheduler(vm);
+    p2_task_slot *slot = &state->slots[id];
     bvalue *rv = be_indexof(vm, result_index);
     const char *wait_kind = p2_task_wait_kind_from_value(vm, rv);
 
     if (p2_task_is_done_value(vm, result_index)) {
         p2_task_free_slot(vm, id);
     } else if (be_isstring(vm, result_index) && !strcmp(be_tostring(vm, result_index), "__task_pause__")) {
+        p2_deadline_cancel(&slot->deadline);
         slot->status = P2_TASK_PAUSED;
     } else if (wait_kind) {
         bmap *map = var_toobj(rv);
@@ -662,9 +682,9 @@ static void p2_task_interpret_result(bvm *vm, int id, int result_index)
             if (ms < 0) {
                 ms = 0;
             }
+            p2_task_set_deadline(vm, &slot->deadline, ms);
             slot->status = P2_TASK_WAITING;
             slot->wait_kind = P2_TASK_WAIT_SLEEP;
-            slot->deadline = p2_task_millis_now() + (unsigned long)ms;
         } else if (!strcmp(wait_kind, "p2ipc_channel_recv") ||
                 !strcmp(wait_kind, "p2ipc_channel_send") ||
                 !strcmp(wait_kind, "p2ipc_mailbox_get") ||
@@ -680,18 +700,20 @@ static void p2_task_interpret_result(bvm *vm, int id, int result_index)
         } else {
             const char *event = p2_task_map_str_or(vm, map, "event", wait_kind);
             bint timeout = p2_task_map_int_or(vm, map, "timeout", -1);
+            p2_task_set_deadline(vm, &slot->deadline, timeout);
             slot->status = P2_TASK_WAITING;
             slot->wait_kind = P2_TASK_WAIT_EVENT;
             p2_task_copy_event(slot->wait_event, event);
-            slot->deadline = timeout >= 0 ? p2_task_millis_now() + (unsigned long)timeout : 0;
         }
     } else {
+        p2_deadline_cancel(&slot->deadline);
         slot->status = P2_TASK_READY;
     }
 }
 
 static int p2_task_call_slot(bvm *vm, int id)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     bvalue *ref = p2_task_registry_value(vm, id);
     bvalue *fnv;
     bvalue *argsv;
@@ -701,16 +723,18 @@ static int p2_task_call_slot(bvm *vm, int id)
     int i;
 
     if (!ref || !var_ismap(ref)) {
-        p2_task_slots[id].status = P2_TASK_ERROR;
-        strcpy(p2_task_slots[id].last_error, "task reference missing");
+        p2_deadline_cancel(&state->slots[id].deadline);
+        state->slots[id].status = P2_TASK_ERROR;
+        strcpy(state->slots[id].last_error, "task reference missing");
         return 0;
     }
     map = var_toobj(ref);
     fnv = p2_task_map_find_cstr(vm, map, "fn");
     argsv = p2_task_map_find_cstr(vm, map, "args");
     if (!fnv || !var_isfunction(fnv) || !argsv || !var_islist(argsv)) {
-        p2_task_slots[id].status = P2_TASK_ERROR;
-        strcpy(p2_task_slots[id].last_error, "task reference invalid");
+        p2_deadline_cancel(&state->slots[id].deadline);
+        state->slots[id].status = P2_TASK_ERROR;
+        strcpy(state->slots[id].last_error, "task reference invalid");
         return 0;
     }
     args = var_toobj(argsv);
@@ -729,18 +753,19 @@ static int p2_task_call_slot(bvm *vm, int id)
 
 static int p2_task_run_slot(bvm *vm, int id)
 {
-    p2_task_slot *slot = &p2_task_slots[id];
+    p2_task_state *state = p2_vm_scheduler(vm);
+    p2_task_slot *slot = &state->slots[id];
     int result_index;
 
-    p2_task_current = id;
+    state->current = id;
     ++slot->runs;
     slot->last_error[0] = '\0';
     if (!p2_task_call_slot(vm, id)) {
-        p2_task_current = -1;
+        state->current = -1;
         return id;
     }
     result_index = be_absindex(vm, -1);
-    p2_task_current = -1;
+    state->current = -1;
     if (slot->status == P2_TASK_READY) {
         p2_task_interpret_result(vm, id, result_index);
     }
@@ -757,7 +782,7 @@ static int m_task_start(bvm *vm)
         be_pushint(vm, -1);
         be_return(vm);
     }
-    id = p2_task_first_free();
+    id = p2_task_first_free(vm);
     if (id < 0) {
         be_pushint(vm, -1);
         be_return(vm);
@@ -777,7 +802,7 @@ static int m_task_start_result(bvm *vm)
         p2_task_map_set_string(vm, -1, "error", "invalid_function");
         p2_task_map_set_string(vm, -1, "message", "task function must be a function");
     } else {
-        id = p2_task_first_free();
+        id = p2_task_first_free(vm);
         if (id < 0) {
             p2_task_map_set_bool(vm, -1, "ok", 0);
             p2_task_map_set_int(vm, -1, "handle", -1);
@@ -797,6 +822,7 @@ static int m_task_start_result(bvm *vm)
 
 static int m_task_spin(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int id;
     int fn_index = 2;
     int first_arg = 3;
@@ -808,8 +834,8 @@ static int m_task_spin(bvm *vm)
     }
     id = (int)be_toint(vm, 1);
     if (id == -1) {
-        id = p2_task_first_free();
-    } else if (!p2_task_valid(id) || p2_task_slots[id].status != P2_TASK_FREE) {
+        id = p2_task_first_free(vm);
+    } else if (!p2_task_valid(id) || state->slots[id].status != P2_TASK_FREE) {
         be_pushint(vm, -1);
         be_return(vm);
     }
@@ -827,6 +853,7 @@ static int m_task_sleep(bvm *vm)
     if (ms < 0) {
         ms = 0;
     }
+    p2_task_delay_ms(vm, ms);
     be_newobject(vm, "map");
     p2_task_map_set_string(vm, -1, "_task_wait", "sleep");
     p2_task_map_set_int(vm, -1, "ms", ms);
@@ -850,7 +877,7 @@ static int m_task_wait(bvm *vm)
         p2_task_map_set_string(vm, -1, "mode", mode);
         p2_task_map_set_value(vm, -1, "wait_object", 1);
         if (timeout >= 0) {
-            p2_task_map_set_int(vm, -1, "timeout", timeout);
+            p2_task_map_set_int(vm, -1, "timeout", p2_task_delay_ms(vm, timeout));
         }
         be_return(vm);
     }
@@ -862,7 +889,7 @@ static int m_task_wait(bvm *vm)
         p2_task_map_set_string(vm, -1, "mode", "take");
         p2_task_map_set_value(vm, -1, "wait_object", 1);
         if (timeout >= 0) {
-            p2_task_map_set_int(vm, -1, "timeout", timeout);
+            p2_task_map_set_int(vm, -1, "timeout", p2_task_delay_ms(vm, timeout));
         }
         be_return(vm);
     }
@@ -874,7 +901,7 @@ static int m_task_wait(bvm *vm)
         p2_task_map_set_string(vm, -1, "mode", "lock");
         p2_task_map_set_value(vm, -1, "wait_object", 1);
         if (timeout >= 0) {
-            p2_task_map_set_int(vm, -1, "timeout", timeout);
+            p2_task_map_set_int(vm, -1, "timeout", p2_task_delay_ms(vm, timeout));
         }
         be_return(vm);
     }
@@ -891,7 +918,7 @@ static int m_task_wait(bvm *vm)
         p2_task_map_set_int(vm, -1, "mask", mask);
         p2_task_map_set_value(vm, -1, "wait_object", 1);
         if (timeout >= 0) {
-            p2_task_map_set_int(vm, -1, "timeout", timeout);
+            p2_task_map_set_int(vm, -1, "timeout", p2_task_delay_ms(vm, timeout));
         }
         be_return(vm);
     }
@@ -903,7 +930,7 @@ static int m_task_wait(bvm *vm)
         p2_task_map_set_string(vm, -1, "mode", "expired");
         p2_task_map_set_value(vm, -1, "wait_object", 1);
         if (timeout >= 0) {
-            p2_task_map_set_int(vm, -1, "timeout", timeout);
+            p2_task_map_set_int(vm, -1, "timeout", p2_task_delay_ms(vm, timeout));
         }
         be_return(vm);
     }
@@ -921,7 +948,7 @@ static int m_task_wait(bvm *vm)
         p2_task_map_set_string(vm, -1, "mode", mode);
         p2_task_map_set_value(vm, -1, "wait_object", 1);
         if (timeout >= 0) {
-            p2_task_map_set_int(vm, -1, "timeout", timeout);
+            p2_task_map_set_int(vm, -1, "timeout", p2_task_delay_ms(vm, timeout));
         }
         be_return(vm);
     }
@@ -939,7 +966,7 @@ static int m_task_wait(bvm *vm)
         p2_task_map_set_string(vm, -1, "mode", mode);
         p2_task_map_set_value(vm, -1, "wait_object", 1);
         if (timeout >= 0) {
-            p2_task_map_set_int(vm, -1, "timeout", timeout);
+            p2_task_map_set_int(vm, -1, "timeout", p2_task_delay_ms(vm, timeout));
         }
         be_return(vm);
     }
@@ -950,7 +977,7 @@ static int m_task_wait(bvm *vm)
     p2_task_map_set_string(vm, -1, "_task_wait", "event");
     p2_task_map_set_string(vm, -1, "event", event);
     if (timeout >= 0) {
-        p2_task_map_set_int(vm, -1, "timeout", timeout);
+        p2_task_map_set_int(vm, -1, "timeout", p2_task_delay_ms(vm, timeout));
     }
     be_return(vm);
 }
@@ -958,20 +985,21 @@ static int m_task_wait(bvm *vm)
 static int m_task_signal(bvm *vm)
 {
     const char *event = be_top(vm) >= 1 && be_isstring(vm, 1) ? be_tostring(vm, 1) : "";
-    be_pushbool(vm, p2_task_signal_event(event) ? btrue : bfalse);
+    be_pushbool(vm, p2_task_signal_event(vm, event) ? btrue : bfalse);
     be_return(vm);
 }
 
 static int m_task_clear(bvm *vm)
 {
     const char *event = be_top(vm) >= 1 && be_isstring(vm, 1) ? be_tostring(vm, 1) : "";
-    be_pushbool(vm, p2_task_clear_event(event) ? btrue : bfalse);
+    be_pushbool(vm, p2_task_clear_event(vm, event) ? btrue : bfalse);
     be_return(vm);
 }
 
 static int m_task_clear_all(bvm *vm)
 {
-    memset(p2_task_events, 0, sizeof(p2_task_events));
+    p2_task_state *state = p2_vm_scheduler(vm);
+    memset(state->events, 0, sizeof(state->events));
     be_pushbool(vm, btrue);
     be_return(vm);
 }
@@ -1142,7 +1170,7 @@ static int m_task_ready_result(bvm *vm)
         p2_task_map_set_string(vm, -1, "error", "invalid_event");
         p2_task_map_set_string(vm, -1, "message", "event name must be a non-empty string or event wait descriptor");
     } else {
-        int ready = p2_task_event_latched(event);
+        int ready = p2_task_event_latched(vm, event);
         p2_task_map_set_bool(vm, -1, "ok", ready);
         p2_task_map_set_bool(vm, -1, "ready", ready);
         p2_task_map_set_string(vm, -1, "kind", "event");
@@ -1300,25 +1328,27 @@ static void mutex_push_unlock_result(bvm *vm, int ok, int locked, int owner, int
 
 static int mutex_lock(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     if (p2_task_get_member_bool(vm, 1, "locked", 0)) {
         be_pushbool(vm, bfalse);
         be_return(vm);
     }
     p2_task_set_member_bool(vm, 1, "locked", 1);
-    p2_task_set_member_int(vm, 1, "owner_id", p2_task_current);
+    p2_task_set_member_int(vm, 1, "owner_id", state->current);
     be_pushbool(vm, btrue);
     be_return(vm);
 }
 
 static int mutex_lock_result(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int locked = p2_task_get_member_bool(vm, 1, "locked", 0);
     int owner = p2_task_get_member_int(vm, 1, "owner_id", -1);
     if (locked) {
         mutex_push_lock_result(vm, 0, locked, owner, "busy", "mutex is already locked");
         be_return(vm);
     }
-    owner = p2_task_current;
+    owner = state->current;
     p2_task_set_member_bool(vm, 1, "locked", 1);
     p2_task_set_member_int(vm, 1, "owner_id", owner);
     mutex_push_lock_result(vm, 1, 1, owner, "", "");
@@ -1789,28 +1819,57 @@ static int m_task_event_flags_new(bvm *vm)
     be_return(vm);
 }
 
+static p2_deadline timer_deadline(bvm *vm, int self_index)
+{
+    p2_deadline deadline;
+    deadline.at_ms = (uint32_t)p2_task_get_member_int(vm, self_index, "deadline", 0);
+    deadline.armed = p2_task_get_member_bool(vm, self_index, "active", 0);
+    return deadline;
+}
+
+static uint32_t timer_period(bvm *vm, int self_index)
+{
+    bint period = 0;
+    if (be_getmember(vm, self_index, "period_ms") && be_isint(vm, -1)) {
+        period = be_toint(vm, -1);
+    }
+    be_pop(vm, 1);
+    return p2_task_delay_ms(vm, period);
+}
+
+static uint32_t timer_rearm(bvm *vm, int self_index)
+{
+    uint32_t period = timer_period(vm, self_index);
+    p2_deadline deadline;
+    /* Repeats remain fixed-delay: late polling starts a fresh period at now. */
+    p2_deadline_arm(&deadline, p2_task_millis_now(vm), period);
+    p2_task_set_member_int(vm, self_index, "deadline", p2_task_millis_value(deadline.at_ms));
+    p2_task_set_member_bool(vm, self_index, "active", deadline.armed);
+    return deadline.at_ms;
+}
+
 static int timer_init(bvm *vm)
 {
     int period = 10;
     int repeat = 1;
-    unsigned long now;
+    p2_deadline deadline;
     if (be_top(vm) >= 2 && !be_isnil(vm, 2)) {
         if (!be_isint(vm, 2) || be_toint(vm, 2) < 0) {
             period = 0;
         } else {
-            period = (int)be_toint(vm, 2);
+            period = (int)p2_task_delay_ms(vm, be_toint(vm, 2));
         }
     }
     if (be_top(vm) >= 3 && !be_isnil(vm, 3)) {
         repeat = be_tobool(vm, 3) ? 1 : 0;
     }
-    now = p2_task_millis_now();
+    p2_deadline_arm(&deadline, p2_task_millis_now(vm), (uint32_t)period);
     be_pushstring(vm, "timer");
     be_setmember(vm, 1, "_task_kind");
     be_pop(vm, 1);
     p2_task_set_member_int(vm, 1, "period_ms", period);
     p2_task_set_member_bool(vm, 1, "repeat", repeat);
-    p2_task_set_member_int(vm, 1, "deadline", (int)(now + (unsigned long)period));
+    p2_task_set_member_int(vm, 1, "deadline", p2_task_millis_value(deadline.at_ms));
     p2_task_set_member_bool(vm, 1, "active", 1);
     be_pushvalue(vm, 1);
     be_return(vm);
@@ -1818,25 +1877,17 @@ static int timer_init(bvm *vm)
 
 static int timer_ready(bvm *vm, int self_index)
 {
-    int active = p2_task_get_member_bool(vm, self_index, "active", 0);
-    unsigned long deadline = (unsigned long)p2_task_get_member_int(vm, self_index, "deadline", 0);
-    return active && p2_task_time_reached(p2_task_millis_now(), deadline);
+    p2_deadline deadline = timer_deadline(vm, self_index);
+    return deadline.armed && p2_deadline_reached(&deadline, p2_task_millis_now(vm));
 }
 
 static int timer_remaining_ms(bvm *vm, int self_index)
 {
-    int active = p2_task_get_member_bool(vm, self_index, "active", 0);
-    unsigned long deadline;
-    unsigned long now;
-    if (!active) {
+    p2_deadline deadline = timer_deadline(vm, self_index);
+    if (!deadline.armed) {
         return 0;
     }
-    deadline = (unsigned long)p2_task_get_member_int(vm, self_index, "deadline", 0);
-    now = p2_task_millis_now();
-    if (p2_task_time_reached(now, deadline)) {
-        return 0;
-    }
-    return (int)(deadline - now);
+    return (int)p2_deadline_remaining(&deadline, p2_task_millis_now(vm));
 }
 
 static int timer_expired(bvm *vm)
@@ -1846,8 +1897,7 @@ static int timer_expired(bvm *vm)
         be_return(vm);
     }
     if (p2_task_get_member_bool(vm, 1, "repeat", 1)) {
-        int period = p2_task_get_member_int(vm, 1, "period_ms", 0);
-        p2_task_set_member_int(vm, 1, "deadline", (int)(p2_task_millis_now() + (unsigned long)period));
+        timer_rearm(vm, 1);
     } else {
         p2_task_set_member_bool(vm, 1, "active", 0);
     }
@@ -1859,24 +1909,22 @@ static int timer_expired_result(bvm *vm)
 {
     int active = p2_task_get_member_bool(vm, 1, "active", 0);
     int repeat = p2_task_get_member_bool(vm, 1, "repeat", 1);
-    int deadline = p2_task_get_member_int(vm, 1, "deadline", 0);
-    int previous_deadline = deadline;
+    uint32_t deadline = timer_deadline(vm, 1).at_ms;
+    uint32_t previous_deadline = deadline;
     if (!timer_ready(vm, 1)) {
         be_newobject(vm, "map");
         p2_task_map_set_bool(vm, -1, "ok", 0);
         p2_task_map_set_bool(vm, -1, "expired", 0);
         p2_task_map_set_bool(vm, -1, "active", active);
         p2_task_map_set_bool(vm, -1, "repeat", repeat);
-        p2_task_map_set_int(vm, -1, "deadline", deadline);
+        p2_task_map_set_int(vm, -1, "deadline", p2_task_millis_value(deadline));
         p2_task_map_set_string(vm, -1, "error", "not_expired");
         p2_task_map_set_string(vm, -1, "message", "timer has not expired");
         be_pop(vm, 1);
         be_return(vm);
     }
     if (repeat) {
-        int period = p2_task_get_member_int(vm, 1, "period_ms", 0);
-        deadline = (int)(p2_task_millis_now() + (unsigned long)period);
-        p2_task_set_member_int(vm, 1, "deadline", deadline);
+        deadline = timer_rearm(vm, 1);
         active = 1;
     } else {
         p2_task_set_member_bool(vm, 1, "active", 0);
@@ -1887,8 +1935,8 @@ static int timer_expired_result(bvm *vm)
     p2_task_map_set_bool(vm, -1, "expired", 1);
     p2_task_map_set_bool(vm, -1, "active", active);
     p2_task_map_set_bool(vm, -1, "repeat", repeat);
-    p2_task_map_set_int(vm, -1, "deadline", deadline);
-    p2_task_map_set_int(vm, -1, "previous_deadline", previous_deadline);
+    p2_task_map_set_int(vm, -1, "deadline", p2_task_millis_value(deadline));
+    p2_task_map_set_int(vm, -1, "previous_deadline", p2_task_millis_value(previous_deadline));
     p2_task_map_set_string(vm, -1, "error", "");
     p2_task_map_set_string(vm, -1, "message", "");
     be_pop(vm, 1);
@@ -1941,24 +1989,19 @@ static int timer_cancel_result(bvm *vm)
 
 static int timer_restart(bvm *vm)
 {
-    int period = p2_task_get_member_int(vm, 1, "period_ms", 0);
-    p2_task_set_member_int(vm, 1, "deadline", (int)(p2_task_millis_now() + (unsigned long)period));
-    p2_task_set_member_bool(vm, 1, "active", 1);
+    timer_rearm(vm, 1);
     be_pushbool(vm, btrue);
     be_return(vm);
 }
 
 static int timer_restart_result(bvm *vm)
 {
-    int period = p2_task_get_member_int(vm, 1, "period_ms", 0);
-    int deadline = (int)(p2_task_millis_now() + (unsigned long)period);
-    p2_task_set_member_int(vm, 1, "deadline", deadline);
-    p2_task_set_member_bool(vm, 1, "active", 1);
+    uint32_t deadline = timer_rearm(vm, 1);
     be_newobject(vm, "map");
     p2_task_map_set_bool(vm, -1, "ok", 1);
     p2_task_map_set_bool(vm, -1, "active", 1);
-    p2_task_map_set_int(vm, -1, "deadline", deadline);
-    p2_task_map_set_int(vm, -1, "period_ms", period);
+    p2_task_map_set_int(vm, -1, "deadline", p2_task_millis_value(deadline));
+    p2_task_map_set_int(vm, -1, "period_ms", timer_period(vm, 1));
     p2_task_map_set_string(vm, -1, "error", "");
     p2_task_map_set_string(vm, -1, "message", "");
     be_pop(vm, 1);
@@ -2025,15 +2068,16 @@ static int m_task_next(bvm *vm)
 
 static int m_task_next_result(bvm *vm)
 {
-    int live_before = p2_task_live_count();
+    p2_task_state *state = p2_vm_scheduler(vm);
+    int live_before = p2_task_live_count(vm);
     int ran = p2_task_next_internal(vm);
-    int live_after = p2_task_live_count();
+    int live_after = p2_task_live_count(vm);
     be_newobject(vm, "map");
     p2_task_map_set_int(vm, -1, "handle", ran);
     p2_task_map_set_int(vm, -1, "live_before", live_before);
     p2_task_map_set_int(vm, -1, "live_after", live_after);
-    p2_task_map_set_int(vm, -1, "ready_after", p2_task_status_count(P2_TASK_READY));
-    p2_task_map_set_int(vm, -1, "waiting_after", p2_task_status_count(P2_TASK_WAITING));
+    p2_task_map_set_int(vm, -1, "ready_after", p2_task_status_count(vm, P2_TASK_READY));
+    p2_task_map_set_int(vm, -1, "waiting_after", p2_task_status_count(vm, P2_TASK_WAITING));
     if (ran < 0) {
         p2_task_map_set_bool(vm, -1, "ok", 0);
         p2_task_map_set_bool(vm, -1, "ran", 0);
@@ -2043,7 +2087,7 @@ static int m_task_next_result(bvm *vm)
         p2_task_map_set_string(vm, -1, "error", "no_ready_task");
         p2_task_map_set_string(vm, -1, "message", "no ready cooperative task was available");
     } else {
-        p2_task_slot *slot = &p2_task_slots[ran];
+        p2_task_slot *slot = &state->slots[ran];
         p2_task_map_set_bool(vm, -1, "ok", 1);
         p2_task_map_set_bool(vm, -1, "ran", 1);
         p2_task_map_set_string(vm, -1, "status", p2_task_status_name(slot->status));
@@ -2058,60 +2102,65 @@ static int m_task_next_result(bvm *vm)
 
 static int p2_task_next_internal(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int i;
     p2_task_wake_waiting(vm);
     for (i = 0; i < P2_TASK_MAX_TASKS; ++i) {
-        p2_task_next = (p2_task_next + 1) % P2_TASK_MAX_TASKS;
-        if (p2_task_slots[p2_task_next].status == P2_TASK_READY) {
-            return p2_task_run_slot(vm, p2_task_next);
+        state->next = (state->next + 1) % P2_TASK_MAX_TASKS;
+        if (state->slots[state->next].status == P2_TASK_READY) {
+            return p2_task_run_slot(vm, state->next);
         }
     }
     return -1;
 }
 
-static int p2_task_live_count(void)
+static int p2_task_live_count(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int i;
     int count = 0;
     for (i = 0; i < P2_TASK_MAX_TASKS; ++i) {
-        if (p2_task_slots[i].status == P2_TASK_READY ||
-            p2_task_slots[i].status == P2_TASK_WAITING) {
+        if (state->slots[i].status == P2_TASK_READY ||
+            state->slots[i].status == P2_TASK_WAITING) {
             ++count;
         }
     }
     return count;
 }
 
-static int p2_task_status_count(int wanted)
+static int p2_task_status_count(bvm *vm, int wanted)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int i;
     int count = 0;
     for (i = 0; i < P2_TASK_MAX_TASKS; ++i) {
-        if (p2_task_slots[i].status == wanted) {
+        if (state->slots[i].status == wanted) {
             ++count;
         }
     }
     return count;
 }
 
-static int p2_task_active_count(void)
+static int p2_task_active_count(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int i;
     int count = 0;
     for (i = 0; i < P2_TASK_MAX_TASKS; ++i) {
-        if (p2_task_slots[i].status != P2_TASK_FREE) {
+        if (state->slots[i].status != P2_TASK_FREE) {
             ++count;
         }
     }
     return count;
 }
 
-static int p2_task_event_count(void)
+static int p2_task_event_count(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int i;
     int count = 0;
     for (i = 0; i < P2_TASK_MAX_EVENTS; ++i) {
-        if (p2_task_events[i][0]) {
+        if (state->events[i][0]) {
             ++count;
         }
     }
@@ -2120,11 +2169,12 @@ static int p2_task_event_count(void)
 
 static void p2_task_push_events(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int i;
     be_newobject(vm, "list");
     for (i = 0; i < P2_TASK_MAX_EVENTS; ++i) {
-        if (p2_task_events[i][0]) {
-            p2_task_list_push_string(vm, -1, p2_task_events[i]);
+        if (state->events[i][0]) {
+            p2_task_list_push_string(vm, -1, state->events[i]);
         }
     }
     be_pop(vm, 1);
@@ -2133,13 +2183,16 @@ static void p2_task_push_events(bvm *vm)
 static int m_task_run(bvm *vm)
 {
     int max_steps = be_top(vm) >= 1 && be_isint(vm, 1) ? (int)be_toint(vm, 1) : -1;
-    int idle_ms = be_top(vm) >= 2 && be_isint(vm, 2) ? (int)be_toint(vm, 2) : 1;
+    bint idle_ms = be_top(vm) >= 2 && be_isint(vm, 2) ? be_toint(vm, 2) : 1;
     int steps = 0;
 
+    if (idle_ms > 0) {
+        p2_task_delay_ms(vm, idle_ms);
+    }
     while (max_steps < 0 || steps < max_steps) {
         int before = steps;
         p2_task_wake_waiting(vm);
-        if (p2_task_live_count() <= 0) {
+        if (p2_task_live_count(vm) <= 0) {
             break;
         }
         be_pushntvfunction(vm, m_task_next);
@@ -2159,14 +2212,17 @@ static int m_task_run(bvm *vm)
 static int m_task_run_result(bvm *vm)
 {
     int max_steps = be_top(vm) >= 1 && be_isint(vm, 1) ? (int)be_toint(vm, 1) : -1;
-    int idle_ms = be_top(vm) >= 2 && be_isint(vm, 2) ? (int)be_toint(vm, 2) : 1;
+    bint idle_ms = be_top(vm) >= 2 && be_isint(vm, 2) ? be_toint(vm, 2) : 1;
     int steps = 0;
-    int live_before = p2_task_live_count();
+    int live_before = p2_task_live_count(vm);
 
+    if (idle_ms > 0) {
+        p2_task_delay_ms(vm, idle_ms);
+    }
     while (max_steps < 0 || steps < max_steps) {
         int before = steps;
         p2_task_wake_waiting(vm);
-        if (p2_task_live_count() <= 0) {
+        if (p2_task_live_count(vm) <= 0) {
             break;
         }
         be_pushntvfunction(vm, m_task_next);
@@ -2186,26 +2242,28 @@ static int m_task_run_result(bvm *vm)
     p2_task_map_set_int(vm, -1, "max_steps", max_steps);
     p2_task_map_set_int(vm, -1, "idle_ms", idle_ms);
     p2_task_map_set_int(vm, -1, "live_before", live_before);
-    p2_task_map_set_int(vm, -1, "live_after", p2_task_live_count());
-    p2_task_map_set_int(vm, -1, "ready_after", p2_task_status_count(P2_TASK_READY));
-    p2_task_map_set_int(vm, -1, "waiting_after", p2_task_status_count(P2_TASK_WAITING));
-    p2_task_map_set_int(vm, -1, "paused_after", p2_task_status_count(P2_TASK_PAUSED));
-    p2_task_map_set_int(vm, -1, "errors_after", p2_task_status_count(P2_TASK_ERROR));
-    p2_task_map_set_bool(vm, -1, "complete", p2_task_live_count() == 0);
+    p2_task_map_set_int(vm, -1, "live_after", p2_task_live_count(vm));
+    p2_task_map_set_int(vm, -1, "ready_after", p2_task_status_count(vm, P2_TASK_READY));
+    p2_task_map_set_int(vm, -1, "waiting_after", p2_task_status_count(vm, P2_TASK_WAITING));
+    p2_task_map_set_int(vm, -1, "paused_after", p2_task_status_count(vm, P2_TASK_PAUSED));
+    p2_task_map_set_int(vm, -1, "errors_after", p2_task_status_count(vm, P2_TASK_ERROR));
+    p2_task_map_set_bool(vm, -1, "complete", p2_task_live_count(vm) == 0);
     be_pop(vm, 1);
     be_return(vm);
 }
 
 static int p2_task_resolve_handle(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     if (be_top(vm) < 1 || be_isnil(vm, 1) || (be_isint(vm, 1) && be_toint(vm, 1) == -1)) {
-        return p2_task_current;
+        return state->current;
     }
     return be_isint(vm, 1) ? (int)be_toint(vm, 1) : -1;
 }
 
 static void p2_task_push_lifecycle_result(bvm *vm, int id)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     be_newobject(vm, "map");
     p2_task_map_set_int(vm, -1, "handle", id);
     p2_task_map_set_bool(vm, -1, "current_vm", 1);
@@ -2221,13 +2279,14 @@ static void p2_task_push_lifecycle_result(bvm *vm, int id)
         p2_task_map_set_string(vm, -1, "error", "invalid_handle");
         p2_task_map_set_string(vm, -1, "message", "invalid task handle");
     } else {
-        p2_task_slot *slot = &p2_task_slots[id];
+        p2_task_slot *slot = &state->slots[id];
         p2_task_map_set_bool(vm, -1, "ok", 1);
         p2_task_map_set_bool(vm, -1, "allocated", slot->status != P2_TASK_FREE);
         p2_task_map_set_string(vm, -1, "status", p2_task_status_name(slot->status));
         p2_task_map_set_string(vm, -1, "wait", p2_task_wait_name(slot->wait_kind));
         p2_task_map_set_string(vm, -1, "wait_event", slot->wait_event);
-        p2_task_map_set_int(vm, -1, "deadline", (bint)slot->deadline);
+        p2_task_map_set_int(vm, -1, "deadline", p2_task_millis_value(slot->deadline.at_ms));
+        p2_task_map_set_bool(vm, -1, "deadline_armed", slot->deadline.armed);
         p2_task_map_set_int(vm, -1, "runs", slot->runs);
         p2_task_map_set_int(vm, -1, "wakeups", slot->wakeups);
         p2_task_map_set_bool(vm, -1, "woke_timeout", slot->woke_timeout);
@@ -2241,8 +2300,9 @@ static void p2_task_push_lifecycle_result(bvm *vm, int id)
 
 static int m_task_stop(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int id = p2_task_resolve_handle(vm);
-    if (!p2_task_valid(id) || p2_task_slots[id].status == P2_TASK_FREE) {
+    if (!p2_task_valid(id) || state->slots[id].status == P2_TASK_FREE) {
         be_pushbool(vm, bfalse);
         be_return(vm);
     }
@@ -2253,8 +2313,9 @@ static int m_task_stop(bvm *vm)
 
 static int m_task_stop_result(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int id = p2_task_resolve_handle(vm);
-    const char *previous = p2_task_valid(id) ? p2_task_status_name(p2_task_slots[id].status) : "invalid";
+    const char *previous = p2_task_valid(id) ? p2_task_status_name(state->slots[id].status) : "invalid";
     be_newobject(vm, "map");
     p2_task_map_set_int(vm, -1, "handle", id);
     p2_task_map_set_string(vm, -1, "previous_status", previous);
@@ -2263,7 +2324,7 @@ static int m_task_stop_result(bvm *vm)
         p2_task_map_set_string(vm, -1, "status", "invalid");
         p2_task_map_set_string(vm, -1, "error", "invalid_handle");
         p2_task_map_set_string(vm, -1, "message", "invalid task handle");
-    } else if (p2_task_slots[id].status == P2_TASK_FREE) {
+    } else if (state->slots[id].status == P2_TASK_FREE) {
         p2_task_map_set_bool(vm, -1, "ok", 0);
         p2_task_map_set_string(vm, -1, "status", "free");
         p2_task_map_set_string(vm, -1, "error", "free");
@@ -2281,20 +2342,23 @@ static int m_task_stop_result(bvm *vm)
 
 static int m_task_pause(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int id = p2_task_resolve_handle(vm);
-    if (!p2_task_valid(id) || p2_task_slots[id].status == P2_TASK_FREE) {
+    if (!p2_task_valid(id) || state->slots[id].status == P2_TASK_FREE) {
         be_pushbool(vm, bfalse);
         be_return(vm);
     }
-    p2_task_slots[id].status = P2_TASK_PAUSED;
+    state->slots[id].status = P2_TASK_PAUSED;
     be_pushbool(vm, btrue);
+    p2_deadline_cancel(&state->slots[id].deadline);
     be_return(vm);
 }
 
 static int m_task_pause_result(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int id = p2_task_resolve_handle(vm);
-    const char *previous = p2_task_valid(id) ? p2_task_status_name(p2_task_slots[id].status) : "invalid";
+    const char *previous = p2_task_valid(id) ? p2_task_status_name(state->slots[id].status) : "invalid";
     be_newobject(vm, "map");
     p2_task_map_set_int(vm, -1, "handle", id);
     p2_task_map_set_string(vm, -1, "previous_status", previous);
@@ -2303,14 +2367,15 @@ static int m_task_pause_result(bvm *vm)
         p2_task_map_set_string(vm, -1, "status", "invalid");
         p2_task_map_set_string(vm, -1, "error", "invalid_handle");
         p2_task_map_set_string(vm, -1, "message", "invalid task handle");
-    } else if (p2_task_slots[id].status == P2_TASK_FREE) {
+    } else if (state->slots[id].status == P2_TASK_FREE) {
         p2_task_map_set_bool(vm, -1, "ok", 0);
         p2_task_map_set_string(vm, -1, "status", "free");
         p2_task_map_set_string(vm, -1, "error", "free");
         p2_task_map_set_string(vm, -1, "message", "task slot is free");
     } else {
-        p2_task_slots[id].status = P2_TASK_PAUSED;
+        state->slots[id].status = P2_TASK_PAUSED;
         p2_task_map_set_bool(vm, -1, "ok", 1);
+        p2_deadline_cancel(&state->slots[id].deadline);
         p2_task_map_set_string(vm, -1, "status", "paused");
         p2_task_map_set_string(vm, -1, "error", "");
         p2_task_map_set_string(vm, -1, "message", "");
@@ -2321,20 +2386,23 @@ static int m_task_pause_result(bvm *vm)
 
 static int m_task_resume(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int id = be_top(vm) >= 1 && be_isint(vm, 1) ? (int)be_toint(vm, 1) : -1;
-    if (!p2_task_valid(id) || p2_task_slots[id].status != P2_TASK_PAUSED) {
+    if (!p2_task_valid(id) || state->slots[id].status != P2_TASK_PAUSED) {
         be_pushbool(vm, bfalse);
         be_return(vm);
     }
-    p2_task_slots[id].status = P2_TASK_READY;
+    state->slots[id].status = P2_TASK_READY;
     be_pushbool(vm, btrue);
+    p2_deadline_cancel(&state->slots[id].deadline);
     be_return(vm);
 }
 
 static int m_task_resume_result(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int id = be_top(vm) >= 1 && be_isint(vm, 1) ? (int)be_toint(vm, 1) : -1;
-    const char *previous = p2_task_valid(id) ? p2_task_status_name(p2_task_slots[id].status) : "invalid";
+    const char *previous = p2_task_valid(id) ? p2_task_status_name(state->slots[id].status) : "invalid";
     be_newobject(vm, "map");
     p2_task_map_set_int(vm, -1, "handle", id);
     p2_task_map_set_string(vm, -1, "previous_status", previous);
@@ -2343,14 +2411,15 @@ static int m_task_resume_result(bvm *vm)
         p2_task_map_set_string(vm, -1, "status", "invalid");
         p2_task_map_set_string(vm, -1, "error", "invalid_handle");
         p2_task_map_set_string(vm, -1, "message", "invalid task handle");
-    } else if (p2_task_slots[id].status != P2_TASK_PAUSED) {
+    } else if (state->slots[id].status != P2_TASK_PAUSED) {
         p2_task_map_set_bool(vm, -1, "ok", 0);
         p2_task_map_set_string(vm, -1, "status", previous);
         p2_task_map_set_string(vm, -1, "error", "not_paused");
         p2_task_map_set_string(vm, -1, "message", "task is not paused");
     } else {
-        p2_task_slots[id].status = P2_TASK_READY;
+        state->slots[id].status = P2_TASK_READY;
         p2_task_map_set_bool(vm, -1, "ok", 1);
+        p2_deadline_cancel(&state->slots[id].deadline);
         p2_task_map_set_string(vm, -1, "status", "ready");
         p2_task_map_set_string(vm, -1, "error", "");
         p2_task_map_set_string(vm, -1, "message", "");
@@ -2361,27 +2430,31 @@ static int m_task_resume_result(bvm *vm)
 
 static int m_task_chk(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int id = be_top(vm) >= 1 && be_isint(vm, 1) ? (int)be_toint(vm, 1) : -1;
-    be_pushbool(vm, p2_task_valid(id) && p2_task_slots[id].status != P2_TASK_FREE ? btrue : bfalse);
+    be_pushbool(vm, p2_task_valid(id) && state->slots[id].status != P2_TASK_FREE ? btrue : bfalse);
     be_return(vm);
 }
 
 static int m_task_status(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int id = be_top(vm) >= 1 && be_isint(vm, 1) ? (int)be_toint(vm, 1) : -1;
-    be_pushstring(vm, p2_task_valid(id) ? p2_task_status_name(p2_task_slots[id].status) : "free");
+    be_pushstring(vm, p2_task_valid(id) ? p2_task_status_name(state->slots[id].status) : "free");
     be_return(vm);
 }
 
 static int m_task_current(bvm *vm)
 {
-    be_pushint(vm, p2_task_current);
+    p2_task_state *state = p2_vm_scheduler(vm);
+    be_pushint(vm, state->current);
     be_return(vm);
 }
 
 static int m_task_id(bvm *vm)
 {
-    be_pushint(vm, p2_task_current);
+    p2_task_state *state = p2_vm_scheduler(vm);
+    be_pushint(vm, state->current);
     be_return(vm);
 }
 
@@ -2394,7 +2467,8 @@ static int m_task_lifecycle_result(bvm *vm)
 
 static void p2_task_push_slot_info(bvm *vm, int id)
 {
-    p2_task_slot *slot = &p2_task_slots[id];
+    p2_task_state *state = p2_vm_scheduler(vm);
+    p2_task_slot *slot = &state->slots[id];
     be_newobject(vm, "map");
     p2_task_map_set_int(vm, -1, "handle", id);
     p2_task_map_set_string(vm, -1, "status", p2_task_status_name(slot->status));
@@ -2407,10 +2481,11 @@ static void p2_task_push_slot_info(bvm *vm, int id)
 
 static int m_task_list(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int i;
     be_newobject(vm, "list");
     for (i = 0; i < P2_TASK_MAX_TASKS; ++i) {
-        if (p2_task_slots[i].status != P2_TASK_FREE) {
+        if (state->slots[i].status != P2_TASK_FREE) {
             p2_task_push_slot_info(vm, i);
             be_data_push(vm, -2);
             be_pop(vm, 1);
@@ -2422,17 +2497,18 @@ static int m_task_list(bvm *vm)
 
 static int m_task_info(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int i;
     int active = 0, ready = 0, waiting = 0, paused = 0, events = 0;
     for (i = 0; i < P2_TASK_MAX_TASKS; ++i) {
-        int status = p2_task_slots[i].status;
+        int status = state->slots[i].status;
         if (status != P2_TASK_FREE) ++active;
         if (status == P2_TASK_READY) ++ready;
         if (status == P2_TASK_WAITING) ++waiting;
         if (status == P2_TASK_PAUSED) ++paused;
     }
     for (i = 0; i < P2_TASK_MAX_EVENTS; ++i) {
-        if (p2_task_events[i][0]) ++events;
+        if (state->events[i][0]) ++events;
     }
     be_newobject(vm, "map");
     p2_task_map_set_string(vm, -1, "backend", "p2_native_cooperative");
@@ -2442,7 +2518,7 @@ static int m_task_info(bvm *vm)
     p2_task_map_set_int(vm, -1, "waiting", waiting);
     p2_task_map_set_int(vm, -1, "paused", paused);
     p2_task_map_set_int(vm, -1, "events", events);
-    p2_task_map_set_int(vm, -1, "current", p2_task_current);
+    p2_task_map_set_int(vm, -1, "current", state->current);
     p2_task_map_set_bool(vm, -1, "uses_p2_counter", 1);
     p2_task_map_set_bool(vm, -1, "uses_cog_attention", 0);
     p2_task_map_set_bool(vm, -1, "preemptive", 0);
@@ -2453,24 +2529,26 @@ static int m_task_info(bvm *vm)
 
 static int m_task_millis(bvm *vm)
 {
-    be_pushint(vm, (bint)p2_task_millis_now());
+    be_pushint(vm, p2_task_millis_value(p2_task_millis_now(vm)));
     be_return(vm);
 }
 
 static int m_task_woke_by_timeout(bvm *vm)
 {
-    int ok = p2_task_valid(p2_task_current) && p2_task_slots[p2_task_current].woke_timeout;
+    p2_task_state *state = p2_vm_scheduler(vm);
+    int ok = p2_task_valid(state->current) && state->slots[state->current].woke_timeout;
     be_pushbool(vm, ok ? btrue : bfalse);
     be_return(vm);
 }
 
 static int m_task_woke_by_event(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int ok = 0;
-    if (p2_task_valid(p2_task_current) && p2_task_slots[p2_task_current].woke_event[0]) {
+    if (p2_task_valid(state->current) && state->slots[state->current].woke_event[0]) {
         if (be_top(vm) < 1 || be_isnil(vm, 1)) {
             ok = 1;
-        } else if (be_isstring(vm, 1) && !strcmp(be_tostring(vm, 1), p2_task_slots[p2_task_current].woke_event)) {
+        } else if (be_isstring(vm, 1) && !strcmp(be_tostring(vm, 1), state->slots[state->current].woke_event)) {
             ok = 1;
         }
     }
@@ -2480,28 +2558,30 @@ static int m_task_woke_by_event(bvm *vm)
 
 static int m_task_reset(bvm *vm)
 {
+    p2_task_state *state = p2_vm_scheduler(vm);
     int i;
     for (i = 0; i < P2_TASK_MAX_TASKS; ++i) {
         p2_task_free_slot(vm, i);
     }
-    memset(p2_task_events, 0, sizeof(p2_task_events));
-    p2_task_current = -1;
-    p2_task_next = -1;
+    memset(state->events, 0, sizeof(state->events));
+    state->current = -1;
+    state->next = -1;
     be_pushbool(vm, btrue);
     be_return(vm);
 }
 
 static int m_task_reset_result(bvm *vm)
 {
-    int active_before = p2_task_active_count();
-    int events_before = p2_task_event_count();
+    p2_task_state *state = p2_vm_scheduler(vm);
+    int active_before = p2_task_active_count(vm);
+    int events_before = p2_task_event_count(vm);
     int i;
     for (i = 0; i < P2_TASK_MAX_TASKS; ++i) {
         p2_task_free_slot(vm, i);
     }
-    memset(p2_task_events, 0, sizeof(p2_task_events));
-    p2_task_current = -1;
-    p2_task_next = -1;
+    memset(state->events, 0, sizeof(state->events));
+    state->current = -1;
+    state->next = -1;
     be_newobject(vm, "map");
     p2_task_map_set_bool(vm, -1, "ok", 1);
     p2_task_map_set_bool(vm, -1, "reset", 1);
@@ -2509,8 +2589,8 @@ static int m_task_reset_result(bvm *vm)
     p2_task_map_set_int(vm, -1, "released_events", events_before);
     p2_task_map_set_int(vm, -1, "active_before", active_before);
     p2_task_map_set_int(vm, -1, "events_before", events_before);
-    p2_task_map_set_int(vm, -1, "active_after", p2_task_active_count());
-    p2_task_map_set_int(vm, -1, "events_after", p2_task_event_count());
+    p2_task_map_set_int(vm, -1, "active_after", p2_task_active_count(vm));
+    p2_task_map_set_int(vm, -1, "events_after", p2_task_event_count(vm));
     p2_task_map_set_int(vm, -1, "max_tasks", P2_TASK_MAX_TASKS);
     p2_task_map_set_string(vm, -1, "error", "");
     p2_task_map_set_string(vm, -1, "message", "");
@@ -2689,10 +2769,10 @@ static int m_task_capability(bvm *vm)
                !strcmp(name, "queue_result_diagnostics") || !strcmp(name, "native_event_flags") ||
                !strcmp(name, "event_flags_result_diagnostics") || !strcmp(name, "native_timer") ||
                !strcmp(name, "timer_result_diagnostics") ||
-	               !strcmp(name, "contract") || !strcmp(name, "contract_value") ||
-	               !strcmp(name, "execution_model") || !strcmp(name, "execution_model_value") ||
-	               !strcmp(name, "attention_policy_value") ||
-	               !strcmp(name, "audit") || !strcmp(name, "result_diagnostics") ||
+                   !strcmp(name, "contract") || !strcmp(name, "contract_value") ||
+                   !strcmp(name, "execution_model") || !strcmp(name, "execution_model_value") ||
+                   !strcmp(name, "attention_policy_value") ||
+                   !strcmp(name, "audit") || !strcmp(name, "result_diagnostics") ||
                !strcmp(name, "start_result") || !strcmp(name, "stop_result") ||
                !strcmp(name, "pause_result") || !strcmp(name, "resume_result") ||
                !strcmp(name, "scheduler_step_result") || !strcmp(name, "scheduler_run_result") ||
@@ -2997,13 +3077,13 @@ be_native_module_attr_table(task) {
     be_native_module_function("reset_result", m_task_reset_result),
     be_native_module_function("capabilities", m_task_capabilities),
     be_native_module_function("capability", m_task_capability),
-	    be_native_module_function("attention_policy", m_task_attention_policy),
-	    be_native_module_function("attention_policy_value", m_task_attention_policy_value),
-	    be_native_module_function("contract", m_task_contract),
-	    be_native_module_function("contract_value", m_task_contract_value),
-	    be_native_module_function("execution_model", m_task_execution_model),
-	    be_native_module_function("execution_model_value", m_task_execution_model_value),
-	    be_native_module_function("required_capability_keys", m_task_required_capability_keys),
+        be_native_module_function("attention_policy", m_task_attention_policy),
+        be_native_module_function("attention_policy_value", m_task_attention_policy_value),
+        be_native_module_function("contract", m_task_contract),
+        be_native_module_function("contract_value", m_task_contract_value),
+        be_native_module_function("execution_model", m_task_execution_model),
+        be_native_module_function("execution_model_value", m_task_execution_model_value),
+        be_native_module_function("required_capability_keys", m_task_required_capability_keys),
     be_native_module_function("audit_ok", m_task_audit_ok),
 };
 

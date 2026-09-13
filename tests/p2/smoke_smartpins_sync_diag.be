@@ -208,7 +208,7 @@ def check_group_result(result)
     end
     assert(result["receive_policy"] == POLICY)
     assert(type(result["execution_supported"]) == "bool")
-    assert(type(result["results"]) == "list")
+    assert(isinstance(result["results"], list))
     var i = 0
     while i < result["results"].size()
         var item = result["results"][i]
@@ -228,7 +228,7 @@ def check_variant_probe(result)
     assert(result["deferred_variant_count"] == 4)
     assert(type(result["ready_count"]) == "int")
     assert(type(result["matched_count"]) == "int")
-    assert(type(result["results"]) == "list")
+    assert(isinstance(result["results"], list))
     assert(result["results"].size() == 4)
     var i = 0
     while i < result["results"].size()
