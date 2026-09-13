@@ -1936,13 +1936,138 @@ static void p2_child_vm_prepare_source(bvm *child, void *data)
     }
 }
 
+static void p2_child_vm_execute_source(bvm *child, void *data)
+{
+    p2_child_vm_cog_once_job *job = (p2_child_vm_cog_once_job *)data;
+    int i;
+    /* The entire allocating load/argument/call/result path is protected.
+     * An OOM while copying arguments must still reach VM deletion/unlock. */
+    job->source_stage = 1;
+    job->load_stage = 1;
+    job->source_result = be_execprotected(child,
+        p2_child_vm_prepare_source, job);
+    if (job->source_result == BE_OK) {
+        job->source_result = be_loadbuffer(child, "cog_source", job->source, strlen(job->source));
+    }
+    job->load_stage = 2;
+    if (job->source_result == BE_OK) {
+        job->call_stage = 1;
+        job->source_result = be_pcall(child, 0);
+        job->call_stage = 2;
+    }
+    job->source_stage = 2;
+    if (job->source_result == BE_OK) {
+        job->return_top = be_top(child);
+        job->return_is_function = (job->return_top > 0 && be_isfunction(child, -1));
+        if (!strcmp(job->name, "$return")) {
+            if (be_top(child) > 0 && be_isfunction(child, -1)) {
+                job->function_found = 1;
+            } else if (be_top(child) > 1 && be_isfunction(child, -2)) {
+                be_pop(child, 1);
+                job->function_found = 1;
+            } else if (be_top(child) > 0) {
+                int result_index = -1;
+                int stack_top = be_top(child);
+                int result_scan;
+
+                for (result_scan = -1; result_scan >= -stack_top; --result_scan) {
+                    if (be_isint(child, result_scan)) {
+                        result_index = result_scan;
+                        break;
+                    }
+                }
+
+                if (be_isint(child, result_index)) {
+                    job->result_type = 1;
+                    job->result_int = be_toint(child, result_index);
+                } else if (be_isbool(child, result_index)) {
+                    job->result_type = 2;
+                    job->result_bool = be_tobool(child, result_index);
+                } else if (be_isnil(child, result_index)) {
+                    job->result_type = 3;
+                } else if (be_isstring(child, result_index)) {
+                    const char *text = be_tostring(child, result_index);
+
+                    job->result_type = 4;
+                    if (text != NULL) {
+                        strncpy(job->result_string, text, sizeof(job->result_string) - 1);
+                        job->result_string[sizeof(job->result_string) - 1] = '\0';
+                    }
+                }
+                job->call_result = BE_OK;
+            }
+        } else {
+            be_pop(child, be_top(child));
+            job->function_found = be_getglobal(child, job->name);
+        }
+        if (job->function_found) {
+            bvalue *result_slot;
+            size_t result_offset;
+
+            for (i = 0; i < job->argc; ++i) {
+                switch (job->arg_type[i]) {
+                case 1:
+                    be_pushint(child, job->arg_int[i]);
+                    break;
+                case 2:
+                    be_pushbool(child, job->arg_bool[i]);
+                    break;
+                case 3:
+                    be_pushnil(child);
+                    break;
+                case 4:
+                    be_pushstring(child, job->arg_string[i]);
+                    break;
+                default:
+                    be_pushnil(child);
+                    break;
+                }
+            }
+            /* be_pcall can relocate the stack. Retain an offset, not
+             * a pointer into the old allocation across user code. */
+            result_offset = (size_t)(child->top - child->stack) - job->argc - 1;
+            job->call_result = be_pcall(child, job->argc);
+            if (job->call_result == BE_OK) {
+                result_slot = child->stack + result_offset;
+                job->post_call_top = be_top(child);
+                job->result_slot_type = var_type(result_slot);
+                if (be_top(child) >= 1) {
+                    job->post_call_type_1 = var_type(child->top - 1);
+                }
+                if (be_top(child) >= 2) {
+                    job->post_call_type_2 = var_type(child->top - 2);
+                }
+                if (be_top(child) >= 3) {
+                    job->post_call_type_3 = var_type(child->top - 3);
+                }
+                if (var_isint(result_slot)) {
+                    job->result_type = 1;
+                    job->result_int = var_toint(result_slot);
+                } else if (var_isbool(result_slot)) {
+                    job->result_type = 2;
+                    job->result_bool = var_tobool(result_slot);
+                } else if (var_isnil(result_slot)) {
+                    job->result_type = 3;
+                } else if (var_isstr(result_slot)) {
+                    const char *text = str(var_tostr(result_slot));
+
+                    job->result_type = 4;
+                    if (text != NULL) {
+                        strncpy(job->result_string, text, sizeof(job->result_string) - 1);
+                        job->result_string[sizeof(job->result_string) - 1] = '\0';
+                    }
+                }
+            }
+        }
+    }
+}
+
 static void p2_child_vm_cog_once_entry(void *arg)
 {
     p2_child_vm_cog_once_job *job = (p2_child_vm_cog_once_job *)arg;
     bvm *child = NULL;
     size_t wrong_free_before;
     size_t wrong_realloc_before;
-    int i;
 
     if (job == NULL || job->slot < 0 || job->slot >= BE_P2_VM_HEAP_MAX_PARTITIONS) {
         return;
@@ -1977,7 +2102,12 @@ static void p2_child_vm_cog_once_entry(void *arg)
     job->wrong_free_delta = 0;
     job->wrong_realloc_delta = 0;
 
-    {
+    if (job->cancel_requested) {
+        /* An invalidated owner can cancel before dispatch. Acknowledge without
+         * waiting for the VM lock, allocating a partition, or creating a VM. */
+        job->source_result = BE_EXIT;
+        job->call_result = BE_EXIT;
+    } else {
         int runtime_locked = p2_child_vm_runtime_lock_enter();
 
         wrong_free_before = p2_heap_wrong_free_count();
@@ -1996,120 +2126,12 @@ static void p2_child_vm_cog_once_entry(void *arg)
             job->vm_new_stage = child != NULL ? 2 : -1;
         }
         if (child != NULL) {
+            int execution_status;
             job->child_created = 1;
-            job->source_stage = 1;
-            job->load_stage = 1;
-            job->source_result = be_execprotected(child,
-                p2_child_vm_prepare_source, job);
-            if (job->source_result == BE_OK) {
-                job->source_result = be_loadbuffer(child, "cog_source", job->source, strlen(job->source));
-            }
-            job->load_stage = 2;
-            if (job->source_result == BE_OK) {
-                job->call_stage = 1;
-                job->source_result = be_pcall(child, 0);
-                job->call_stage = 2;
-            }
-            job->source_stage = 2;
-            if (job->source_result == BE_OK) {
-                job->return_top = be_top(child);
-                job->return_is_function = (job->return_top > 0 && be_isfunction(child, -1));
-                if (!strcmp(job->name, "$return")) {
-                    if (be_top(child) > 0 && be_isfunction(child, -1)) {
-                        job->function_found = 1;
-                    } else if (be_top(child) > 1 && be_isfunction(child, -2)) {
-                        be_pop(child, 1);
-                        job->function_found = 1;
-                    } else if (be_top(child) > 0) {
-                        int result_index = -1;
-                        int stack_top = be_top(child);
-                        int result_scan;
-
-                        for (result_scan = -1; result_scan >= -stack_top; --result_scan) {
-                            if (be_isint(child, result_scan)) {
-                                result_index = result_scan;
-                                break;
-                            }
-                        }
-
-                        if (be_isint(child, result_index)) {
-                            job->result_type = 1;
-                            job->result_int = be_toint(child, result_index);
-                        } else if (be_isbool(child, result_index)) {
-                            job->result_type = 2;
-                            job->result_bool = be_tobool(child, result_index);
-                        } else if (be_isnil(child, result_index)) {
-                            job->result_type = 3;
-                        } else if (be_isstring(child, result_index)) {
-                            const char *text = be_tostring(child, result_index);
-
-                            job->result_type = 4;
-                            if (text != NULL) {
-                                strncpy(job->result_string, text, sizeof(job->result_string) - 1);
-                                job->result_string[sizeof(job->result_string) - 1] = '\0';
-                            }
-                        }
-                        job->call_result = BE_OK;
-                    }
-                } else {
-                    be_pop(child, be_top(child));
-                    job->function_found = be_getglobal(child, job->name);
-                }
-                if (job->function_found) {
-                    bvalue *result_slot;
-
-                    for (i = 0; i < job->argc; ++i) {
-                        switch (job->arg_type[i]) {
-                        case 1:
-                            be_pushint(child, job->arg_int[i]);
-                            break;
-                        case 2:
-                            be_pushbool(child, job->arg_bool[i]);
-                            break;
-                        case 3:
-                            be_pushnil(child);
-                            break;
-                        case 4:
-                            be_pushstring(child, job->arg_string[i]);
-                            break;
-                        default:
-                            be_pushnil(child);
-                            break;
-                        }
-                    }
-                    result_slot = child->top - job->argc - 1;
-                    job->call_result = be_pcall(child, job->argc);
-                    if (job->call_result == BE_OK) {
-                        job->post_call_top = be_top(child);
-                        job->result_slot_type = var_type(result_slot);
-                        if (be_top(child) >= 1) {
-                            job->post_call_type_1 = var_type(child->top - 1);
-                        }
-                        if (be_top(child) >= 2) {
-                            job->post_call_type_2 = var_type(child->top - 2);
-                        }
-                        if (be_top(child) >= 3) {
-                            job->post_call_type_3 = var_type(child->top - 3);
-                        }
-                        if (var_isint(result_slot)) {
-                            job->result_type = 1;
-                            job->result_int = var_toint(result_slot);
-                        } else if (var_isbool(result_slot)) {
-                            job->result_type = 2;
-                            job->result_bool = var_tobool(result_slot);
-                        } else if (var_isnil(result_slot)) {
-                            job->result_type = 3;
-                        } else if (var_isstr(result_slot)) {
-                            const char *text = str(var_tostr(result_slot));
-
-                            job->result_type = 4;
-                            if (text != NULL) {
-                                strncpy(job->result_string, text, sizeof(job->result_string) - 1);
-                                job->result_string[sizeof(job->result_string) - 1] = '\0';
-                            }
-                        }
-                    }
-                }
+            execution_status = be_execprotected(child, p2_child_vm_execute_source, job);
+            if (execution_status != BE_OK) {
+                job->source_result = execution_status;
+                job->call_result = execution_status;
             }
             be_pop(child, be_top(child));
             job->child_stack_top = be_top(child);

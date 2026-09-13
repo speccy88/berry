@@ -22,11 +22,18 @@ extern int test_registry_locked, test_lock_failure;
 static int stop_calls, running[8], fail_pasm, no_ack, platform_alloc_fail;
 static int partition_releases;
 static long fail_after = -1;
+static size_t allocation_attempts;
+static int source_failures_only;
+extern volatile int *berry_vm_new_diag_stage_ptr;
 static void *hold_vm, *delete_address;
 static int reuse_vm;
 static int reject_alloc(void)
 {
     assert(!test_registry_locked);
+    ++allocation_attempts;
+    /* Constructor OOM is a separate unresolved core gate: this sweep begins
+     * after the real constructor clears its diagnostic destination. */
+    if (source_failures_only && berry_vm_new_diag_stage_ptr) return 0;
     if (fail_after < 0) return 0;
     if (fail_after == 0) return 1;
     --fail_after;
@@ -64,7 +71,7 @@ static void _dirh(int pin) { (void)pin; abort(); }
 static int _cogid(void) { return 0; }
 static uint32_t _clockfreq(void) { return 200000000u; }
 static void _waitms(uint32_t ms) { (void)ms; assert(!test_registry_locked); }
-static void _waitus(uint32_t us) { (void)us; assert(!test_registry_locked); }
+static void _waitus(uint32_t us);
 static void berry_p2_gpio_toggle(int pin) { (void)pin; abort(); }
 static int _cogstart_PASM(int cog, void *program, void *mailbox);
 static void *p2_hub_mem_alloc(size_t n) { assert(!test_registry_locked); return platform_alloc_fail ? NULL : malloc(n); }
@@ -74,7 +81,16 @@ static void *p2_cog_stack_alloc(size_t n) { return p2_hub_mem_alloc(n); }
 static void p2_cog_stack_free(void *p) { p2_hub_mem_free(p); }
 int p2_heap_vm_partition_release(int slot) { (void)slot; assert(!test_registry_locked); ++partition_releases; return 1; }
 size_t p2_heap_vm_partition_size(void) { return 4096; }
-static void p2_child_vm_cog_once_entry(void *arg) { (void)arg; abort(); }
+static void p2_child_vm_cog_once_entry(void *arg);
+/* Hardware-specific cog partition admission is not exercised by this host
+ * source-execution test. Berry allocations/GC/exceptions are real. */
+int p2_heap_vm_partition_create(int slot, size_t bytes) { (void)slot; (void)bytes; return 1; }
+int p2_heap_vm_partition_select(int slot) { (void)slot; return 1; }
+void p2_heap_vm_partition_clear_current(void) {}
+size_t p2_heap_wrong_free_count(void) { return 0; }
+size_t p2_heap_wrong_realloc_count(void) { return 0; }
+extern volatile int berry_vm_new_skip_loadlibs;
+extern volatile int *berry_vm_new_diag_stage_ptr;
 static int p2_catalina_cogstart_C(void (*fn)(void *), void *arg, void *stack, int size)
 {
     (void)fn; (void)arg; (void)stack; (void)size;
@@ -87,6 +103,86 @@ static int p2_catalina_cogstart_C(void (*fn)(void *), void *arg, void *stack, in
 #define LOCKSET(lock) ((void)(lock), 0)
 #define LOCKCLR(lock) ((void)(lock))
 #include "managed_consumer.inc"
+#include "source_worker.inc"
+
+static p2_child_vm_cog_once_job *executing_job;
+static void _waitus(uint32_t us)
+{
+    (void)us; assert(!test_registry_locked);
+    /* Explicit join acknowledgement at the hardware wait boundary; never
+     * execute/synthesize Berry or manufacture its completion/result here. */
+    if (executing_job && executing_job->status == 2) executing_job->status = 4;
+}
+
+static void source_execution_cases(void)
+{
+    p2_child_vm_cog_once_job job;
+    size_t attempts = allocation_attempts;
+    memset(&job, 0, sizeof(job));
+    job.cancel_requested = 1;
+    strcpy(job.source, "return 5"); strcpy(job.name, "$return");
+    executing_job = &job;
+    p2_child_vm_cog_once_entry(&job);
+    executing_job = NULL;
+    assert(!job.child_created && !job.partition_ready && job.call_result == BE_EXIT);
+    assert(allocation_attempts == attempts);
+    puts("PASS pre-start cancellation: no VM or partition created");
+    memset(&job, 0, sizeof(job));
+    strcpy(job.source, "def f(x) def recurse(n) if n==0 return x end return recurse(n-1) end return recurse(30) end");
+    strcpy(job.name, "f");
+    job.argc = 1; job.arg_type[0] = 1; job.arg_int[0] = 76123;
+    executing_job = &job;
+    p2_child_vm_cog_once_entry(&job);
+    executing_job = NULL;
+    assert(job.child_created && job.child_deleted && job.status == 4);
+    assert(job.source_result == BE_OK && job.call_result == BE_OK);
+    assert(job.result_type == 1 && job.result_int == 76123);
+    puts("PASS actual source worker: recursive stack growth and copied result");
+    {
+        const char *sources[] = {
+            "def f() return true end", "def f() return nil end",
+            "def f() return 'owned-copy' end",
+            "def f() raise 'value_error', 'source-error' end"
+        };
+        int c;
+        for (c = 0; c < 4; ++c) {
+            memset(&job, 0, sizeof(job));
+            strcpy(job.source, sources[c]); strcpy(job.name, "f");
+            executing_job = &job; p2_child_vm_cog_once_entry(&job); executing_job = NULL;
+            assert(job.child_created && job.child_deleted && job.status == 4);
+            if (c == 3) assert(job.call_result == BE_EXCEPTION);
+            else {
+                assert(job.call_result == BE_OK && job.result_type == c + 2);
+                if (c == 0) assert(job.result_bool);
+                if (c == 2) {
+                    memset(job.source, 0, sizeof(job.source));
+                    assert(!strcmp(job.result_string, "owned-copy"));
+                }
+            }
+        }
+        puts("PASS actual source worker: copied bool/nil/string after VM deletion, exception cleanup");
+    }
+    {
+        int budget, failures = 0, successes = 0;
+        for (budget = 0; budget < 260; ++budget) {
+            memset(&job, 0, sizeof(job));
+            strcpy(job.source, "def f(x) return x end");
+            strcpy(job.name, "f");
+            job.argc = 1; job.arg_type[0] = 4;
+            memset(job.arg_string[0], 'q', 90); job.arg_string[0][90] = 0;
+            fail_after = budget; source_failures_only = 1; executing_job = &job;
+            p2_child_vm_cog_once_entry(&job);
+            executing_job = NULL; fail_after = -1; source_failures_only = 0;
+            assert(job.status == 4 && job.child_created == job.child_deleted);
+            if (job.call_result == BE_OK) {
+                assert(job.result_type == 4 && !strcmp(job.result_string, job.arg_string[0]));
+                ++successes;
+            } else ++failures;
+        }
+        assert(failures && successes);
+        printf("PASS actual source worker OOM sweep: failures=%d successes=%d; every created VM deleted\n", failures, successes);
+    }
+}
 
 static int _cogstart_PASM(int cog, void *program, void *mailbox)
 {
@@ -250,6 +346,7 @@ int main(void)
     assert(!p2_cog_registry_startup() && !p2_cog_registry_enter());
     test_lock_failure = 0;
     assert(p2_cog_registry_startup() && p2_cog_registry_startup());
+    source_execution_cases();
     a = be_vm_new(); b = be_vm_new(); assert(a && b);
     register_api(a); register_api(b);
     script(a, "var h = spawn(blinker, 38, 50) assert(h > 100) assert(result(h) == 50) assert(join(h)['handle'] == h)");

@@ -34,14 +34,22 @@ def main():
                UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1")
 
     def run(name, argv):
-        proc = subprocess.run(list(map(str, argv)), cwd=ROOT, env=env,
-                              capture_output=True, text=True, timeout=240)
-        (out / (name + ".log")).write_text(proc.stdout + proc.stderr)
-        records.append(dict(name=name, argv=list(map(str, argv)), returncode=proc.returncode))
-        if proc.returncode:
-            raise RuntimeError(f"{name}: exit {proc.returncode}\n{proc.stdout}{proc.stderr}")
+        log = out / (name + ".log")
+        # Compilers can be CPU-throttled; keep runtime regressions tightly bounded.
+        budget = 600 if name.startswith("compile") else 60
+        with log.open("w") as output:
+            try:
+                proc = subprocess.run(list(map(str, argv)), cwd=ROOT, env=env,
+                                      stdout=output, stderr=subprocess.STDOUT, timeout=budget)
+                code = proc.returncode
+            except subprocess.TimeoutExpired:
+                code = 124
+        text = log.read_text(errors="replace")
+        records.append(dict(name=name, argv=list(map(str, argv)), returncode=code, timeout_seconds=budget))
+        if code:
+            raise RuntimeError(f"{name}: exit {code}\n{text}")
         if name.startswith("run"):
-            print(proc.stdout.strip(), flush=True)
+            print(text.strip(), flush=True)
 
     ok = False
     try:
@@ -86,6 +94,8 @@ def main():
         consumer += section("static void p2_child_vm_runtime_lock_init(void)", "typedef struct p2_closure_cog_slot")
         consumer += section("typedef struct p2_closure_cog_slot", "static void p2_child_vm_handles_init(void)")
         (snap / "managed_consumer.inc").write_text(consumer)
+        worker = section("static void p2_child_vm_prepare_source", "static void p2_child_vm_runtime_lock_init(void)")
+        (snap / "source_worker.inc").write_text(worker)
         common = [args.cc, "-std=c99", "-O1", "-g", "-Wall", "-Wextra",
                   "-Werror=implicit-function-declaration", "-Wno-unused-function", "-Wno-unused-variable",
                   "-fno-pie", "-no-pie"]
