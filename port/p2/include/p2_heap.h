@@ -19,6 +19,11 @@
 #define BE_P2_VM_HEAP_MAX_PARTITIONS 4
 #endif
 
+/* Byte-size API: callers must check count * element_size before passing it;
+ * an already wrapped caller expression cannot be detected here. Zero-size
+ * malloc returns NULL; realloc(ptr, 0) frees ptr. Overflow/OOM returns NULL
+ * without changing a live allocation. Arena selection/ownership still applies.
+ */
 void *p2_heap_malloc(size_t size);
 void p2_heap_free(void *ptr);
 void *p2_heap_realloc(void *ptr, size_t size);
@@ -36,6 +41,7 @@ int p2_heap_main_crosses_block_window(void);
 int p2_heap_main_ready(void);
 int p2_heap_main_alloc_failed(void);
 size_t p2_heap_vm_partition_size(void);
+/* Capacity diagnostics saturate at INT_MAX rather than narrowing to negative. */
 int p2_heap_main_vm_partition_capacity(void);
 int p2_heap_main_vm_partition_free_capacity(void);
 size_t p2_heap_main_vm_partition_remainder(void);

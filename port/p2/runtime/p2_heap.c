@@ -1,6 +1,7 @@
 #include "berry_conf_p2.h"
 #include "p2_heap.h"
 
+#include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,7 +33,6 @@ typedef struct p2_heap_arena {
 #endif
 
 #if BE_P2_HEAP_USES_EXTERNAL_RAM && !BE_P2_HEAP_STATIC_EXTERNAL_ARENA
-static unsigned char *p2_heap_external_storage;
 static size_t p2_heap_external_requested_bytes = BE_P2_HEAP_BYTES;
 static int p2_heap_external_alloc_failed;
 #else
@@ -87,16 +87,57 @@ static size_t p2_heap_wrong_realloc_events;
 #endif
 #endif
 
+/* Check before arithmetic so a failed request cannot mutate an arena. */
+static int p2_heap_add_size(size_t left, size_t right, size_t *result)
+{
+    if (right > (size_t)-1 - left) {
+        return 0;
+    }
+    *result = left + right;
+    return 1;
+}
+
+static int p2_heap_align(size_t size, size_t *aligned)
+{
+    size_t rounded;
+    if (!p2_heap_add_size(size, P2_HEAP_ALIGN - 1u, &rounded)) {
+        return 0;
+    }
+    *aligned = rounded & ~(size_t)(P2_HEAP_ALIGN - 1u);
+    return 1;
+}
+
+static int p2_heap_allocation_size(size_t size, size_t *aligned)
+{
+    size_t total;
+    return p2_heap_align(size, aligned)
+        && p2_heap_add_size(*aligned, sizeof(p2_heap_block), &total);
+}
+
+static int p2_heap_address_end(uintptr_t start, size_t bytes, uintptr_t *end)
+{
+    if (bytes > (uintptr_t)-1 - start) {
+        return 0;
+    }
+    *end = start + bytes;
+    return 1;
+}
+
 static int p2_heap_add_segment(p2_heap_arena *arena, unsigned char *raw, size_t bytes)
 {
     uintptr_t start = (uintptr_t)raw;
-    uintptr_t aligned = (start + (P2_HEAP_ALIGN - 1u)) & ~(uintptr_t)(P2_HEAP_ALIGN - 1u);
-    uintptr_t end = start + bytes;
-    size_t offset = (size_t)(aligned - start);
+    uintptr_t aligned;
+    uintptr_t end;
+    size_t offset = (size_t)((0u - start) & (P2_HEAP_ALIGN - 1u));
+    size_t total;
     p2_heap_block *block;
     p2_heap_block *tail;
 
-    if (offset + sizeof(p2_heap_block) >= bytes) {
+    if (raw == NULL || !p2_heap_address_end(start, bytes, &end)
+            || !p2_heap_address_end(start, offset, &aligned)
+            || bytes <= offset || bytes - offset <= sizeof(p2_heap_block)
+            || !p2_heap_add_size(arena->bytes, bytes, &total)
+            || arena->segments == INT_MAX) {
         return 0;
     }
 
@@ -116,7 +157,7 @@ static int p2_heap_add_segment(p2_heap_arena *arena, unsigned char *raw, size_t 
         block->prev = tail;
     }
 
-    arena->bytes += bytes;
+    arena->bytes = total;
     arena->segments += 1;
     if (arena->low_address == 0 || start < (uintptr_t)arena->low_address) {
         arena->low_address = (size_t)start;
@@ -130,15 +171,16 @@ static int p2_heap_add_segment(p2_heap_arena *arena, unsigned char *raw, size_t 
 #if BE_P2_HEAP_USES_EXTERNAL_RAM && !BE_P2_HEAP_STATIC_EXTERNAL_ARENA
 static int p2_heap_chunk_crosses_block_window(unsigned char *ptr, size_t bytes)
 {
-#if BE_P2_PSRAM_BLOCK_BASE > 0
     uintptr_t start = (uintptr_t)ptr;
-    uintptr_t end = start + bytes;
+    uintptr_t end;
 
+    if (!p2_heap_address_end(start, bytes, &end)) {
+        return 1;
+    }
+#if BE_P2_PSRAM_BLOCK_BASE > 0
     return start >= (uintptr_t)BE_P2_PSRAM_BLOCK_BASE ||
         end > (uintptr_t)BE_P2_PSRAM_BLOCK_BASE;
 #else
-    (void)ptr;
-    (void)bytes;
     return 0;
 #endif
 }
@@ -165,6 +207,12 @@ static void p2_heap_alloc_external_arena(p2_heap_arena *arena)
     size_t min_bytes = (size_t)BE_P2_EXTERNAL_HEAP_MIN_BYTES;
     size_t step_bytes = (size_t)BE_P2_EXTERNAL_HEAP_STEP_BYTES;
     size_t chunk_bytes = (size_t)BE_P2_EXTERNAL_HEAP_CHUNK_BYTES;
+    size_t aligned;
+
+    if (!p2_heap_align(target_bytes, &aligned)) {
+        p2_heap_external_alloc_failed = 1;
+        return;
+    }
 
     arena->head = NULL;
     arena->raw = NULL;
@@ -225,11 +273,6 @@ static void p2_heap_alloc_external_arena(p2_heap_arena *arena)
 }
 #endif
 
-static size_t p2_heap_align(size_t size)
-{
-    return (size + (P2_HEAP_ALIGN - 1u)) & ~(size_t)(P2_HEAP_ALIGN - 1u);
-}
-
 static p2_heap_arena *p2_heap_current(void)
 {
     int cog = _cogid();
@@ -260,33 +303,59 @@ static void p2_heap_init(p2_heap_arena *arena)
 #endif
 
     {
-        unsigned char *raw = arena->raw;
-        size_t bytes = arena->bytes;
+        p2_heap_arena initialized = {0};
 
-        arena->head = NULL;
-        arena->raw = NULL;
-        arena->bytes = 0;
-        arena->segments = 0;
-        arena->low_address = 0;
-        arena->high_address = 0;
-        if (!p2_heap_add_segment(arena, raw, bytes)) {
+        if (!p2_heap_add_segment(&initialized, arena->raw, arena->bytes)) {
             return;
         }
+        *arena = initialized;
     }
     arena->ready = 1;
 }
+
+/* List neighbors may live in separate backing segments. Only physically
+ * contiguous, representable capacity can be coalesced or used for growth.
+ * size can include free successors during a read-only capacity scan. */
+static int p2_heap_join_size(p2_heap_block *block, size_t size,
+    p2_heap_block *next, size_t *joined)
+{
+    uintptr_t payload;
+    uintptr_t end;
+    size_t extra;
+
+    return next != NULL && next->free
+        && p2_heap_address_end((uintptr_t)block, sizeof(p2_heap_block), &payload)
+        && p2_heap_address_end(payload, size, &end)
+        && end == (uintptr_t)next
+        && p2_heap_address_end((uintptr_t)next, sizeof(p2_heap_block), &payload)
+        && p2_heap_address_end(payload, next->size, &end)
+        && p2_heap_add_size(sizeof(p2_heap_block), next->size, &extra)
+        && p2_heap_add_size(size, extra, joined);
+}
+
+static void p2_heap_merge_next(p2_heap_block *block);
 
 static void p2_heap_split(p2_heap_block *block, size_t size)
 {
     p2_heap_block *next;
     size_t remain;
+    uintptr_t payload;
+    uintptr_t split;
+    uintptr_t end;
+
+    if (size > block->size || size % P2_HEAP_ALIGN != 0
+            || !p2_heap_address_end((uintptr_t)block, sizeof(p2_heap_block), &payload)
+            || !p2_heap_address_end(payload, block->size, &end)
+            || !p2_heap_address_end(payload, size, &split)) {
+        return;
+    }
 
     remain = block->size - size;
     if (remain <= sizeof(p2_heap_block) + P2_HEAP_ALIGN) {
         return;
     }
 
-    next = (p2_heap_block *)((unsigned char *)(block + 1) + size);
+    next = (p2_heap_block *)split;
     next->size = remain - sizeof(p2_heap_block);
     next->next = block->next;
     next->prev = block;
@@ -298,23 +367,20 @@ static void p2_heap_split(p2_heap_block *block, size_t size)
 
     block->size = size;
     block->next = next;
+    p2_heap_merge_next(next);
 }
 
 static void p2_heap_merge_next(p2_heap_block *block)
 {
-    p2_heap_block *next = block->next;
+    size_t joined;
 
-    if (!next || !next->free) {
-        return;
-    }
-    if ((unsigned char *)(block + 1) + block->size != (unsigned char *)next) {
-        return;
-    }
-
-    block->size += sizeof(p2_heap_block) + next->size;
-    block->next = next->next;
-    if (block->next) {
-        block->next->prev = block;
+    while (p2_heap_join_size(block, block->size, block->next, &joined)) {
+        p2_heap_block *next = block->next;
+        block->size = joined;
+        block->next = next->next;
+        if (block->next) {
+            block->next->prev = block;
+        }
     }
 }
 
@@ -365,12 +431,11 @@ static void *p2_heap_arena_malloc(p2_heap_arena *arena, size_t size)
 {
     p2_heap_block *block;
 
-    if (size == 0) {
+    if (size == 0 || !p2_heap_allocation_size(size, &size)) {
         return NULL;
     }
 
     p2_heap_init(arena);
-    size = p2_heap_align(size);
     block = p2_heap_find(arena, size);
     if (!block) {
         return NULL;
@@ -416,6 +481,8 @@ void p2_heap_free(void *ptr)
 static void *p2_heap_arena_realloc(p2_heap_arena *arena, void *ptr, size_t size)
 {
     p2_heap_block *block;
+    p2_heap_block *next;
+    size_t capacity;
     void *newptr;
 
     if (!ptr) {
@@ -425,13 +492,15 @@ static void *p2_heap_arena_realloc(p2_heap_arena *arena, void *ptr, size_t size)
         p2_heap_arena_free(arena, ptr);
         return NULL;
     }
+    if (!p2_heap_allocation_size(size, &size)) {
+        return NULL;
+    }
     if (!p2_heap_arena_owns_payload(arena, ptr)) {
         ++p2_heap_wrong_realloc_events;
         return NULL;
     }
 
     p2_heap_init(arena);
-    size = p2_heap_align(size);
     block = ((p2_heap_block *)ptr) - 1;
 
     if (block->size >= size) {
@@ -439,8 +508,14 @@ static void *p2_heap_arena_realloc(p2_heap_arena *arena, void *ptr, size_t size)
         return ptr;
     }
 
-    if (block->next && block->next->free &&
-        block->size + sizeof(p2_heap_block) + block->next->size >= size) {
+    /* Do not merge speculatively: failed realloc must preserve the free list
+     * as well as the allocation and its contents. */
+    capacity = block->size;
+    next = block->next;
+    while (capacity < size && p2_heap_join_size(block, capacity, next, &capacity)) {
+        next = next->next;
+    }
+    if (capacity >= size) {
         p2_heap_merge_next(block);
         p2_heap_split(block, size);
         block->free = 0;
@@ -555,21 +630,25 @@ size_t p2_heap_vm_partition_size(void)
 int p2_heap_main_vm_partition_capacity(void)
 {
     size_t partition_bytes = p2_heap_vm_partition_size();
+    size_t capacity;
 
     if (partition_bytes == 0) {
         return 0;
     }
-    return (int)(p2_heap_main_size() / partition_bytes);
+    capacity = p2_heap_main_size() / partition_bytes;
+    return capacity > (size_t)INT_MAX ? INT_MAX : (int)capacity;
 }
 
 int p2_heap_main_vm_partition_free_capacity(void)
 {
     size_t partition_bytes = p2_heap_vm_partition_size();
+    size_t capacity;
 
     if (partition_bytes == 0) {
         return 0;
     }
-    return (int)(p2_heap_main_free_bytes() / partition_bytes);
+    capacity = p2_heap_main_free_bytes() / partition_bytes;
+    return capacity > (size_t)INT_MAX ? INT_MAX : (int)capacity;
 }
 
 size_t p2_heap_main_vm_partition_remainder(void)
@@ -596,6 +675,7 @@ int p2_heap_vm_partition_create(int slot, size_t bytes)
 {
     p2_heap_arena *arena;
     unsigned char *raw;
+    size_t aligned;
 
     if (slot < 0 || slot >= BE_P2_VM_HEAP_MAX_PARTITIONS) {
         return 0;
@@ -603,7 +683,8 @@ int p2_heap_vm_partition_create(int slot, size_t bytes)
     if (bytes == 0) {
         bytes = p2_heap_vm_partition_size();
     }
-    if (bytes <= sizeof(p2_heap_block) + P2_HEAP_ALIGN) {
+    if (bytes <= sizeof(p2_heap_block) + P2_HEAP_ALIGN
+            || !p2_heap_allocation_size(bytes, &aligned)) {
         return 0;
     }
 
