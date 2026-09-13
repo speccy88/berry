@@ -14,6 +14,8 @@ spin2/build/
 *.bin
 *.p2asm
 *.lst
+/catalina.s
+/CHECKPOINT.md
 
 # Object and linker outputs
 *.o

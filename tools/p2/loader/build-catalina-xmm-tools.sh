@@ -77,7 +77,7 @@ CATALINA_TARGET="${CATALINA_DIR}/target" \
 CATALINA_LIBRARY="${CATALINA_DIR}" \
 LCCDIR="${CATALINA_DIR}" \
 PATH="${CATALINA_DIR}/bin:${PATH}" \
-    bash -lc "${loader_cmd}"
+    bash -c "${loader_cmd}"
 
 if [ ! -f "${LOADER_OUT_DIR}/XMM_USB.bin" ]; then
     echo "error: Catalina did not create ${LOADER_OUT_DIR}/XMM_USB.bin" >&2

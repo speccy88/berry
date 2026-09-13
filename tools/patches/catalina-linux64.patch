@@ -1,0 +1,11 @@
+--- a/source/catalina/lua-5.4.8/src/lthrsch.c
++++ b/source/catalina/lua-5.4.8/src/lthrsch.c
+@@ -189,7 +189,7 @@
+       /* remove worker from workers table */
+       lua_getglobal( workerls, LUATHREAD_SCHED_WORKERS_TABLE );
+ #ifdef PTHREAD_T_IS_POINTER
+-      lua_pushlightuserdata( workerls, self);
++      lua_pushlightuserdata( workerls, (void *)self);
+ #else
+       lua_pushlightuserdata( workerls, &self);
+ #endif
