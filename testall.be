@@ -38,7 +38,10 @@ if have_lcov && have_genhtml
     var cmds = [
         'lcov -q -c -d ./ -o cover.info --ignore-errors gcov,unsupported',
         'lcov -q -a init.info -a cover.info -o total.info --ignore-errors gcov,unsupported',
-        'lcov --remove total.info */usr/include/* -o final.info --ignore-errors gcov,unsupported',
+        # Some builds contain no system-header coverage. LCOV 2 treats that
+        # expected empty exclusion as an error unless 'unused' is explicit.
+        # Keep all other capture/report failures fatal.
+        'lcov --remove total.info */usr/include/* -o final.info --ignore-errors gcov,unsupported,unused',
         'genhtml -q -o test_report --legend --title "lcov" --prefix=./ final.info',
         'rm -f init.info cover.info total.info final.info'
     ]
