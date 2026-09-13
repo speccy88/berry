@@ -98,3 +98,20 @@ uint32_t p2_vm_rand(bvm *vm)
     rng->value = value;
     return value & UINT32_C(0x7fffffff);
 }
+
+void p2_vm_set_cancel_flag(bvm *vm, const volatile int *flag)
+{
+    p2_vm_state *state = flag ? p2_vm_state_get(vm) : p2_vm_state_existing(vm);
+    if (state) state->cancel_requested = flag;
+}
+
+int p2_vm_poll_due(bvm *vm)
+{
+    p2_vm_state *state;
+    if ((++vm->native_poll_ticks & 0x3ffu) != 0) return 0;
+    state = p2_vm_state_existing(vm);
+    if (state && state->cancel_requested && *state->cancel_requested) {
+        be_exit(vm, 125);
+    }
+    return 1;
+}

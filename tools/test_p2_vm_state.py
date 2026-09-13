@@ -19,7 +19,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 CASES = ["scheduler_reset", "rng_isolation", "rng_sequence", "scheduler_isolation",
          "scheduler_gc", "rng_boundaries", "lifecycle", "allocation_failures",
-         "allocation_reentry"]
+         "allocation_reentry", "interrupt_isolation", "cooperative_cancel"]
 INPUTS = ["tools/test_p2_vm_state.py", "tests/native/test_p2_vm_state.c",
           "port/p2/overrides/be_tasklib_p2.c",
           "port/p2/overrides/be_math_stringlib_p2.c",
@@ -131,6 +131,7 @@ def main():
             raise RuntimeError("core prebuild failed")
         ts = target_out / "snapshot"
         flags = ["-std=c99", "-O1", "-g", "-Wall", "-Wextra", "-D__CATALINA_P2",
+                 "-DBE_P2_ENABLE_MAIN_INTERRUPT=1",
                  "-I" + str(ts), "-I" + str(ts / "src"), "-I" + str(ts / "port/p2/include")]
         if args.abi == "32":
             flags += ["-m32"]

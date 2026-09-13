@@ -45,6 +45,9 @@ typedef struct p2_vm_state {
      * address. Callback is native-only: no allocation/scripts/hardware stop. */
     uint32_t cog_owner_cookie;
     void (*cog_owner_invalidate)(uint32_t cookie);
+    /* Native scalar signal only. On P2 it must be in coherent Hub memory and
+     * outlive this VM or be detached before its owner frees the storage. */
+    const volatile int *cancel_requested;
 } p2_vm_state;
 
 #define P2_RNG_DEFAULT_SEED UINT32_C(1357911)
@@ -62,5 +65,12 @@ p2_task_state *p2_vm_scheduler(bvm *vm);
 p2_rng_state *p2_vm_rng(bvm *vm);
 void p2_vm_srand(bvm *vm, uint32_t seed);
 uint32_t p2_vm_rand(bvm *vm);
+
+/* Attaching may allocate; use a protected VM path. Detaching never allocates.
+ * Normal polling is allocation-free, every 1024 opcodes. Cancellation uses BE_EXIT
+ * and is not catchable by a Berry except block. Native blocking calls must
+ * explicitly poll or return before cancellation can complete. */
+void p2_vm_set_cancel_flag(bvm *vm, const volatile int *flag);
+int p2_vm_poll_due(bvm *vm);
 
 #endif

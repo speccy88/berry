@@ -147,6 +147,8 @@ struct bvm {
      * It must not execute Berry, access Berry objects, allocate, or throw. */
     void *native_context;
     void (*native_context_delete)(bvm *vm, void *context);
+    /* Allocation-free native interrupt cadence, independent for each VM. */
+    unsigned int native_poll_ticks;
 };
 
 #define NONE_FLAG           0

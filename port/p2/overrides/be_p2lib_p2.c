@@ -854,6 +854,8 @@ typedef struct p2_child_vm_cog_ping_job {
 
 typedef struct p2_child_vm_cog_once_job {
     volatile int status;
+    /* Managed source jobs use Hub mailboxes. Only worker publishes completion. */
+    volatile int cancel_requested;
     volatile int cog_id;
     volatile int partition_ready;
     volatile int selected;
@@ -1925,6 +1927,15 @@ static int p2_child_vm_thread_ping_entry(int argc, char *argv[])
 }
 #endif
 
+static void p2_child_vm_prepare_source(bvm *child, void *data)
+{
+    p2_child_vm_cog_once_job *job = (p2_child_vm_cog_once_job *)data;
+    p2_vm_set_cancel_flag(child, &job->cancel_requested);
+    if (job->name[0] != '\0') {
+        (void)be_global_new(child, be_newstr(child, job->name));
+    }
+}
+
 static void p2_child_vm_cog_once_entry(void *arg)
 {
     p2_child_vm_cog_once_job *job = (p2_child_vm_cog_once_job *)arg;
@@ -1988,10 +1999,11 @@ static void p2_child_vm_cog_once_entry(void *arg)
             job->child_created = 1;
             job->source_stage = 1;
             job->load_stage = 1;
-            if (job->name[0] != '\0') {
-                (void)be_global_new(child, be_newstr(child, job->name));
+            job->source_result = be_execprotected(child,
+                p2_child_vm_prepare_source, job);
+            if (job->source_result == BE_OK) {
+                job->source_result = be_loadbuffer(child, "cog_source", job->source, strlen(job->source));
             }
-            job->source_result = be_loadbuffer(child, "cog_source", job->source, strlen(job->source));
             job->load_stage = 2;
             if (job->source_result == BE_OK) {
                 job->call_stage = 1;
@@ -2251,11 +2263,28 @@ static void p2_closure_cog_metadata_enter(bvm *vm)
     }
 }
 
+static int p2_closure_cog_source_stop_pending(p2_closure_cog_slot *slot)
+{
+    p2_child_vm_cog_once_job *job;
+    if (!slot->isolated_source) return 0;
+    job = slot->source_job;
+    if (job != NULL && job->status == 2) return 0;
+    if (job != NULL) job->cancel_requested = 1;
+    return 1;
+}
+
 static void p2_closure_cog_owner_invalidate(uint32_t cookie)
 {
     /* No scripts, allocation, or physical stopping during VM deletion.
      * Orphan-running cleanup is still the separate F3 liveness gate. */
     if (p2_cog_registry_enter()) {
+        int i;
+        for (i = 0; i < P2_CLOSURE_COG_MAX; ++i) {
+            if (p2_closure_cog_identities.slots[i].owner == cookie &&
+                p2_closure_cog_identities.slots[i].state == P2_COG_LIVE) {
+                (void)p2_closure_cog_source_stop_pending(&p2_closure_cog_slots[i]);
+            }
+        }
         p2_cog_registry_invalidate_owner(&p2_closure_cog_identities, cookie);
         p2_cog_registry_leave();
     }
@@ -4140,15 +4169,21 @@ static int m_p2_closure_cog_cleanup_result(bvm *vm)
     int mailboxes_released = 0;
     int source_partitions_released = 0;
     int source_jobs_released = 0;
+    int pending = 0;
 
     for (i = 0; i < P2_CLOSURE_COG_MAX; ++i) {
         p2_closure_cog_slot *slot = &p2_closure_cog_slots[i];
         int raw_running = 0;
 
-        if (!p2_closure_cog_owned_live(vm, i) ||
-            !p2_closure_cog_claim(vm, i, slot->handle)) {
+        if (!p2_closure_cog_owned_live(vm, i)) {
             continue;
         }
+        if (p2_closure_cog_source_stop_pending(slot)) {
+            ++active_before;
+            ++pending;
+            continue;
+        }
+        if (!p2_closure_cog_claim(vm, i, slot->handle)) continue;
         ++active_before;
         p2_closure_cog_sync_native_blink(slot);
         p2_closure_cog_sync_isolated_source(slot);
@@ -4202,9 +4237,9 @@ static int m_p2_closure_cog_cleanup_result(bvm *vm)
     }
 
     be_newobject(vm, "map");
-    p2_map_set_bool(vm, "ok", 1);
+    p2_map_set_bool(vm, "ok", pending == 0);
     p2_map_set_bool(vm, "cleanup_attempted", 1);
-    p2_map_set_string(vm, "cleanup_policy", "stop_releases_all_spawned_closure_cog_slots");
+    p2_map_set_string(vm, "cleanup_policy", "request_source_cancel_then_release_completed_workers");
     p2_map_set_int(vm, "active_before", (bint)active_before);
     p2_map_set_int(vm, "released_handles", (bint)released);
     p2_map_set_int(vm, "stopped_raw_cogs", (bint)stopped_raw);
@@ -4213,9 +4248,10 @@ static int m_p2_closure_cog_cleanup_result(bvm *vm)
     p2_map_set_int(vm, "mailboxes_released", (bint)mailboxes_released);
     p2_map_set_int(vm, "source_partitions_released", (bint)source_partitions_released);
     p2_map_set_int(vm, "source_jobs_released", (bint)source_jobs_released);
-    p2_map_set_int(vm, "active_after", 0);
-    p2_map_set_bool(vm, "registry_empty", 1);
-    p2_map_set_nil(vm, "error");
+    p2_map_set_int(vm, "active_after", (bint)pending);
+    p2_map_set_bool(vm, "registry_empty", pending == 0);
+    if (pending) p2_map_set_string(vm, "error", "source cancellation pending");
+    else p2_map_set_nil(vm, "error");
     p2_map_set_nil(vm, "message");
     be_pop(vm, 1);
     be_return(vm);
@@ -4496,6 +4532,9 @@ static int m_p2_closure_cog_stop(bvm *vm)
     int cog_id = (int)slot->cog_id;
     int native_blink = slot->native_blink;
 
+    if (p2_closure_cog_source_stop_pending(slot)) {
+        be_raise(vm, "runtime_error", "source cancellation requested; retry after worker completion");
+    }
     if (!p2_closure_cog_claim(vm, slot_index, handle)) {
         be_raise(vm, "value_error", "invalid closure cog handle");
     }

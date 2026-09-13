@@ -4,6 +4,7 @@
 #include "berry_port.h"
 #include "p2_serial.h"
 #include "p2_smartserial.h"
+#include "p2_vm_state.h"
 
 #if defined(__CATALINA__)
 #include <stdio.h>
@@ -1323,9 +1324,7 @@ void p2_check_interrupt_now(bvm *vm)
 
 void p2_check_interrupt(bvm *vm)
 {
-    static unsigned int poll_tick;
-
-    if ((++poll_tick & 0x3ffu) == 0) {
+    if (p2_vm_poll_due(vm)) {
         p2_check_interrupt_now(vm);
     }
 }

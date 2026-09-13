@@ -496,12 +496,14 @@ static void allocation_failures(void)
         filler f;
         size_t before;
         exhaust_pool(vm, &f);
-        if (f.count) {
+        if (f.count && (f.sizes[f.count - 1] == sizeof(p2_vm_state) ||
+                        sizeof(p2_vm_state) <= 16)) {
             --f.count;
-            CHECK(f.sizes[f.count] == sizeof(p2_vm_state) || sizeof(p2_vm_state) <= 16);
             be_free(vm, f.blocks[f.count], f.sizes[f.count]); /* one context slot */
         } else {
-            fail_after = 1; /* direct allocator: only the context may succeed */
+            /* A larger context uses direct allocation even when the exhausted
+             * RNG pool contributed filler slots. Permit only that allocation. */
+            fail_after = 1;
         }
         before = be_gc_memcount(vm);
         CHECK(be_execprotected(vm, get_feature, &mode) == BE_MALLOC_FAIL);
@@ -575,6 +577,53 @@ static void allocation_reentry(void)
     }
 }
 
+/* The host lacks UART, but the real VM opcode hook calls production poll
+ * and cancellation code. No replacement interpreter or exception mechanism. */
+extern int p2_vm_poll_due(bvm *vm);
+extern void p2_vm_set_cancel_flag(bvm *vm, const volatile int *flag);
+void p2_check_interrupt(bvm *vm) { (void)p2_vm_poll_due(vm); }
+static volatile int requested;
+static int request_stop(bvm *vm)
+{
+    requested = 1;
+    fail_after = 0; /* cancellation must still unwind under allocator failure */
+    be_return_nil(vm);
+}
+static void interrupt_isolation(void)
+{
+    bvm *a = plain_vm(), *b = plain_vm();
+    unsigned i;
+    for (i = 0; i < 1023; ++i) CHECK(!p2_vm_poll_due(a));
+    CHECK(!p2_vm_poll_due(b));
+    CHECK(p2_vm_poll_due(a));
+    CHECK(a->native_context == NULL && b->native_context == NULL);
+    for (i = 0; i < 1022; ++i) CHECK(!p2_vm_poll_due(b));
+    CHECK(p2_vm_poll_due(b));
+    delete_checked(a); delete_checked(b);
+}
+static void cooperative_cancel(void)
+{
+    bvm *a = plain_vm(), *b = plain_vm();
+    int status;
+    requested = 0;
+    p2_vm_set_cancel_flag(a, &requested);
+    be_regfunc(a, "request_stop", request_stop);
+    status = be_loadstring(a, "try request_stop() var n=0 while n<100000 n+=1 end except .. return 999 end return 777");
+    CHECK(status == BE_OK);
+    if (status == BE_OK) status = be_pcall(a, 0);
+    fail_after = -1;
+    CHECK(status == BE_EXIT); /* cannot be swallowed by Berry except .. */
+    be_pop(a, be_top(a));
+    CHECK(be_loadstring(b, "return 42") == BE_OK);
+    CHECK(be_pcall(b, 0) == BE_OK && be_toint(b, -1) == 42);
+    be_pop(b, be_top(b));
+    p2_vm_set_cancel_flag(a, NULL);
+    CHECK(be_loadstring(a, "return 17") == BE_OK);
+    CHECK(be_pcall(a, 0) == BE_OK && be_toint(a, -1) == 17);
+    be_pop(a, be_top(a));
+    delete_checked(a); delete_checked(b);
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 2) return 2;
@@ -587,6 +636,8 @@ int main(int argc, char **argv)
     else if (!strcmp(argv[1], "lifecycle")) lifecycle();
     else if (!strcmp(argv[1], "allocation_failures")) allocation_failures();
     else if (!strcmp(argv[1], "allocation_reentry")) allocation_reentry();
+    else if (!strcmp(argv[1], "interrupt_isolation")) interrupt_isolation();
+    else if (!strcmp(argv[1], "cooperative_cancel")) cooperative_cancel();
     else return 2;
     CHECK(live_blocks == 0);
     printf("{\"case\":\"%s\",\"checks\":%u,\"failures\":%u,\"pointer_bits\":%u,\"bint_bits\":%u}\n",

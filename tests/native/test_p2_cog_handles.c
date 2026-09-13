@@ -323,11 +323,21 @@ int main(void)
     index = p2_closure_cog_reserve(a);
     p2_closure_cog_slots[index].isolated_source = 1;
     p2_closure_cog_slots[index].source_job = calloc(1, sizeof(p2_child_vm_cog_once_job));
-    p2_closure_cog_slots[index].source_job->status = 2;
+    p2_closure_cog_slots[index].source_job->status = 1;
     p2_closure_cog_slots[index].source_job->cog_id = 3;
     p2_closure_cog_slots[index].cog_id = 3; running[3] = 1;
     assert(p2_cog_registry_publish(&p2_closure_cog_identities, index, p2_closure_cog_slots[index].handle));
     before = stop_calls;
+    setint(a, "pending_source", p2_closure_cog_slots[index].handle);
+    script(a, "var busy=false try stop(pending_source) except 'runtime_error' busy=true end assert(busy)");
+    assert(stop_calls == before && running[3]);
+    assert(p2_closure_cog_slots[index].source_job->cancel_requested == 1);
+    assert(owned_count(a, P2_COG_LIVE) == 1);
+    script(a, "var c=cleanup() assert(!c['ok']) assert(c['active_after']==1) assert(!c['registry_empty'])");
+    assert(stop_calls == before && running[3]);
+    assert(owned_count(a, P2_COG_LIVE) == 1);
+    /* Only the simulated platform changes completion, not the stop consumer. */
+    p2_closure_cog_slots[index].source_job->status = 2;
     p2_closure_cog_reap_stopped(b); assert(stop_calls == before);
     p2_closure_cog_reap_stopped(a); assert(stop_calls == before + 1);
     p2_closure_cog_reap_stopped(a); assert(stop_calls == before + 1);
@@ -361,9 +371,15 @@ int main(void)
     puts("PASS result snapshot: real GC slot replacement does not change old info result");
 
     script(a, "var orphan = spawn(blinker, 38, 99)");
+    index = p2_closure_cog_reserve(a);
+    p2_closure_cog_slots[index].isolated_source = 1;
+    p2_closure_cog_slots[index].source_job = calloc(1, sizeof(p2_child_vm_cog_once_job));
+    p2_closure_cog_slots[index].source_job->status = 1;
+    assert(p2_cog_registry_publish(&p2_closure_cog_identities, index, p2_closure_cog_slots[index].handle));
     old = getint(a, "orphan"); cookie = p2_closure_cog_owner(a); before = stop_calls;
     delete_address = a; be_vm_delete(a);
     assert(stop_calls == before && hold_vm == a);
+    assert(p2_closure_cog_slots[index].source_job->cancel_requested == 1);
     reuse_vm = 1; fresh = be_vm_new(); reuse_vm = 0;
     assert(fresh == a && !hold_vm && !fresh->native_context);
     rejected(fresh, old);
@@ -375,6 +391,7 @@ int main(void)
     /* Test teardown of orphan metadata/resources only; NOT production F3. */
     for (i = 0; i < P2_COG_REGISTRY_SLOTS; ++i) {
         if (!p2_closure_cog_identities.slots[i].owner && p2_closure_cog_identities.slots[i].state == P2_COG_LIVE) {
+            free(p2_closure_cog_slots[i].source_job);
 #if defined(__CATALINA_LARGE)
             free((void *)p2_closure_cog_slots[i].native_mailbox);
 #endif
