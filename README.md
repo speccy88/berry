@@ -12,144 +12,63 @@ modules, PSRAM/XMM profiles, and a growing set of hardware helpers.
 The goal is simple: power up a Propeller 2, get a `berry>` prompt, and make the
 chip do interesting things without rebuilding firmware for every experiment.
 
-## Current P2 State, In Plain English
+## Start at the prompt
 
-Berry on P2 is already useful for bring-up, experiments, and small embedded
-programs.
+Berry is a small, interactive hardware language: a calculator, functions and
+loops, then real P2 tools when you are ready. It keeps Berry semantics (`var`,
+`def` / `end`, `for i: 1..3`) rather than pretending to parse Python.
 
-For the shortest current status page, start with
-`docs/P2_PORT_STATUS.md`. The older TODO, DONE, release, and handoff files are
-detailed trackers and historical evidence logs; they are not the best first
-read for normal usage.
+Follow [Getting Started](docs/getting-started.md) for the single-VM, RAM-first
+walkthrough. It needs no SD card or external wiring. The
+[port status](docs/P2_PORT_STATUS.md) is the canonical supported/experimental/
+unavailable summary; the [P2 API](docs/p2-api.md) owns signatures and conventions.
 
-You can:
-
-- use an interactive serial REPL with history and basic line editing
-- run core Berry language features: functions, closures, classes, maps, lists,
-  ranges, loops, strings, numbers, exceptions, and modules
-- import native firmware modules such as `p2`, `task`, `string`, full `math`,
-  `json`, `bytes`, `os`, `i2c`, and `spi`
-- toggle pins, read counters, wait on hardware time, inspect cogs, query heap,
-  and print a useful `p2.status()` report
-- read and write files on SD with `open()` and `os`
-- lazily import optional `.be` libraries from `/modules` on SD
-- use P2 CORDIC-backed math helpers where appropriate through native `math`
-- run cooperative same-VM tasks with the native `task` scheduler
-- launch supported native cog-backed work through `p2.cog` handles, including
-  stoppable LED blinkers
-- use P2 Edge 32 MB PSRAM either as block-transfer storage or, in the XMM
-  profile, as Catalina external heap storage
-- boot the XMM flash image with visible startup progress: an `Initializing PSRAM`
-  spinner, a Berry VM startup spinner, and a current hardware capture around
-  3 seconds from attach to `berry>`
-
-The current concurrency split is intentional:
-
-- use `task` for cooperative work inside the current Berry VM
-- use `p2.cog` for supported native cog-backed handles
-- arbitrary Berry bytecode closures in isolated cogs are still future work
-
-## Five-Minute Hardware Taste
-
-At the REPL:
+At an XMM image's `berry>` prompt:
 
 ```berry
+6 * 7
 import p2
-
-print("hello from cog", p2.cogid())
-print("clock", p2.clock_freq())
-p2.status()
+p2.help()
+p2.help("pin")
+p2.clock.freq()
+p2.cog.id()
 ```
 
-Blink a no-PSRAM P2 Edge LED on pin `56`:
+Expressions print their result (`6 * 7` prints `42`). Help discovers registered
+groups and members without touching pins or storage. Prefer grouped names such
+as `p2.clock.freq()`; flat aliases remain compatible. See the executable
+[interactive example](examples/p2/interactive.be) for status, introspection,
+functions and loops in one consistent style.
 
-```berry
-import p2
+Ctrl-C cancels a line, pending multiline submission or running Berry bytecode
+and returns to the same VM with existing globals. Syntax/runtime errors also
+return to a usable prompt. Ctrl-D on an empty input line (including continuation)
+exits; it is ignored on a nonempty edited line. See
+[recovery details](docs/getting-started.md#functions-loops-and-recovery), including
+native-call latency and the legacy running-program Ctrl-D interrupt behavior.
 
-p2.pin.dir_high(56)
-for i: 0..5
-    p2.pin.toggle(56)
-    p2.clock.waitms(150)
-end
-```
+Use `task` for cooperative work in the current VM. Production parallel Berry
+VMs are **unavailable**; internal cog/source experiments are not a supported
+concurrent interpreter. This interactive increment does not finish the port or
+claim complete standard-library coverage.
 
-Blink the two P2 Edge 32 MB LEDs on pins `38` and `39` using cooperative tasks:
+## Build and hardware safety
 
-```berry
-import p2
-import task
+Use pinned Catalina on Linux/x86-64, including the existing container. Build the
+32 MiB PSRAM Edge with `make p2-xmm TOOLCHAIN=catalina CATALINA_DIR=../Catalina`;
+use `make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina` for the default
+no-PSRAM COMPACT profile. [Getting Started](docs/getting-started.md#build-and-connect)
+explains profile choice, serial ownership and volatile loading. Flash installation
+is optional, not a prerequisite for interactive use.
 
-def blink(pin, ms)
-    p2.pin.toggle(pin)
-    return task.sleep(ms)
-end
+Read [hardware wiring](docs/hardware-tests.md) before any GPIO/bus example below.
+On the PSRAM Edge, 40–57 are memory pins, 58–61 are shared flash/SD wiring, and
+62/63 are the console. A pin-56 LED example is only for the **no-PSRAM** Edge.
+Never drive an unidentified peripheral. One serial client/lease at a time.
 
-h38 = task.start(blink, 38, 250)
-h39 = task.start(blink, 39, 700)
-
-task.run(100)
-
-task.stop(h38)
-task.stop(h39)
-```
-
-Launch supported native blinker work on other cogs and keep handles you can stop
-later:
-
-```berry
-import p2
-
-def blinker(pin, ms)
-    p2.pin.dir_high(pin)
-    p2.pin.toggle(pin)
-    return ms
-end
-
-h38 = p2.cog.spawn(blinker, 38, 250)
-h39 = p2.cog.spawn(blinker, 39, 700)
-
-print(p2.cog.info(h38))
-print(p2.cog.info(h39))
-
-p2.cog.stop(h38)
-p2.cog.stop(h39)
-```
-
-`p2.cog.spawn(blinker, 38, 250)` passes the function entity. Do not write
-`blinker(38, 250)` unless you mean to call the function immediately on the REPL
-cog.
-
-## Quick Start
-
-Build Berry for Propeller 2 with Catalina:
-
-```sh
-make p2 TOOLCHAIN=catalina CATALINA_DIR=../Catalina
-make p2-minimal
-make p2-full
-make p2-run TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
-```
-
-Catalina is the preferred and verified P2 toolchain. FlexC targets remain in the
-tree for historical/debugging work, but normal P2 validation should use Catalina.
-
-P2 Edge flash install with Catalina:
-
-```sh
-make configure TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0 P2_SILICON=latest CATALINA_PLATFORM=P2_EDGE CATALINA_MODEL=COMPACT CATALINA_CLIB=-lcx CATALINA_SERIAL_LIB=
-make p2-flash
-tio -b 230400 /dev/ttyUSB0
-```
-
-For the verified P2 Edge Rev D path, use boot switches
-`FLASH=ON, triangle=OFF, inverted-triangle=OFF`. Catalina flash uses a generated
-`flshload.t` programmer image; do not flash `build/p2/catalina/full/berry_p2.binary`
-directly with `loadp2 -SPI`.
-
-The default Catalina P2 Edge profile targets the no-PSRAM board, where pins `56`
-and `57` are LEDs. Do not add `-lpsram` for that board; Catalina's PSRAM profile
-uses pin `57` as chip-select. Keep `CATALINA_MODEL=COMPACT` for `make p2-ram`;
-`NATIVE` builds are too large for the Hub RAM load path.
+The remaining profile/library examples are broader reference material, not the
+first-prompt checklist. Older TODO/DONE/handoff files preserve historical evidence;
+they do not override the current onboarding and status pages.
 
 ## Build Profiles
 
@@ -168,15 +87,15 @@ P2 build profiles are selected with `P2_PROFILE` or with convenience targets:
   RAM board. It uses the lower `16 MiB` PSRAM window for Catalina XMM/external
   heap storage and leaves the upper `16 MiB` as an explicit block/cache window.
 - `make p2-xmm-flash` creates a sparse standalone flash image with visible PSRAM
-  initialization. The current hardware-verified boot reaches `berry>` in about
-  3 seconds after attach.
+  initialization. Old boot timings belong to their historical captures; this
+  interactive increment is RAM-first and does not claim a new flash/cold-boot proof.
 
 XMM flash startup skips the optional `/berry/main.be` auto-run probe by default
 so REPL boot does not block on SD lookup. Builds that need startup scripts can
 opt back in with `BE_P2_RUN_SD_MAIN=1`.
 
-P2 app images are checked against the 512 KiB Hub RAM limit. Oversized builds
-fail before `berry_p2.binary` is published.
+COMPACT app images are checked against the 512 KiB Hub RAM limit; XMM images
+have a separate external-memory load limit. Oversized builds fail the image guard.
 
 Windows PowerShell example:
 

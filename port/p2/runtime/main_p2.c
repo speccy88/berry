@@ -152,6 +152,13 @@ static int p2_try_run_sd_main(bvm *vm)
 #endif
 }
 
+static void p2_interpreter_exited(void)
+{
+    p2_serial_puts("[Berry interpreter exited]\n");
+    for (;;) {
+    }
+}
+
 static void berry_p2_main(void)
 {
     bvm *vm;
@@ -170,7 +177,7 @@ static void berry_p2_main(void)
     }
 #endif
     p2_print_banner();
-    p2_serial_puts("[Ctrl-D or Ctrl-C at an empty prompt quits]\n");
+    p2_serial_puts("[p2.help() for groups | Ctrl-C cancels | Ctrl-D on an empty line exits]\n");
     startup_status_cog = p2_startup_status_start();
     vm = be_vm_new();
     if (!vm) {
@@ -183,15 +190,13 @@ static void berry_p2_main(void)
     main_res = p2_try_run_sd_main(vm);
     p2_startup_status_stop(startup_status_cog);
     if (main_res == BE_EXIT || p2_take_exit_request()) {
-        p2_serial_puts("bye\n");
-        return;
+        p2_interpreter_exited();
     }
 
     for (;;) {
         int res = be_repl(vm, p2_readline, p2_freeline);
         if (p2_take_exit_request() || res == BE_EXIT) {
-            p2_serial_puts("bye\n");
-            break;
+            p2_interpreter_exited();
         }
         if (res == BE_MALLOC_FAIL) {
             p2_serial_puts("error: REPL ran out of memory\n");

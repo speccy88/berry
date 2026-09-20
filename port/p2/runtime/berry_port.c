@@ -1553,7 +1553,16 @@ static char *serial_readline(char *buffer, size_t size, const char *prompt)
             continue;
         }
 
-        if (ch == 3 || ch == 4) {
+        if (ch == 3) {
+            /* End this REPL invocation, not the VM. The production outer
+             * loop restarts it with the same globals; continuation source
+             * is released by be_repl's normal reader-EOF path. */
+            buffer[0] = '\0';
+            p2_serial_puts("\nKeyboardInterrupt\n");
+            return NULL;
+        }
+
+        if (ch == 4) {
             if (pos == 0) {
                 p2_exit_requested = 1;
                 serial_write_char('\n');

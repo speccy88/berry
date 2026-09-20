@@ -39,7 +39,7 @@ INPUT_TREES = ("src", "default", "mk", "port/p2", "scripts", "modules", "tests",
 INPUT_FILES = ("Makefile", "testall.be", "tools/build_p2.py", "tools/bootstrap_catalina.py",
                "tools/test_p2_heap.py", "tools/test_p2_clock.py",
                "tools/test_p2_vm_state.py", "tools/test_exception_storage.py",
-               "tools/test_p2_cog_handles.py", "tools/test_p2_module_config.py",
+               "tools/test_p2_cog_handles.py", "tools/test_p2_module_config.py", "tools/test_repl.py",
                "tests/json_test_cases.json")
 EXCLUDED_DIRS = {"build", "generate", "__pycache__", "node_modules", "catalina",
                  "flexprop", "sdk", "sdks", "cache", "caches", "secrets", "credentials"}

@@ -335,7 +335,14 @@ void be_map_removestr(bvm *vm, bmap *map, bstring *key)
 
 bmapnode* be_map_next(bmap *map, bmapiter *iter)
 {
-    bmapnode *end = map->slots + map->size;
+    bmapnode *end;
+    /* Constructor OOM can leave an empty map with no allocated slots.
+     * Even adding zero to NULL is undefined (Clang UBSan catches it). */
+    if (!map->slots) {
+        *iter = NULL;
+        return NULL;
+    }
+    end = map->slots + map->size;
     *iter = *iter ? *iter + 1 : map->slots;
     while (*iter < end && isnil(*iter)) {
         ++(*iter);

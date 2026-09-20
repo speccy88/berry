@@ -17,6 +17,9 @@ extern "C" {
 typedef char* (*breadline)(const char *prompt);
 typedef void (*bfreeline)(char *ptr);
 
+/* A NULL reader result ends this invocation, including an incomplete
+ * submission. Each non-NULL line is passed once to freeline (when provided);
+ * NULL is never freed. The caller retains ownership of the VM/global state. */
 BERRY_API int be_repl(bvm *vm, breadline getline, bfreeline freeline);
 
 #ifdef __cplusplus

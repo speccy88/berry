@@ -100,7 +100,10 @@ void p2_smartserial_tx(int ch)
 int p2_smartserial_rx(void)
 {
 #if defined(__CATALINA__)
-    return k_wait();
+    /* Catalina HMI translates EOT (Ctrl-D) to -1. This adapter's
+     * contract is UART bytes, so restore it for the editor's EOF policy. */
+    int ch = k_wait();
+    return ch == -1 ? 4 : ch;
 #else
     unsigned long z;
     unsigned long wait_count = 0;
@@ -125,7 +128,9 @@ int p2_smartserial_rxcheck(void)
 {
 #if defined(__CATALINA__)
     if (k_ready()) {
-        return k_get();
+        int ch = k_get();
+        /* Distinguish a consumed EOT from the no-byte result below. */
+        return ch == -1 ? 4 : ch;
     }
     return -1;
 #else

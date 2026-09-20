@@ -23,7 +23,8 @@ def main():
     if compiler is None:
         parser.error("C compiler is required; no skipped test")
     (ROOT / "build").mkdir(exist_ok=True)
-    out = Path(tempfile.mkdtemp(prefix="exception-storage-", dir=ROOT / "build"))
+    out = Path(tempfile.mkdtemp(prefix='exception-storage-', dir=ROOT / 'build'))
+    out.chmod(0o755)  # CI runner must traverse the container-owned receipt directory.
     tracked = sorted(str(p.relative_to(ROOT)) for folder in
                      ('src', 'default', 'tools/coc', 'tests/native', 'port/p2')
                      for p in (ROOT / folder).rglob('*')

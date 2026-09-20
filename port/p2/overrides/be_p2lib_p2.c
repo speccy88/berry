@@ -7,6 +7,7 @@
 #include "be_gc.h"
 #include "be_exec.h"
 #include "be_mem.h"
+#include "be_map.h"
 #include "be_module.h"
 #include "be_object.h"
 #include "be_string.h"
@@ -9450,6 +9451,81 @@ static int m_p2_member(bvm *vm)
     be_return(vm);
 }
 
+/* Read the live registration table, never a second catalog or a user callback.
+ * The module remains rooted on the stack while the result list allocates. */
+static void p2_help_names(bvm *vm, bmodule *module, int groups_only)
+{
+    bmapiter iter = be_map_iter();
+    bmapnode *node;
+    be_newobject(vm, "list");
+    while ((node = be_map_next(module->table, &iter)) != NULL) {
+        if (var_isstr(&node->key)
+            && (!groups_only || var_ismodule(&node->value))) {
+            const char *name = str(var_tostr(&node->key));
+            if (name[0] != '.' && strcmp(name, "member")) {
+                be_pushstring(vm, name);
+                be_data_push(vm, -2);
+                be_pop(vm, 1);
+            }
+        }
+    }
+    be_pop(vm, 1); /* internal list data; leave the list instance */
+}
+
+static int m_p2_help(bvm *vm)
+{
+    int argc = be_top(vm);
+    const char *topic = "p2";
+    bmodule *module;
+    bntvfunc capabilities = NULL;
+    if (argc > 1 || (argc == 1 && !be_isstring(vm, 1))) {
+        be_raise(vm, "type_error", "help expects no argument or one group name string");
+    }
+    if (argc) {
+        topic = be_tostring(vm, 1);
+        if (strlen(topic) != be_strlen(vm, 1)) {
+            be_raise(vm, "value_error", "unknown or unavailable p2 help group");
+        }
+    }
+    be_getmodule(vm, "p2");
+    module = (bmodule *)var_toobj(be_indexof(vm, -1));
+    if (strcmp(topic, "p2")) {
+        bvalue *value = be_map_findstr(vm, module->table,
+            var_tostr(be_indexof(vm, 1)));
+        if (!value || !var_ismodule(value)) {
+            be_raise(vm, "value_error", "unknown or unavailable p2 help group");
+        }
+        module = (bmodule *)var_toobj(value);
+    }
+    be_newobject(vm, "map");
+    p2_map_set_string(vm, "topic", topic);
+    be_pushstring(vm, !strcmp(topic, "p2") ? "groups" : "members");
+    p2_help_names(vm, module, !strcmp(topic, "p2"));
+    be_setindex(vm, -3);
+    be_pop(vm, 2);
+    p2_map_set_string(vm, "usage", "p2.help() lists groups; p2.help(\"pin\") lists live members. See docs/p2-api.md for signatures.");
+    p2_map_set_string(vm, "safety", "Help only inspects metadata. Check board pin reservations before hardware calls; flat aliases remain compatible.");
+    p2_map_set_string(vm, "support", "Single VM supported; production concurrency unavailable. Experimental features are not production support. Capability false means unavailable.");
+    if (!strcmp(topic, "cog")) capabilities = m_p2_closure_cog_capabilities;
+#if BE_P2_ENABLE_ROADMAP_NATIVE_FACADES
+    else if (!strcmp(topic, "asm")) capabilities = m_p2_asm_capabilities;
+    else if (!strcmp(topic, "debug")) capabilities = m_p2_debug_capabilities;
+    p2_map_set_string(vm, "examples", "p2.clock.freq(); p2.cog.id(); p2.debug.snapshot(); import introspect; introspect.members(p2.pin)");
+#else
+    p2_map_set_string(vm, "examples", "p2.status_info(); p2.cog.id(); p2.help(\"pin\")");
+#endif
+    if (capabilities) {
+        be_pushstring(vm, "capabilities");
+        /* Known read-only native reporter, not an overridable module member. */
+        be_pushntvfunction(vm, capabilities);
+        be_call(vm, 0);
+        be_setindex(vm, -3);
+        be_pop(vm, 2);
+    }
+    be_pop(vm, 1); /* internal map data; return the map instance */
+    be_return(vm);
+}
+
 void be_cache_p2module(bvm *vm)
 {
     bstring *name;
@@ -9460,6 +9536,7 @@ void be_cache_p2module(bvm *vm)
     name = var_tostr(vm->top - 1);
     be_newmodule(vm);
     p2_module_set_func(vm, "member", m_p2_member);
+    p2_module_set_func(vm, "help", m_p2_help);
     p2_module_set_func(vm, "vm_cog_ping", m_p2_vm_cog_ping);
     p2_module_add_runtime_cog(vm);
     p2_module_add_runtime_pin(vm);

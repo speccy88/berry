@@ -13,6 +13,9 @@
 
 #if BE_USE_SCRIPT_COMPILER
 
+/* Private compile result: reader EOF, with no exception/result on the stack. */
+#define REPL_EOF (-1)
+
 static bbool is_keyboard_interrupt(bvm *vm)
 {
     return be_isstring(vm, -2) && !strcmp(be_tostring(vm, -2), "keyboard_interrupt");
@@ -60,12 +63,16 @@ static int compile(bvm *vm, char *line, breadline getl, bfreeline freel)
             int idx = be_absindex(vm, -1); /* get the source text absolute index */
             /* compile source line */
             res = be_loadbuffer(vm, "stdin", src, strlen(src));
-            if (!res || !is_multline(vm)) {
+            if (be_getexcept(vm, res) != BE_SYNTAX_ERROR || !is_multline(vm)) {
                 be_remove(vm, idx); /* remove source code */
                 return res;
             }
             be_pop(vm, 2); /* pop exception values */
             line = getl(">> "); /* read a new input line */
+            if (line == NULL) {
+                be_pop(vm, 1); /* abandon rooted source; never format/free NULL */
+                return REPL_EOF;
+            }
             be_pushfstring(vm, "\n%s", line);
             safecall(freel, line); /* free line buffer */
             be_strconcat(vm, -2);
@@ -103,6 +110,8 @@ BERRY_API int be_repl(bvm *vm, breadline getline, bfreeline freeline)
     be_assert(getline != NULL);
     while ((line = getline("> ")) != NULL) {
         int res = compile(vm, line, getline, freeline);
+        if (res == REPL_EOF)
+            break;
         if (res == BE_MALLOC_FAIL)
             return BE_MALLOC_FAIL;
         if (res) {

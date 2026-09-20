@@ -1,8 +1,54 @@
-# P2 API Reference Snapshot
+# P2 API Reference
+
+Follow [Getting Started](getting-started.md) for the executable first-prompt
+walkthrough and cancellation/EOF behavior. [Port status](P2_PORT_STATUS.md) owns
+the current support summary. This reference includes experimental diagnostics;
+registration is not a promise of production support.
+
+## Discovery and conventions
+
+Prefer the grouped hardware API (`p2.clock.freq()`, `p2.cog.id()`, `p2.pin.read(pin)`).
+Flat aliases remain backward-compatible. Profiles can expose different groups.
+
+`p2.help()` (or `p2.help("p2")`) returns a map with `topic`, `groups`, `usage`,
+`safety`, `support` and `examples`. `groups` is a list of live registered submodules.
+`p2.help("pin")` returns the same metadata with `members` instead of `groups`:
+a list of that module's public registered members, not a hardcoded API catalog.
+List order is unspecified. Results are fresh snapshots, not mutable module tables.
+
+For `cog`, `asm` and `debug`, the map also includes `capabilities`, obtained from
+the existing native capability reporter. `false` means unavailable; experimental
+flags and internal source-worker diagnostics do not enable production concurrency.
+In particular, `p2.cog.capabilities()["spawn_source"]` is `false` in production.
+
+- No argument, or one string naming an available group: returns a help map.
+- Wrong argument type (including `nil`) or more than one argument: `type_error`.
+- Unknown/unavailable group, empty string or embedded NUL: `value_error`.
+- Help only reads metadata: no GPIO writes, bus opens, storage writes or SD lookup.
+- Help does not call overridable module functions to obtain capability maps.
+
+```berry
+import p2
+p2.help("pin")["members"]
+p2.help("cog")["capabilities"]["spawn_source"]
+p2.debug.snapshot()["runtime"]["memory_profile"]
+import introspect
+introspect.members(p2.pin)
+```
+
+These are expressions: the REPL prints non-`nil` results automatically. In scripts,
+use `print(...)` when output is wanted. Berry errors are exceptions, not Python
+syntax or ad-hoc success strings. Existing APIs retain their documented `nil`,
+map/result and error conventions; this increment does not normalize every legacy
+helper. The [interactive example](../examples/p2/interactive.be) and
+[help smoke](../tests/p2/smoke_interactive_help.be) exercise the new surface without
+external hardware operations.
 
 ## Main native module
 
-`p2` is the friendly hardware namespace. It exposes flat compatibility names and grouped submodules.
+`p2` is the friendly hardware namespace. It exposes grouped submodules and flat
+compatibility names. Capability snapshots describe availability, not a permission
+to drive pins: validate board reservations and wiring before hardware calls.
 
 ## Grouped APIs
 
@@ -23,11 +69,10 @@
 - `p2.asm`: safe PASM-adjacent intrinsics, PASM blob loading into `bytes`, marker-fixture launch probes, fixed named-operation mailbox fixture-call proofs, and queryable ABI/capability diagnostics.
 - `p2.debug`: backed diagnostics for heap, GC, cogs, memory map, pins, smart pins, registers, snapshots, and queryable debug capability/policy metadata.
 
-Hardware status: the grouped modules are exposed on the flashed Catalina XMM
-image tested on `/dev/ttyUSB0`. The full `/tests/p2/smoke_p2_api.be` hardware
-smoke now passes on the flashed Catalina XMM image, covering clock waits,
-cog/lock basics, LED GPIO, CORDIC/math/RNG/asm reads, debug maps/registers,
-64-pin snapshots, and negative diagnostics.
+The LARGE/XMM production profile registers these groups. The interactive
+walkthrough uses read-only calls, not the full peripheral smoke suite.
+Earlier flashed-image `smoke_p2_api.be` captures are historical porting evidence;
+they are not a fresh claim for every API on the current image.
 
 ## PASM
 

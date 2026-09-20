@@ -109,6 +109,7 @@ jobs:
               check python3 tools/test_exception_storage.py --cc "$TEST_CC" --cflags="$abi_flags" --sanitize
               check python3 tools/test_p2_cog_handles.py --cc "$TEST_CC"
               check python3 tools/test_p2_module_config.py
+              check python3 -O tools/test_repl.py --cc "$TEST_CC" --sanitize
               exit "$failed"
             ' 2>&1 | tee "$RUNNER_TEMP/berry-native/native.log"
       - name: Retain real host test receipts and logs

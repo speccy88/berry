@@ -1,88 +1,85 @@
 # Propeller 2 Port Status
 
-This is the human-readable status page for the Berry Propeller 2 port. Use it
-as the first stop before opening the detailed trackers.
+This is the canonical current support summary. Begin with
+[Getting Started](getting-started.md), use the [P2 API](p2-api.md) for names,
+arguments/results and errors, and keep historical porting evidence separate.
+This page does not declare the whole port or standard library complete.
 
-## Current Normal Path
+## Current validation path
 
-- Hardware: P2 Edge 32 MB board.
-- Serial port used by the current harness: `/dev/ttyUSB0` at `230400`.
-- Toolchain: Catalina from the sibling checkout, `CATALINA_DIR=../Catalina`.
-- Main high-capacity profile: `p2-xmm`, flashed with `make p2-xmm-flash`.
-- Current verified XMM image size: `1168384 / 16777216` bytes.
-- Normal heap shape: Catalina XMM uses the lower PSRAM window for the VM heap;
-  Berry keeps the upper PSRAM window available for explicit block/cache use.
+- Linux/x86-64, including the existing container; pinned Catalina 8.8.9 commit
+  `a6f714c539f749c5fc80fa2179f6193622d39c0c`. See [build details](P2_BUILD.md).
+- Identified P2 Edge with 32 MiB PSRAM; production LARGE/XMM profile,
+  `make p2-xmm TOOLCHAIN=catalina CATALINA_DIR=../Catalina`.
+- Volatile loading is sufficient. Flash installation is optional and requires
+  verified board identity, private backup and recovery procedure.
+- Console `/dev/ttyUSB0`, 230400 baud, one exclusive serial owner. USB serial
+  identity is checked by the bench harness; the port name alone is not identity.
+- Lower 16 MiB PSRAM window: Catalina XMM code/data/heap; upper 16 MiB:
+  explicit block/cache use. Exception frames use explicit VM-owned Hub storage.
+- The no-PSRAM Edge uses the separate COMPACT profile, `-lcx`, no `-lpsram`.
+  Never apply PSRAM board pin assignments or XMM size limits to that profile.
 
-Use this command for the normal high-capacity board image:
+## Supported interactive foundation
 
-```sh
-make p2-xmm-flash TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0
-```
+- Arithmetic/expression printing; multiline `def` and loops; ordinary Berry
+  syntax/runtime exceptions returning to a usable prompt.
+- Ctrl-C at empty, edited, continuation or running Berry bytecode returns to a
+  fresh prompt with the same VM/global state. Already executed effects remain.
+  Native-call polling latency is not a hard real-time cancellation guarantee.
+- Explicit Ctrl-D/EOF behavior, including abandoning pending source. See the
+  [single recovery contract](getting-started.md#functions-loops-and-recovery).
+- `p2.help()` discovers live groups; `p2.help("pin")` discovers live members.
+  Help returns metadata maps and reuses existing capability reporters; it does
+  not drive pins, open buses or access storage. Bad types/topics raise normal
+  Berry errors. See [discovery conventions](p2-api.md#discovery-and-conventions).
+- Grouped hardware APIs are the preferred example style. Flat aliases remain
+  compatible. Status/introspection examples need neither wiring nor an SD card.
+- The [interactive example](../examples/p2/interactive.be) and
+  [help smoke](../tests/p2/smoke_interactive_help.be) are executable, not transcripts
+  pasted into replacement firmware.
 
-Use this command for the non-hardware consistency gates:
+## Experimental and unavailable
 
-```sh
-make p2-baseline-guards TOOLCHAIN=catalina CATALINA_DIR=../Catalina
-```
+- **Unavailable:** production concurrent independent Berry VMs, arbitrary closure
+  transfer across cogs, and public source-cog execution. Inspect
+  `p2.cog.capabilities()["spawn_source"]` rather than assuming that registration
+  or an internal diagnostic means support. Coherent source producer/reaper work
+  is deferred, not completed or abandoned by this increment.
+- **Experimental:** internal child-VM/cog diagnostics, interim native cog handles,
+  exact PASM fixtures and PSRAM block/cache tooling. No new concurrency guarantee
+  follows from single-VM interactive testing.
+- **Unavailable in normal builds:** arbitrary PASM/inline assembly, cross-cog IPC,
+  USB/VGA support and calibrated analog/timer claims beyond their reported
+  capabilities. Query the relevant capability map and read its policy/reason.
+- `.bec` import is ABI-gated; explicit source fallback remains important.
+- SD-backed files and optional source libraries are separate workflows. They are
+  not requirements for help or the first-prompt walkthrough. This increment does
+  not claim complete standard-library coverage or retest every peripheral.
 
-## What Works Today
+## Verification scopes
 
-- Interactive `berry>` REPL over serial.
-- Core language coverage for normal scripts, classes, closures, maps, lists,
-  strings, numbers, ranges, modules, and many parser/runtime edge cases.
-- SD-backed files through `open()`, `os`, and `os.path`.
-- Lazy source imports from `/modules`, `/berry/lib`, and `/berry/app`.
-- Native `p2`, `task`, `math`, `string`, `json`, `bytes`, `i2c`, and `spi`
-  paths on the current firmware profiles.
-- Grouped P2 APIs for `p2.clock`, `p2.cog`, `p2.lock`, `p2.pin`,
-  `p2.cordic`, `p2.math`, `p2.rng`, `p2.smart`, `p2.asm`, and `p2.debug`.
-- Focused smart-pin examples and smokes on jumpers `0-1`, `2-3`, `4-5`, and
-  `6-7`.
-- Current-VM cooperative tasks through native `task`.
-- Current-VM IPC helpers through `p2ipc`.
-- Safe PASM-adjacent intrinsics and fixed marker/fixture-call proofs through
-  `p2.asm`.
-- Queryable unsupported boundaries for debug controls, cross-cog IPC,
-  arbitrary PASM, real isolated Berry VM cogs, calibrated analog/timer claims,
-  USB, and VGA.
+`python3 tools/test_repl.py --sanitize` executes the actual production REPL,
+P2 editor/interrupt slice and help implementation with real host Berry VMs.
+Its UART byte inputs and metadata fixture modules are **native unit tests**, not
+board output. It checks reader/free ownership, continuation EOF, cancellation,
+stack balance, global preservation, errors and help validation under ASan/UBSan.
 
-## Important Limits
+The maintained VM-state, exception-storage, source-worker and language gates
+remain required. Real hardware acceptance uses the normal production entry
+point, source/image/loader hashes, an exclusive serial lease and raw UART bytes.
+Clean Catalina compilation and local CI-body runs are build/host evidence, not
+GitHub Actions or HIL. Remote Actions status must be read from the actual run.
 
-- Do not use containerized Catalina for normal validation.
-- Do not spend routine time on FlexC builds unless explicitly selected.
-- Do not treat historical macOS serial-port entries as current instructions;
-  they are old evidence captures.
-- `try` / `except` and line-start `for` are avoided in user-facing P2 examples
-  because current normal images can hang on those paths.
-- `p2smart` remains useful, but routine hardware checks prefer native `p2.smart`
-  files when the source wrapper would make upload/load too slow.
-- `.bec` module preference is still gated by P2 ABI compatibility. Current
-  P2 behavior is explicit source fallback plus bytecode ABI guard coverage.
+For other hardware, read [testing](testing.md) and [wiring](hardware-tests.md)
+before invoking a smoke target: some targets provision SD or drive wired pins.
 
-## Best Focused Checks
+## Historical material and deeper references
 
-Use focused checks for normal development. Avoid broad suites unless broad
-regression evidence is explicitly needed.
-
-| Need | Command |
-| --- | --- |
-| Non-hardware consistency | `make p2-baseline-guards TOOLCHAIN=catalina CATALINA_DIR=../Catalina` |
-| Quick first-four priority hardware health | `make p2-smoke-priority1-4-min-staged TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0` |
-| SD/file core | `make p2-smoke-sd-file-core-min TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0` |
-| Standard-library quick path | `make p2-smoke-stdlib-min TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0` |
-| Smart pins, focused native path | `make p2-smoke-smartpins-focused TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0` |
-| PASM policy and fixtures | `make p2-smoke-pasm-policy-min TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0` |
-| Cog handle policy | `make p2-smoke-cog-policy-min TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0` |
-| Debug capability boundary | `make p2-smoke-debug-capabilities-min TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0` |
-| `.bec` ABI guard/source fallback | `make p2-smoke-bec-abi-min TOOLCHAIN=catalina CATALINA_DIR=../Catalina PORT=/dev/ttyUSB0` |
-
-## Where To Read More
-
-- Quick setup: `docs/getting-started.md`
-- Build profiles and command details: `docs/P2_BUILD.md`
-- Test strategy and smoke target reference: `docs/testing.md`
-- Hardware wiring: `docs/hardware-tests.md`
-- Current architecture: `docs/architecture-current.md`
-- Coverage details: `docs/coverage-matrix.md`
-- Live work queue: `port/p2/TODO.md`
-- Historical evidence log: `port/p2/DONE.md`
+- [Architecture](architecture-current.md), [coverage details](coverage-matrix.md)
+  and [build profiles](P2_BUILD.md) retain the broader port context.
+- [TODO](../port/p2/TODO.md) is a work tracker, not a product support promise.
+- [DONE](../port/p2/DONE.md) and old release/handoff captures are historical
+  evidence tied to their images, boards and toolchains. Earlier warnings about
+  `try` / `except` or line-start `for`, macOS-only/container restrictions, image
+  sizes and flash boot timings are not current onboarding instructions.

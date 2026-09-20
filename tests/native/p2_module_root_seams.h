@@ -21,6 +21,13 @@ static int m_p2_member(bvm *vm)
     be_return_nil(vm);
 }
 
+static int m_p2_help(bvm *vm)
+{
+    (void)vm;
+    abort(); /* This fixture tests cache-name GC lifetime, not help behavior. */
+    return 0;
+}
+
 static int m_p2_vm_cog_ping(bvm *vm)
 {
     (void)vm;

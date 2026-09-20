@@ -221,9 +221,10 @@ static void mark_list(bvm *vm, bgcobject *obj)
     blist *list = cast_list(obj);
     gc_try (list != NULL) {
         bvalue *val = be_list_data(list);
-        bvalue *end = be_list_end(list);
+        int count = be_list_count(list);
         vm->gc.gray = list->gray; /* remove object from gray list */
-        for (; val < end; val++) {
+        /* An empty/OOM-initialized list need not have allocated data. */
+        for (; count > 0; --count, ++val) {
             mark_gray_var(vm, val);
         }
     }
@@ -421,17 +422,17 @@ static void premark_internal(bvm *vm)
 static void premark_global(bvm *vm)
 {
     bvalue *v = vm->gbldesc.global.vlist.data;
-    bvalue *end = v + be_global_count(vm);
-    while (v < end) {
+    int count = be_global_count(vm);
+    /* Do not compute an end pointer from NULL during constructor OOM. */
+    for (; count > 0; --count, ++v) {
         if (be_isgcobj(v)) {
             mark_gray(vm, var_togc(v));
         }
-        ++v;
     }
     v = vm->gbldesc.builtin.vlist.data;
-    end = v + be_builtin_count(vm);
-    while (v < end) {
-        mark_gray_var(vm, v++);
+    count = be_builtin_count(vm);
+    for (; count > 0; --count, ++v) {
+        mark_gray_var(vm, v);
     }
 }
 
