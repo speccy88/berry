@@ -5,6 +5,11 @@ or flash write is needed for this walkthrough. Use the [port status](P2_PORT_STA
 for supported/experimental/unavailable boundaries and the [P2 API](p2-api.md)
 for signatures; this guide is not a second API reference.
 
+The [2026-09-20 interactive preview](P2_INTERACTIVE_PREVIEW.md) records the
+accepted XMM image, its verification and the unfinished work. This walkthrough
+is the tested starting point, not a claim of complete library, peripheral or
+persistent-boot support.
+
 ## Build and connect
 
 Use Linux/x86-64 and the pinned Catalina toolchain, including the existing

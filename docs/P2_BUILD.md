@@ -1,7 +1,10 @@
 # P2 Build
 
 For the current human-readable P2 status, including the normal board, profile,
-and focused validation commands, start with `docs/P2_PORT_STATUS.md`.
+and focused validation commands, start with [port status](P2_PORT_STATUS.md).
+The [2026-09-20 interactive preview](P2_INTERACTIVE_PREVIEW.md) identifies the
+accepted LARGE/XMM RAM image and source/CI evidence. Other profiles and the flash
+targets below are not covered by that interactive acceptance.
 
 ## Supported Interface
 
@@ -86,23 +89,26 @@ slot limit, and maximum `bytes()` size.
 
 - `minimal`: core language and standard classes plus `string`. It disables
   filesystem, JSON, math, OS, P2 hardware modules, retired worker/RTOS/Spin2
-  helpers, and low-level `prop2_*` globals. Last verified image:
+  helpers, and low-level `prop2_*` globals. Historical verified image:
   `426624` bytes with a `192 KiB` main heap.
 - `full`: the current no-PSRAM P2 Edge build. It includes SD-backed
   `open()`/`os`, P2 hardware modules, native `task`, native `math`, and optional
-  WiFiNINA helpers. Last verified image: `494624` bytes with a `128 KiB` main
+  WiFiNINA helpers. Historical verified image: `494624` bytes with a `128 KiB` main
   heap. The older `rtos`, `worker`, `threads`, and `taskspin` APIs are retired.
 - `edge32`: P2 Edge 32 MB RAM profile with Catalina `-lpsram`. It reserves
   pins `40..57` for PSRAM, keeps Berry's object heap in Hub RAM, and exposes
-  bounded PSRAM block transfers plus SD-library source-cache experiments. Last
-  verified image: `518304` bytes with a `92 KiB` main heap and `8 KiB` worker
-  heap.
+  bounded PSRAM block transfers plus SD-library source-cache experiments.
+  Historical verified image: `518304` bytes with a `92 KiB` main heap and
+  `8 KiB` worker heap.
 - `xmm`: P2 Edge 32 MB RAM profile using Catalina `LARGE`, `-lpsram`, and
   `-C PSRAM`. Catalina places the backing C arena in the lower PSRAM/XMM
   window, so Berry can use a large allocator-backed heap while the upper
-  `16 MiB` stays available for explicit PSRAM block/cache use. Current
-  hardware-verified image: `1168384` bytes with a `15728640` byte Berry heap
-  and `Berry heap in PSRAM` at runtime.
+  `16 MiB` stays available for explicit PSRAM block/cache use. The
+  [2026-09-20 accepted RAM image](P2_INTERACTIVE_PREVIEW.md) is `1230976` bytes;
+  its actual UART banner reports a `15728640` byte Berry heap and
+  `Berry heap external`. These are image/configuration values, not a completed
+  stress-tested resource budget. Historical COMPACT sizes above were not
+  revalidated by the XMM interactive milestone.
 
 Library loading policy (`modules/libstore.be`) on P2:
 

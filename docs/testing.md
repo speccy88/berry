@@ -1,11 +1,25 @@
 # Testing
 
-Date: 2026-06-06
+Interactive acceptance record updated: 2026-09-20. Broader test recipes below
+retain their individual scope; this date does not certify a rerun of each suite.
 
 This document describes the repeatable test entrypoints for the host Berry runtime and the Propeller 2 target.
 
 For the short human-readable P2 status and recommended focused checks, start
-with `docs/P2_PORT_STATUS.md`. This file is the detailed test reference.
+with [port status](P2_PORT_STATUS.md). This file is the detailed test reference.
+
+## Accepted interactive preview
+
+The [2026-09-20 acceptance record](P2_INTERACTIVE_PREVIEW.md) binds the tested
+RAM image to the implementation and distinguishes 127 checked actual-board UART
+steps, the separate readiness check, native host tests and remote compilation.
+The four-job [CI run at `6876481`](https://github.com/speccy88/berry/actions/runs/35543007587)
+passed and uploaded its evidence; it does not execute a P2 board. Complete bench
+receipts are retained separately, not installed with this checkout.
+
+The doc-only closeout changes neither firmware nor test code and does not
+reopen UART. Do not count the hardware/peripheral/flash commands later in this
+reference as having run for this preview merely because they are documented.
 
 ## Host tests
 

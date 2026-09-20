@@ -14,6 +14,11 @@ chip do interesting things without rebuilding firmware for every experiment.
 
 ## Start at the prompt
 
+**Accepted milestone — 2026-09-20:** the single-VM, RAM-only
+[interactive preview](docs/P2_INTERACTIVE_PREVIEW.md). That record identifies
+the tested image, actual-board coverage, passing CI revision and remaining
+limits. It is not a full-port or flash-persistence release.
+
 Berry is a small, interactive hardware language: a calculator, functions and
 loops, then real P2 tools when you are ready. It keeps Berry semantics (`var`,
 `def` / `end`, `for i: 1..3`) rather than pretending to parse Python.
@@ -105,6 +110,11 @@ make p2-run TOOLCHAIN=catalina CATALINA_DIR=C:\tools\catalina PORT=COM6 LOADP2=C
 ```
 
 ## Release Binaries
+
+The accepted [interactive preview](docs/P2_INTERACTIVE_PREVIEW.md) is a
+separately distributed RAM-only handoff. The general release/flash targets below
+do not imply that a flash image or persistent installation was accepted for this
+milestone. Flash writes require verified private backup and recovery controls.
 
 Catalina releases for the Propeller 2 ship two normal binaries:
 

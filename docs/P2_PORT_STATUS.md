@@ -5,6 +5,19 @@ This is the canonical current support summary. Begin with
 arguments/results and errors, and keep historical porting evidence separate.
 This page does not declare the whole port or standard library complete.
 
+## Accepted milestone — 2026-09-20
+
+The single-VM, RAM-only interactive preview is accepted. Its
+[acceptance record](P2_INTERACTIVE_PREVIEW.md) identifies implementation
+`93f17c8`, CI follow-up `6876481`, the tested image hash, 127 checked real-board
+UART steps and the four passing remote CI jobs. Host tests, compilation
+and raw-UART hardware evidence are separate scopes.
+
+This closes the interactive milestone only. Complete standard-library coverage,
+broader peripheral tooling, flash/cold-boot/persistence acceptance, measured
+resource budgets and safe production public multicog execution remain open.
+This documentation closeout does not rerun hardware or write flash.
+
 ## Current validation path
 
 - Linux/x86-64, including the existing container; pinned Catalina 8.8.9 commit
