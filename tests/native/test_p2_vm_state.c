@@ -11,6 +11,12 @@
 #include "be_exec.h"
 #include "be_mem.h"
 #include <propeller2.h>
+#if BE_DEBUG
+#include <signal.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 static unsigned checks, failures;
 #define CHECK(x) do { ++checks; if (!(x)) { ++failures; \
@@ -652,6 +658,98 @@ static void module_name_root(void)
     be_vm_delete(vm);
 }
 
+typedef struct { size_t calls, live; long budget; } allocator_probe;
+typedef union { struct { allocator_probe *owner; size_t size; } meta; long double alignment; } allocator_header;
+static void *probe_allocator(void *context, void *ptr, size_t size)
+{
+    allocator_probe *p = context;
+    allocator_header *h = ptr ? (allocator_header *)ptr - 1 : NULL;
+    ++p->calls;
+    if (h) { CHECK(h->meta.owner == p); }
+    if (!size) { if (h) { --p->live; test_free(h); } return NULL; }
+    if (p->budget == 0) return NULL;
+    if (p->budget > 0) --p->budget;
+    if (size > (size_t)-1 - sizeof(*h)) return NULL;
+    h = test_realloc(h, size + sizeof(*h));
+    if (!h) return NULL;
+    if (!ptr) ++p->live;
+    h->meta.owner = p; h->meta.size = size;
+    return h + 1;
+}
+static bvm *probe_vm(allocator_probe *p)
+{
+#ifdef BE_VM_ALLOCATOR_API
+    return be_vm_new_with_allocator(probe_allocator, p);
+#else
+    (void)p; (void)probe_allocator;
+    return be_vm_new(); /* baseline must fail routing, not fail to link */
+#endif
+}
+static void default_constructor(void)
+{
+    bvm *vm = be_vm_new();
+    CHECK(vm != NULL);
+    if (vm) be_vm_delete(vm);
+    vm = be_vm_new_with_allocator(NULL, NULL);
+    CHECK(vm != NULL);
+    if (vm) be_vm_delete(vm);
+#if BE_DEBUG
+    /* Preserve the existing debug assertion contract for both default APIs.
+     * Each expected abort is isolated from the test runner; never dump cores. */
+    for (int use_wrapper = 0; use_wrapper < 2; ++use_wrapper) {
+        int status = 0;
+        pid_t child = fork();
+        CHECK(child >= 0);
+        if (child == 0) {
+            struct rlimit limit = {0, 0};
+            if (setrlimit(RLIMIT_CORE, &limit) != 0) _exit(78);
+            fail_after = 0;
+            vm = use_wrapper ? be_vm_new() : be_vm_new_with_allocator(NULL, NULL);
+            (void)vm;
+            _exit(77); /* returning NULL is the regression, not a pass */
+        }
+        if (child > 0) {
+            CHECK(waitpid(child, &status, 0) == child);
+            CHECK(WIFSIGNALED(status));
+            CHECK(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT);
+        }
+    }
+#endif
+}
+
+static void allocator_context(void)
+{
+    allocator_probe a = {0, 0, -1}, b = {0, 0, -1};
+    bvm *va = probe_vm(&a), *vb = probe_vm(&b);
+    CHECK(va != NULL && vb != NULL);
+    CHECK(a.calls > 0 && b.calls > 0);
+    if (va && vb) {
+        script(va, "var private_value=71 var held=[] for i:0..100 held.push(str(i)) end");
+        script(vb, "var private_value=29 var held=[] for i:0..70 held.push(str(i)) end");
+        be_gc_collect(va); be_gc_collect(vb);
+        script(va, "assert(private_value==71) assert(size(held)==101)");
+        script(vb, "assert(private_value==29) assert(size(held)==71)");
+    }
+    if (va) be_vm_delete(va);
+    CHECK(a.live == 0);
+    if (vb) { script(vb, "assert(private_value==29)"); be_vm_delete(vb); }
+    CHECK(b.live == 0);
+#ifdef BE_VM_ALLOCATOR_API
+    {
+        int budget, successes = 0, refused = 0;
+        for (budget = 0; budget < 220; ++budget) {
+            allocator_probe p = {0, 0, budget};
+            bvm *vm = probe_vm(&p);
+            if (vm) { ++successes; be_vm_delete(vm); }
+            else ++refused;
+            CHECK(p.live == 0);
+        }
+        CHECK(successes > 0 && refused > 0);
+        CHECK(be_vm_new_with_allocator(NULL, &a) == NULL);
+    }
+#endif
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 2) return 2;
@@ -667,6 +765,8 @@ int main(int argc, char **argv)
     else if (!strcmp(argv[1], "interrupt_isolation")) interrupt_isolation();
     else if (!strcmp(argv[1], "cooperative_cancel")) cooperative_cancel();
     else if (!strcmp(argv[1], "module_name_root")) module_name_root();
+    else if (!strcmp(argv[1], "allocator_context")) allocator_context();
+    else if (!strcmp(argv[1], "default_constructor")) default_constructor();
     else return 2;
     CHECK(live_blocks == 0);
     printf("{\"case\":\"%s\",\"checks\":%u,\"failures\":%u,\"pointer_bits\":%u,\"bint_bits\":%u}\n",

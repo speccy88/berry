@@ -11,23 +11,9 @@ enum {
     P2_HEAP_ALIGN = 8
 };
 
-typedef struct p2_heap_block {
-    size_t size;
-    struct p2_heap_block *next;
-    struct p2_heap_block *prev;
-    int free;
-} p2_heap_block;
+#include "p2_heap_internal.h"
 
-typedef struct p2_heap_arena {
-    p2_heap_block *head;
-    int ready;
-    unsigned char *raw;
-    size_t bytes;
-    int segments;
-    size_t low_address;
-    size_t high_address;
-} p2_heap_arena;
-
+static int p2_heap_reservations_closed;
 #ifndef BE_P2_HEAP_STATIC_EXTERNAL_ARENA
 #define BE_P2_HEAP_STATIC_EXTERNAL_ARENA 0
 #endif
@@ -276,18 +262,21 @@ static void p2_heap_alloc_external_arena(p2_heap_arena *arena)
 static p2_heap_arena *p2_heap_current(void)
 {
     int cog = _cogid();
-    if (cog >= 0 && cog < 8 && p2_heap_cog_arena[cog] != NULL) {
+    if (cog < 0 || cog >= 8) return NULL;
+    if (p2_heap_cog_arena[cog] != NULL) {
         return p2_heap_cog_arena[cog];
     }
     if (cog == p2_worker_heap_cog) {
         return &p2_worker_arena;
     }
-    return &p2_main_arena;
+    /* Unbound worker/native-service allocations must fail, never silently
+     * land in the main heap. Coherent VMs use their explicit allocator. */
+    return cog == 0 ? &p2_main_arena : NULL;
 }
 
 static void p2_heap_init(p2_heap_arena *arena)
 {
-    if (arena->ready) {
+    if (arena == NULL || arena->ready) {
         return;
     }
 
@@ -397,9 +386,10 @@ static p2_heap_block *p2_heap_find(p2_heap_arena *arena, size_t size)
     return NULL;
 }
 
-static int p2_heap_arena_owns_payload(p2_heap_arena *arena, void *ptr)
+int p2_heap_arena_owns_payload(p2_heap_arena *arena, void *ptr)
 {
     p2_heap_block *block;
+    if (!arena) return 0;
 
     if (ptr == NULL) {
         return 1;
@@ -413,11 +403,12 @@ static int p2_heap_arena_owns_payload(p2_heap_arena *arena, void *ptr)
     return 0;
 }
 
-static size_t p2_heap_arena_free_bytes(p2_heap_arena *arena)
+size_t p2_heap_arena_free_bytes(p2_heap_arena *arena)
 {
     p2_heap_block *block;
     size_t total = 0;
 
+    if (!arena) return 0;
     p2_heap_init(arena);
     for (block = arena->head; block; block = block->next) {
         if (block->free) {
@@ -427,11 +418,11 @@ static size_t p2_heap_arena_free_bytes(p2_heap_arena *arena)
     return total;
 }
 
-static void *p2_heap_arena_malloc(p2_heap_arena *arena, size_t size)
+static void *p2_heap_arena_allocate(p2_heap_arena *arena, size_t size)
 {
     p2_heap_block *block;
 
-    if (size == 0 || !p2_heap_allocation_size(size, &size)) {
+    if (!arena || size == 0 || !p2_heap_allocation_size(size, &size)) {
         return NULL;
     }
 
@@ -446,6 +437,71 @@ static void *p2_heap_arena_malloc(p2_heap_arena *arena, size_t size)
     return block + 1;
 }
 
+void *p2_heap_arena_malloc(p2_heap_arena *arena, size_t size)
+{
+    if (arena == &p2_main_arena) p2_heap_reservations_closed = 1;
+    return p2_heap_arena_allocate(arena, size);
+}
+
+void p2_heap_arena_initialize(p2_heap_arena *arena, unsigned char *raw, size_t bytes)
+{
+    memset(arena, 0, sizeof(*arena));
+    arena->raw = raw;
+    arena->bytes = bytes;
+    p2_heap_init(arena);
+}
+
+unsigned char *p2_heap_reserve_private(size_t bytes, size_t line)
+{
+    size_t padded;
+    uintptr_t start;
+    unsigned char *raw;
+    /* Bootstrap cog only; no ordinary heap allocation has occurred yet. */
+    if (_cogid() != 0 || p2_heap_reservations_closed || !line
+            || (line & (line - 1u)) || line < P2_HEAP_ALIGN
+            || line > ((size_t)-1) / 3u || !bytes || bytes % line
+            || !p2_heap_add_size(bytes, 3u * line - 1u, &padded)) return NULL;
+#if BE_P2_HEAP_USES_EXTERNAL_RAM && !BE_P2_HEAP_STATIC_EXTERNAL_ARENA
+#if defined(__CATALINA_P2) || defined(TEST_FRESH_BREAK)
+    {
+#ifdef TEST_FRESH_BREAK
+        extern int p2_test_fresh_break(int amount);
+#define P2_INITIAL_BREAK p2_test_fresh_break
+#else
+        extern int sbrk(int amount);
+#define P2_INITIAL_BREAK sbrk
+#endif
+        int address;
+        /* SDK 8.8.9 lib/p2/xmm/c/sbrk.s returns the old high-water break,
+         * rounds increments to longs and bounds them by sbrkover. This avoids
+         * malloc reuse and keeps ALL parent malloc headers out of the region. */
+        if (p2_main_arena.ready || padded > INT_MAX
+                || !p2_heap_align(padded, &padded)
+                || padded >= p2_main_arena.bytes) return NULL;
+        address = P2_INITIAL_BREAK(0);
+        if (address == -1 || p2_heap_chunk_crosses_block_window(
+                (unsigned char *)(uintptr_t)(unsigned)address, padded)) return NULL;
+        address = P2_INITIAL_BREAK((int)padded);
+        if (address == -1) return NULL;
+        raw = (unsigned char *)(uintptr_t)(unsigned)address;
+        p2_main_arena.bytes -= padded;
+        p2_heap_external_requested_bytes -= padded;
+#undef P2_INITIAL_BREAK
+    }
+#else
+    /* Never manipulate a hosted process break using Catalina's 32-bit ABI. */
+    return NULL;
+#endif
+#else
+    raw = p2_heap_arena_allocate(&p2_main_arena, padded);
+    if (!raw) return NULL;
+#endif
+    /* Producer never accesses this interior, even to initialize it. Leading
+     * and trailing guards isolate full cache lines from all parent storage. */
+    start = ((uintptr_t)raw + 2u * line - 1u) & ~(uintptr_t)(line - 1u);
+    return (unsigned char *)start;
+}
+
 void *p2_heap_malloc(size_t size)
 {
     return p2_heap_arena_malloc(p2_heap_current(), size);
@@ -455,7 +511,7 @@ static void p2_heap_arena_free(p2_heap_arena *arena, void *ptr)
 {
     p2_heap_block *block;
 
-    if (!ptr) {
+    if (!arena || !ptr) {
         return;
     }
     if (!p2_heap_arena_owns_payload(arena, ptr)) {
@@ -478,13 +534,14 @@ void p2_heap_free(void *ptr)
     p2_heap_arena_free(p2_heap_current(), ptr);
 }
 
-static void *p2_heap_arena_realloc(p2_heap_arena *arena, void *ptr, size_t size)
+void *p2_heap_arena_realloc(p2_heap_arena *arena, void *ptr, size_t size)
 {
     p2_heap_block *block;
     p2_heap_block *next;
     size_t capacity;
     void *newptr;
 
+    if (!arena) return NULL;
     if (!ptr) {
         return p2_heap_arena_malloc(arena, size);
     }

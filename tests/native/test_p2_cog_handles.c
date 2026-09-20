@@ -16,6 +16,7 @@
 #include "p2_vm_state.h"
 #include "p2_cog_registry.h"
 #include "p2_heap.h"
+#include "p2_partition.h"
 #include "prop2.h"
 
 extern int test_registry_locked, test_lock_failure;
@@ -114,10 +115,36 @@ static void _waitus(uint32_t us)
     if (executing_job && executing_job->status == 2) executing_job->status = 4;
 }
 
+static int source_context_fail;
+static void *source_context_allocator(void *ctx, void *ptr, size_t size)
+{
+    size_t *calls = (size_t *)ctx; ++*calls;
+    if (size && source_context_fail) return NULL;
+    return test_realloc(ptr, size);
+}
+
 static void source_execution_cases(void)
 {
     p2_child_vm_cog_once_job job;
     size_t attempts = allocation_attempts;
+    size_t context_calls = 0;
+    memset(&job, 0, sizeof(job));
+    job.allocator = source_context_allocator; job.allocator_context = &context_calls;
+    job.execution_lock = 2;
+    strcpy(job.source, "def f() return 13579 end"); strcpy(job.name, "f");
+    executing_job = &job; p2_child_vm_cog_once_entry(&job); executing_job = NULL;
+    assert(context_calls > 0 && job.child_created && job.child_deleted);
+    assert(job.call_result == BE_OK && job.result_int == 13579);
+    puts("PASS actual source entry with explicit allocator context");
+    memset(&job, 0, sizeof(job)); context_calls = 0;
+    job.allocator = source_context_allocator; job.allocator_context = &context_calls;
+    job.execution_lock = 2; source_context_fail = 1;
+    executing_job = &job; p2_child_vm_cog_once_entry(&job); executing_job = NULL;
+    source_context_fail = 0;
+    assert(context_calls == 1 && !job.child_created && !job.child_deleted);
+    assert(job.source_result == BE_MALLOC_FAIL && job.call_result == BE_MALLOC_FAIL);
+    puts("PASS source constructor OOM is reported without fallback or VM leak");
+    attempts = allocation_attempts;
     memset(&job, 0, sizeof(job));
     job.cancel_requested = 1;
     strcpy(job.source, "return 5"); strcpy(job.name, "$return");

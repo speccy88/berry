@@ -18,6 +18,7 @@
 #include "berry_port.h"
 #include "p2_build_info.h"
 #include "p2_heap.h"
+#include "p2_partition.h"
 #include "p2_cog_registry.h"
 #include "p2_vm_state.h"
 
@@ -853,6 +854,16 @@ typedef struct p2_child_vm_cog_ping_job {
 } p2_child_vm_cog_ping_job;
 
 typedef struct p2_child_vm_cog_once_job {
+    /* Set only by the Hub admission bootstrap; NULL is the legacy gated path. */
+    bvm_allocator allocator;
+    void *allocator_context;
+    int execution_lock;
+    p2_partition *admission;
+    unsigned admission_generation;
+    volatile size_t admission_free;
+    volatile size_t admission_initial_free;
+    volatile size_t admission_low;
+    volatile int admission_retired;
     volatile int status;
     /* Managed source jobs use Hub mailboxes. Only worker publishes completion. */
     volatile int cancel_requested;
@@ -2108,19 +2119,35 @@ static void p2_child_vm_cog_once_entry(void *arg)
         job->source_result = BE_EXIT;
         job->call_result = BE_EXIT;
     } else {
-        int runtime_locked = p2_child_vm_runtime_lock_enter();
-
-        wrong_free_before = p2_heap_wrong_free_count();
-        wrong_realloc_before = p2_heap_wrong_realloc_count();
-        job->partition_ready = p2_heap_vm_partition_create(job->slot, job->bytes);
-        if (job->partition_ready) {
-            job->selected = p2_heap_vm_partition_select(job->slot);
+        int runtime_locked = 0;
+        if (job->allocator_context) {
+            /* Lock identity arrived explicitly in Hub, not a cached global. */
+            if (job->allocator && job->execution_lock >= 0 && job->execution_lock < 16) {
+                while (!job->cancel_requested) {
+                    if (!LOCKSET(job->execution_lock)) { runtime_locked = 1; break; }
+                    _waitus(10);
+                }
+                if (!runtime_locked && job->cancel_requested)
+                    job->source_result = job->call_result = BE_EXIT;
+            }
+        } else {
+            runtime_locked = p2_child_vm_runtime_lock_enter();
         }
-        if (job->selected) {
+
+        wrong_free_before = job->allocator_context ? 0 : p2_heap_wrong_free_count();
+        wrong_realloc_before = job->allocator_context ? 0 : p2_heap_wrong_realloc_count();
+        if (job->allocator_context) {
+            job->partition_ready = job->selected = runtime_locked;
+        } else if (runtime_locked) {
+            job->partition_ready = p2_heap_vm_partition_create(job->slot, job->bytes);
+            if (job->partition_ready) job->selected = p2_heap_vm_partition_select(job->slot);
+        }
+        if (job->selected && runtime_locked) {
             job->vm_new_stage = 1;
             berry_vm_new_diag_stage_ptr = &job->vm_new_detail_stage;
             berry_vm_new_skip_loadlibs = 1;
-            child = be_vm_new();
+            child = job->allocator_context ? be_vm_new_with_allocator(job->allocator, job->allocator_context) : be_vm_new();
+            if (!child) job->source_result = job->call_result = BE_MALLOC_FAIL;
             berry_vm_new_skip_loadlibs = 0;
             berry_vm_new_diag_stage_ptr = NULL;
             job->vm_new_stage = child != NULL ? 2 : -1;
@@ -2138,10 +2165,12 @@ static void p2_child_vm_cog_once_entry(void *arg)
             be_vm_delete(child);
             job->child_deleted = 1;
         }
-        p2_heap_vm_partition_clear_current();
-        job->wrong_free_delta = p2_heap_wrong_free_count() - wrong_free_before;
-        job->wrong_realloc_delta = p2_heap_wrong_realloc_count() - wrong_realloc_before;
-        p2_child_vm_runtime_lock_leave(runtime_locked);
+        if (!job->allocator_context) p2_heap_vm_partition_clear_current();
+        job->wrong_free_delta = job->allocator_context ? 0 : p2_heap_wrong_free_count() - wrong_free_before;
+        job->wrong_realloc_delta = job->allocator_context ? 0 : p2_heap_wrong_realloc_count() - wrong_realloc_before;
+        if (job->allocator_context) {
+            if (runtime_locked) LOCKCLR(job->execution_lock);
+        } else p2_child_vm_runtime_lock_leave(runtime_locked);
     }
 
     job->status = 2;
@@ -9433,4 +9462,38 @@ void be_cache_p2module(bvm *vm)
     be_cache_module(vm, name);
     be_setglobal(vm, "p2");
     be_pop(vm, 2); /* module and temporary cache-key root */
+}
+
+/* Explicit Hub-bootstrap admission. The caller reserves/offers before launch
+ * or publishes its Hub mailbox only after offer. No descriptor pre-read,
+ * cached selector, registry slot or cache-flush side effect is involved.
+ * This internal increment does NOT enable the gated public cog-source API. */
+static void p2_child_vm_coherent_entry(void *argument)
+{
+    p2_child_vm_cog_once_job *job = (p2_child_vm_cog_once_job *)argument;
+    int admitted;
+    if (!job) return;
+    admitted = job->admission && !job->cancel_requested
+        && p2_partition_claim(job->admission, job->admission_generation) == 1;
+    job->admission_retired = 0;
+    if (!admitted && !job->cancel_requested) {
+        job->source_result = job->call_result = BE_EXCEPTION;
+        job->status = 2;
+        while (job->status != 4) _waitus(1000);
+        return;
+    }
+    job->allocator = p2_partition_realloc;
+    job->allocator_context = job->admission;
+    job->execution_lock = p2_partition_execution_lock(job->admission, job->admission_generation);
+    if (admitted) {
+        job->admission_initial_free = p2_partition_free_bytes(job->admission, job->admission_generation);
+        job->admission_low = p2_partition_low_address(job->admission, job->admission_generation);
+    }
+    p2_child_vm_cog_once_entry(job);
+    if (admitted) {
+        job->admission_free = p2_partition_free_bytes(job->admission, job->admission_generation);
+        job->admission_retired = p2_partition_retire(job->admission, job->admission_generation);
+    } else {
+        job->admission_retired = p2_partition_is_retired(job->admission, job->admission_generation);
+    }
 }

@@ -205,6 +205,7 @@ P2_RUNTIME_SRCS := \
 	$(P2_RUNTIME_DIR)/p2_vm_state.c \
 	$(P2_RUNTIME_DIR)/p2_cog_registry.c \
 	$(P2_RUNTIME_DIR)/p2_heap.c \
+	$(P2_RUNTIME_DIR)/p2_partition.c \
 	$(P2_RUNTIME_DIR)/p2_smartserial.c
 P2_OVERRIDE_SRCS := \
 	$(P2_OVERRIDES_DIR)/be_modtab_p2.c \

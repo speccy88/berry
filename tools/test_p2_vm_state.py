@@ -20,7 +20,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 CASES = ["scheduler_reset", "rng_isolation", "rng_sequence", "scheduler_isolation",
          "scheduler_gc", "rng_boundaries", "lifecycle", "allocation_failures",
-         "allocation_reentry", "interrupt_isolation", "cooperative_cancel", "module_name_root"]
+         "allocation_reentry", "interrupt_isolation", "cooperative_cancel", "module_name_root", "allocator_context",
+         "default_constructor"]
 INPUTS = ["tools/test_p2_vm_state.py", "tests/native/test_p2_vm_state.c",
           "tests/native/p2_module_root_seams.h", "port/p2/overrides/be_p2lib_p2.c",
           "port/p2/overrides/be_tasklib_p2.c",
@@ -34,6 +35,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cc", default="gcc")
     parser.add_argument("--sanitize", action="store_true")
+    parser.add_argument("--debug", action="store_true", help="enable Berry assertions and default-constructor OOM death tests")
     parser.add_argument("--abi", choices=["native", "32"], default="native")
     parser.add_argument("--bint", choices=["64", "32"], default="64")
     parser.add_argument("--no-small-pools", action="store_true",
@@ -84,6 +86,10 @@ def main():
                 raise RuntimeError("configuration prerequisite changed: " + old)
             conf = conf.replace(old, new)
 
+        if args.debug:
+            conf, matches = re.subn(r"(#define BE_DEBUG\s+)0\b", r"\g<1>1", conf)
+            if matches != 1:
+                raise RuntimeError("BE_DEBUG configuration prerequisite changed")
         if args.bint == "32":
             configure("#define BE_INTGER_TYPE                  2",
                       "#define BE_INTGER_TYPE                  0")

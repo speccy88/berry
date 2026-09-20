@@ -91,6 +91,8 @@ struct bupval {
 };
 
 struct bvm {
+    bvm_allocator allocator;
+    void *allocator_context;
     bglobaldesc gbldesc; /* global description */
     bvalue *stack; /* stack space */
     bvalue *stacktop; /* stack top register */

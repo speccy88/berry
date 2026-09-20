@@ -43,6 +43,12 @@ extern void p2_serial_puts(const char *s);
 static void destruct_object(bvm *vm, bgcobject *obj);
 static void free_object(bvm *vm, bgcobject *obj);
 
+void be_gc_sethalt(bvm *vm, int halt)
+{
+    if (halt) vm->gc.status |= GC_HALT;
+    else vm->gc.status &= ~GC_HALT;
+}
+
 void be_gc_init(bvm *vm)
 {
     vm->gc.usage = sizeof(bvm);

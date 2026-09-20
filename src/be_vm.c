@@ -630,17 +630,9 @@ extern void p2_startup_status_tick(int stage);
 #define BE_P2_VM_NEW_STATUS_TICK(stage) ((void)0)
 #endif
 
-BERRY_API bvm* be_vm_new(void)
+static void vm_initialize(bvm *vm, void *unused)
 {
-    VM_TRACE("[vm] start\n");
-    BERRY_VM_NEW_DIAG_STAGE(1);
-    bvm *vm = be_os_malloc(sizeof(bvm));
-    BERRY_VM_NEW_DIAG_STAGE(2);
-    be_assert(vm != NULL);
-    VM_TRACE("[vm] alloc\n");
-    memset(vm, 0, sizeof(bvm)); /* clear all members */
-    BERRY_VM_NEW_DIAG_STAGE(3);
-    be_gc_init(vm);
+    (void)unused;
     VM_TRACE("[vm] gc\n");
     BERRY_VM_NEW_DIAG_STAGE(4);
     be_string_init(vm);
@@ -686,7 +678,46 @@ BERRY_API bvm* be_vm_new(void)
     vm->counter_mem_free = 0;
     vm->counter_mem_realloc = 0;
 #endif
+}
+
+BERRY_API bvm* be_vm_new_with_allocator(bvm_allocator allocator, void *context)
+{
+    bvm *vm;
+    if (!allocator && context) return NULL;
+#if BE_USE_MEM_ALIGNED || (defined(BE_P2_SIMPLE_REALLOC) && BE_P2_SIMPLE_REALLOC)
+    if (allocator) return NULL;
+#endif
+    BERRY_VM_NEW_DIAG_STAGE(1);
+    vm = allocator ? allocator(context, NULL, sizeof(bvm)) : be_os_malloc(sizeof(bvm));
+    BERRY_VM_NEW_DIAG_STAGE(2);
+    if (allocator) {
+        if (!vm) return NULL;
+    } else {
+        /* Preserve the default constructor's existing assertion contract. */
+        be_assert(vm != NULL);
+    }
+    memset(vm, 0, sizeof(*vm));
+    vm->allocator = allocator;
+    vm->allocator_context = context;
+    BERRY_VM_NEW_DIAG_STAGE(3);
+    be_gc_init(vm);
+    if (allocator) {
+        /* A failed initial allocation must not collect half-built roots. */
+        be_gc_sethalt(vm, 1);
+        if (be_execprotected(vm, vm_initialize, NULL) != BE_OK) {
+            be_vm_delete(vm);
+            return NULL;
+        }
+        be_gc_sethalt(vm, 0);
+    } else {
+        vm_initialize(vm, NULL);
+    }
     return vm;
+}
+
+BERRY_API bvm* be_vm_new(void)
+{
+    return be_vm_new_with_allocator(NULL, NULL);
 }
 
 BERRY_API void be_vm_delete(bvm *vm)
@@ -704,7 +735,7 @@ BERRY_API void be_vm_delete(bvm *vm)
     be_stack_delete(vm, &vm->refstack);
     be_stack_delete(vm, &vm->exceptstack);
     be_stack_delete(vm, &vm->tracestack);
-    be_free(vm, vm->stack, (vm->stacktop - vm->stack) * sizeof(bvalue));
+    if (vm->stack) be_free(vm, vm->stack, (vm->stacktop - vm->stack) * sizeof(bvalue));
     be_globalvar_deinit(vm);
     be_gc_free_memory_pools(vm);
 #if BE_USE_DEBUG_HOOK
@@ -713,7 +744,7 @@ BERRY_API void be_vm_delete(bvm *vm)
         be_free(vm, var_toobj(&vm->hook), sizeof(struct bhookblock));
 #endif
     /* free VM structure */
-    be_os_free(vm);
+    be_vm_raw_free(vm, vm);
 }
 
 static void vm_exec(bvm *vm)

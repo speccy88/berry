@@ -43,7 +43,10 @@ void be_vector_init(bvm *vm, bvector *vector, int size)
 
 void be_vector_delete(bvm *vm, bvector *vector)
 {
-    resize_storage(vm, vector, (size_t)vector->capacity * vector->size, 0);
+    /* Initialization can fail before storage exists. Deleting an empty vector
+     * must not ask the allocator to allocate a zero-byte pool slot. */
+    if (vector->data != NULL)
+        resize_storage(vm, vector, (size_t)vector->capacity * vector->size, 0);
 }
 
 void* be_vector_at(bvector *vector, int index)

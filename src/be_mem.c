@@ -134,6 +134,22 @@ BERRY_API void* be_os_realloc(void *ptr, size_t size)
     return realloc(ptr, size);
 }
 
+void *be_vm_raw_alloc(bvm *vm, size_t size)
+{
+    return vm && vm->allocator
+        ? vm->allocator(vm->allocator_context, NULL, size) : malloc(size);
+}
+void *be_vm_raw_realloc(bvm *vm, void *ptr, size_t size)
+{
+    return vm && vm->allocator
+        ? vm->allocator(vm->allocator_context, ptr, size) : realloc(ptr, size);
+}
+void be_vm_raw_free(bvm *vm, void *ptr)
+{
+    if (vm && vm->allocator) vm->allocator(vm->allocator_context, ptr, 0);
+    else free(ptr);
+}
+
 BERRY_API void* be_realloc(bvm *vm, void *ptr, size_t old_size, size_t new_size)
 {
 #if defined(BE_P2_SIMPLE_REALLOC) && BE_P2_SIMPLE_REALLOC
@@ -237,7 +253,7 @@ BERRY_API void* be_realloc(bvm *vm, void *ptr, size_t old_size, size_t new_size)
             } else
 #endif
             {
-                block = realloc(ptr, new_size);
+                block = be_vm_raw_realloc(vm, ptr, new_size);
                 // serial_debug("realloc from %p to %p size=%i", ptr, block, new_size);
             }
         } /* end of reallocation */
@@ -273,7 +289,7 @@ BERRY_API void* be_move_to_aligned(bvm *vm, void *ptr, size_t size) {
     void* iram = berry_malloc32(size);
     if (iram) {
         memcpy(iram, ptr, size);   /* new_size is always smaller than initial mem zone */
-        free(ptr);      // TODO gc size is now wrong
+        be_vm_raw_free(vm, ptr);      // TODO gc size is now wrong
         return iram;
     }
 #endif
@@ -288,14 +304,14 @@ static void* malloc_from_pool(bvm *vm, size_t size) {
         return NULL;
     }
     MEM_TRACE("[mem] direct-alloc\n");
-    return malloc(size);
+    return be_vm_raw_alloc(vm, size);
 }
 
 static void free_from_pool(bvm *vm, void* ptr, size_t old_size) {
     (void)vm;
     (void)old_size;
     if (ptr) {
-        free(ptr);
+        be_vm_raw_free(vm, ptr);
     }
 }
 
@@ -364,7 +380,7 @@ static void* malloc_from_pool(bvm *vm, size_t size) {
         }
         /* no slot available, we allocate a new pool */
         MEM_TRACE("[mem] new-pool16\n");
-        pool16 = (gc16_t*) malloc(sizeof(gc16_t));
+        pool16 = (gc16_t*) be_vm_raw_alloc(vm, sizeof(gc16_t));
         MEM_TRACE("[mem] new-pool16-done\n");
         if (!pool16) { return NULL; } /* out of memory */
         MEM_TRACE("[mem] pool16-next\n");
@@ -398,7 +414,7 @@ static void* malloc_from_pool(bvm *vm, size_t size) {
         }
         /* no slot available, we allocate a new pool */
         MEM_TRACE("[mem] new-pool32\n");
-        pool32 = (gc32_t*) malloc(sizeof(gc32_t));
+        pool32 = (gc32_t*) be_vm_raw_alloc(vm, sizeof(gc32_t));
         MEM_TRACE("[mem] new-pool32-done\n");
         if (!pool32) { return NULL; } /* out of memory */
         MEM_TRACE("[mem] pool32-next\n");
@@ -413,7 +429,7 @@ static void* malloc_from_pool(bvm *vm, size_t size) {
     }
 
     MEM_TRACE("[mem] big-alloc\n");
-    return malloc(size);    /* default to system malloc */
+    return be_vm_raw_alloc(vm, size);    /* default to system malloc */
 }
 
 static void free_from_pool(bvm *vm, void* ptr, size_t old_size) {
@@ -449,7 +465,7 @@ static void free_from_pool(bvm *vm, void* ptr, size_t old_size) {
     }
     else {
         // serial_debug("free_from_pool free=%p\n", ptr);
-        free(ptr);
+        be_vm_raw_free(vm, ptr);
     }
 }
 
@@ -462,7 +478,7 @@ BERRY_API void be_gc_memory_pools(bvm *vm) {
             *prev16 = pool16->next;
             gc16_t* pool_to_freed = pool16;
             pool16 = pool16->next;  /* move to next */
-            free(pool_to_freed);
+            be_vm_raw_free(vm, pool_to_freed);
         } else {
             prev16 = &pool16->next;
             pool16 = pool16->next;  /* move to next */
@@ -476,7 +492,7 @@ BERRY_API void be_gc_memory_pools(bvm *vm) {
             *prev32 = pool32->next;
             gc32_t* pool_to_freed = pool32;
             pool32 = pool32->next;  /* move to next */
-            free(pool_to_freed);
+            be_vm_raw_free(vm, pool_to_freed);
         } else {
             prev32 = &pool32->next;
             pool32 = pool32->next;  /* move to next */
@@ -494,7 +510,7 @@ BERRY_API void be_gc_free_memory_pools(bvm *vm) {
     while (pool16) {
         gc16_t* pool_to_freed = pool16;
         pool16 = pool16->next;
-        be_os_free(pool_to_freed);
+        be_vm_raw_free(vm, pool_to_freed);
     }
     vm->gc.pool16 = NULL;
 
@@ -502,7 +518,7 @@ BERRY_API void be_gc_free_memory_pools(bvm *vm) {
     while (pool32) {
         gc32_t* pool_to_freed = pool32;
         pool32 = pool32->next;
-        be_os_free(pool_to_freed);
+        be_vm_raw_free(vm, pool_to_freed);
     }
     vm->gc.pool32 = NULL;
 }

@@ -2147,6 +2147,17 @@ BERRY_API void be_regclass(bvm *vm, const char *name, const bnfuncinfo *lib);
  */
 BERRY_API bvm* be_vm_new(void);
 
+#define BE_VM_ALLOCATOR_API 1
+/* VM-private allocator: NULL ptr allocates, size zero frees, failed growth
+ * preserves ptr. The context must outlive the VM. Never throws. This covers
+ * core VM/pool storage, not port-required special memory or be_os_* services.
+ * NULL allocator selects the existing backend only when context is also NULL.
+ * Custom construction failure returns NULL; the NULL/default backend keeps
+ * legacy construction behavior. Aligned/bump-only profiles reject a
+ * custom allocator rather than silently falling back to shared storage. */
+typedef void *(*bvm_allocator)(void *context, void *ptr, size_t size);
+BERRY_API bvm* be_vm_new_with_allocator(bvm_allocator allocator, void *context);
+
 /**
  * @fn void be_vm_delete(bvm*)
  * @note VM management API

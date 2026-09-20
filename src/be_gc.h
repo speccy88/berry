@@ -64,6 +64,8 @@ typedef enum {
 } bgcmark;
 
 void be_gc_init(bvm *vm);
+/* Internal construction boundary: do not scan partially initialized roots. */
+void be_gc_sethalt(bvm *vm, int halt);
 void be_gc_deleteall(bvm *vm);
 void be_gc_setsteprate(bvm *vm, int rate);
 void be_gc_setpause(bvm *vm, int pause);
