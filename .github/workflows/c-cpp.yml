@@ -34,6 +34,7 @@ jobs:
             --env UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
             --workdir /repo berry-p2-ci bash -euxo pipefail -c '
               python3 -m unittest discover -s tools/tests -p test_build_p2.py
+              python3 -m unittest discover -s tools/tests -p test_export_ci_evidence.py
               PYTHONPATH=/repo/tools python3 -c "from pathlib import Path; from build_p2 import snapshot_source; snapshot_source(Path(\"/repo\"), Path(\"/evidence/source\"))"
               cd /evidence/source
               failed=0
@@ -110,6 +111,14 @@ jobs:
               check python3 tools/test_p2_cog_handles.py --cc "$TEST_CC"
               check python3 tools/test_p2_module_config.py
               check python3 -O tools/test_repl.py --cc "$TEST_CC" --sanitize
+              # Export only collector-safe receipts. The source snapshot remains
+              # private (some test runners intentionally use mode 0700).
+              export_code=0
+              python3 tools/export_ci_evidence.py \
+                --source-build /evidence/source/build \
+                --output-dir /evidence/artifacts \
+                --required-results 7 --required-logs 1 || export_code=$?
+              if [ "$export_code" -ne 0 ]; then failed=1; fi
               exit "$failed"
             ' 2>&1 | tee "$RUNNER_TEMP/berry-native/native.log"
       - name: Retain real host test receipts and logs
@@ -119,8 +128,7 @@ jobs:
           name: native-${{ matrix.abi }}-evidence
           path: |
             ${{ runner.temp }}/berry-native/native.log
-            ${{ runner.temp }}/berry-native/source/build/**/results.json
-            ${{ runner.temp }}/berry-native/source/build/**/*.log
+            ${{ runner.temp }}/berry-native/artifacts/
           if-no-files-found: error
           retention-days: 14
 

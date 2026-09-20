@@ -111,7 +111,7 @@ class BuildTests(unittest.TestCase):
 
     def test_snapshot_includes_integrated_gate_runners(self):
         names = ("tools/test_p2_cog_handles.py", "tools/test_p2_module_config.py",
-                 "tools/test_repl.py")
+                 "tools/test_repl.py", "tools/export_ci_evidence.py")
         for name in names:
             self.put(self.source / name, "# current gate runner\n")
         hashes = build.snapshot_source(self.source, self.output)
