@@ -8,30 +8,30 @@
 #include <stdlib.h>
 #include <string.h>
 
-static bvm *owner;
+int forbid_global_hub;
+void test_vm_special_storage(void);
 static void *storage;
 static size_t storage_size;
 static unsigned allocations, releases, moves;
 static int fail_growth;
 
-void *test_exception_realloc(bvm *vm, void *ptr, size_t old_size, size_t new_size)
+void *p2_hub_realloc(void *ptr, size_t new_size)
 {
     void *replacement;
-    assert(owner == NULL || owner == vm);
+    size_t old_size = storage_size;
+    assert(!forbid_global_hub);
     assert(ptr == storage);
-    assert(old_size == storage_size);
-    owner = vm;
     if (new_size == 0) {
         free(ptr);
         storage = NULL;
         storage_size = 0;
         ++releases;
-        vm->gc.usage -= old_size;
+
         return NULL;
     }
     if (fail_growth && ptr != NULL) {
         fail_growth = 0;
-        be_throw(vm, BE_MALLOC_FAIL);
+        return NULL;
     }
     /* Force every growth to move, exercising the real exception-chain fixup. */
     replacement = malloc(new_size);
@@ -44,7 +44,7 @@ void *test_exception_realloc(bvm *vm, void *ptr, size_t old_size, size_t new_siz
     storage = replacement;
     storage_size = new_size;
     ++allocations;
-    vm->gc.usage += new_size - old_size;
+
     return replacement;
 }
 
@@ -69,7 +69,7 @@ static int execute(bvm *vm, const char *source)
 static void reset_tracking(void)
 {
     assert(storage == NULL && storage_size == 0);
-    owner = NULL;
+
     allocations = releases = moves = 0;
     fail_growth = 0;
 }
@@ -128,5 +128,6 @@ int main(void)
     be_vm_delete(vm);
     assert(storage == NULL && storage_size == 0 && releases > 0);
     puts("PASS exception storage: routing, moving growth, unwind, OOM, recovery, free");
+    test_vm_special_storage();
     return 0;
 }

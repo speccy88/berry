@@ -13,9 +13,12 @@ void *be_p2_realloc_exceptstack(bvm *vm, void *ptr,
     size_t old_size, size_t new_size)
 {
     void *result;
+    /* Custom VMs must provide their own Hub domain. In LARGE the SDK heap's
+     * metadata is cached XMM: even a lock cannot make worker use coherent. */
     if (old_size == new_size) {
         return ptr;
     }
+    if (vm->allocator) be_throw(vm, BE_MALLOC_FAIL);
     result = p2_hub_realloc(ptr, new_size);
     if (result == NULL && new_size != 0) {
         /* Hub exhaustion is distinct from the ordinary PSRAM heap. No user

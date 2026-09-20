@@ -1,5 +1,7 @@
 # Source-worker execution safety — scoped increment
 
+The next bounded ownership primitive is documented in [P2_SPECIAL_STORAGE.md](P2_SPECIAL_STORAGE.md): explicit VM exception storage backed by separately admitted Hub arenas. It does not remove the public lifecycle/concurrency guards.
+
 Production independent-cog execution remains unsupported. The full-program VM
 lock and source-runtime capability gates are unchanged. This increment does not
 close F3/F6 or qualify public spawn/join/reap, orphan reclamation or cache reuse.

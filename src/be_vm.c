@@ -691,14 +691,15 @@ BERRY_API bvm* be_vm_new_with_options(const bvm_options *supplied)
 #endif
     allocator = options.allocator;
     context = options.allocator_context;
-    if (!allocator && context) return NULL;
+    if ((!allocator && context)
+            || (!options.special_allocator && options.special_allocator_context)) return NULL;
 #if BE_USE_MEM_ALIGNED || (defined(BE_P2_SIMPLE_REALLOC) && BE_P2_SIMPLE_REALLOC)
     if (allocator) return NULL;
 #endif
     if (options.progress) options.progress(options.progress_context, 1);
     vm = allocator ? allocator(context, NULL, sizeof(bvm)) : be_os_malloc(sizeof(bvm));
     if (options.progress) options.progress(options.progress_context, 2);
-    if (allocator) {
+    if (allocator || options.special_allocator) {
         if (!vm) return NULL;
     } else {
         /* Preserve the default constructor's existing assertion contract. */
@@ -707,11 +708,13 @@ BERRY_API bvm* be_vm_new_with_options(const bvm_options *supplied)
     memset(vm, 0, sizeof(*vm));
     vm->allocator = allocator;
     vm->allocator_context = context;
+    vm->special_allocator = options.special_allocator;
+    vm->special_allocator_context = options.special_allocator_context;
     vm->construction_progress = options.progress;
     vm->construction_context = options.progress_context;
     be_vm_construction_tick(vm, 3);
     be_gc_init(vm);
-    if (allocator) {
+    if (allocator || options.special_allocator) {
         /* A failed initial allocation must not collect half-built roots. */
         be_gc_sethalt(vm, 1);
         if (be_execprotected(vm, vm_initialize, &options) != BE_OK) {

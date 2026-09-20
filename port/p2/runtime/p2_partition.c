@@ -12,6 +12,7 @@ struct p2_partition {
     volatile int state;
     int producer, consumer, control_lock, execution_lock;
     volatile int cancelled;
+    unsigned hub_storage;
     unsigned char *base;
     size_t bytes;
     p2_heap_arena arena; /* only the admitted consumer accesses this member */
@@ -45,6 +46,28 @@ static void control_enter(p2_partition *p)
 static void control_leave(p2_partition *p) { _lockrel(p->control_lock); }
 
 size_t p2_partition_storage_size(void) { return sizeof(p2_partition); }
+int p2_partition_reserve_hub(p2_partition *p, unsigned generation, void *backing,
+    size_t bytes, int control_lock, int execution_lock)
+{
+    uintptr_t start = (uintptr_t)backing, control = (uintptr_t)p;
+    if (!control_address(p) || _cogid() != 0 || p->state != P2_PARTITION_NEW
+            || p->generation || !generation || !backing || start % 8u || bytes % 8u
+            || bytes <= sizeof(p2_heap_block) || bytes > (uintptr_t)-1 - start
+            || sizeof(*p) > (uintptr_t)-1 - control
+            || (start < control + sizeof(*p) && control < start + bytes)
+            || control_lock < 0 || control_lock >= 16 || execution_lock < 0
+            || execution_lock >= 16 || control_lock == execution_lock) return 0;
+#if defined(__CATALINA_P2)
+    if (start >= 0x80000u || bytes > 0x80000u - start) return 0;
+#endif
+    p->producer = _cogid(); p->consumer = -1;
+    p->control_lock = control_lock; p->execution_lock = execution_lock;
+    p->base = backing; p->bytes = bytes; p->cancelled = 0; p->hub_storage = 1;
+    p->live_blocks = 0; p->rejections = 0;
+    p->generation = generation;
+    p->state = P2_PARTITION_RESERVED;
+    return 1;
+}
 int p2_partition_reserve(p2_partition *p, unsigned generation, size_t bytes,
     unsigned line, int control_lock, int execution_lock)
 {
@@ -60,11 +83,15 @@ int p2_partition_reserve(p2_partition *p, unsigned generation, size_t bytes,
     if (!raw) return 0;
     p->producer = _cogid(); p->consumer = -1;
     p->control_lock = control_lock; p->execution_lock = execution_lock;
-    p->base = raw; p->bytes = bytes; p->cancelled = 0;
+    p->base = raw; p->bytes = bytes; p->cancelled = 0; p->hub_storage = 0;
     p->live_blocks = 0; p->rejections = 0;
     p->generation = generation;
     p->state = P2_PARTITION_RESERVED;
     return 1;
+}
+int p2_partition_is_hub(p2_partition *p, unsigned generation)
+{
+    return ticket(p, generation) && p->hub_storage;
 }
 int p2_partition_offer(p2_partition *p, unsigned generation, int cog)
 {

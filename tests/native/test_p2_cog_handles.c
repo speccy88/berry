@@ -130,13 +130,14 @@ static void source_execution_cases(void)
 {
     p2_child_vm_cog_once_job job;
     size_t attempts = allocation_attempts;
-    size_t context_calls = 0;
+    size_t context_calls = 0, special_calls = 0;
     memset(&job, 0, sizeof(job));
     job.allocator = source_context_allocator; job.allocator_context = &context_calls;
     job.execution_lock = 2;
     strcpy(job.source, "def f() return 13579 end"); strcpy(job.name, "f");
+    job.special_allocator = source_context_allocator; job.special_allocator_context = &special_calls;
     executing_job = &job; p2_child_vm_cog_once_entry(&job); executing_job = NULL;
-    assert(context_calls > 0 && job.child_created && job.child_deleted);
+    assert(context_calls > 0 && special_calls > 0 && job.child_created && job.child_deleted);
     assert(job.vm_new_detail_stage == 9 && job.vm_new_stage == 2);
     assert(job.call_result == BE_OK && job.result_int == 13579);
     puts("PASS actual source entry with explicit allocator context");

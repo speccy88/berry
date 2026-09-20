@@ -7,10 +7,11 @@
 ********************************************************************/
 #include "be_vector.h"
 #include "be_mem.h"
+#include "be_vm.h"
+#include "be_exec.h"
 #include <string.h>
 
 #ifdef BE_EXCEPTSTACK_REALLOC
-#include "be_vm.h"
 extern void *BE_EXCEPTSTACK_REALLOC(bvm *vm, void *ptr,
     size_t old_size, size_t new_size);
 #endif
@@ -19,6 +20,22 @@ extern void *BE_EXCEPTSTACK_REALLOC(bvm *vm, void *ptr,
 static void *resize_storage(bvm *vm, bvector *vector,
     size_t old_size, size_t new_size)
 {
+    if (vm != NULL && vector == &vm->exceptstack && vm->special_allocator) {
+        void *result;
+        if (old_size == new_size) return vector->data;
+        result = vm->special_allocator(vm->special_allocator_context,
+            vector->data, new_size);
+        if (!result && new_size) be_throw(vm, BE_MALLOC_FAIL);
+#if BE_USE_PERF_COUNTERS
+        vm->counter_mem_alloc++;
+        if (vector->data && old_size) {
+            if (new_size) vm->counter_mem_realloc++;
+            else vm->counter_mem_free++;
+        }
+#endif
+        vm->gc.usage = vm->gc.usage + new_size - old_size;
+        return result;
+    }
 #ifdef BE_EXCEPTSTACK_REALLOC
     if (vm != NULL && vector == &vm->exceptstack) {
         return BE_EXCEPTSTACK_REALLOC(vm, vector->data, old_size, new_size);

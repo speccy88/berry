@@ -24,6 +24,13 @@ def main():
         parser.error("C compiler is required; no skipped test")
     (ROOT / "build").mkdir(exist_ok=True)
     out = Path(tempfile.mkdtemp(prefix="exception-storage-", dir=ROOT / "build"))
+    tracked = sorted(str(p.relative_to(ROOT)) for folder in
+                     ('src', 'default', 'tools/coc', 'tests/native', 'port/p2')
+                     for p in (ROOT / folder).rglob('*')
+                     if p.is_file() and p.suffix in ('.c', '.h', '.py'))
+    tracked += ['tools/coc/coc', 'tools/test_exception_storage.py']
+    source_hashes = {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
+                     for name in tracked}
     ignore = shutil.ignore_patterns("*.o", "*.d", "*.gcda", "*.gcno", "__pycache__")
     shutil.copytree(ROOT / "src", out / "src", ignore=ignore)
     shutil.copytree(ROOT / "default", out / "default", ignore=ignore)
@@ -48,10 +55,13 @@ def main():
     code = run("generate", coc, 90)
     sources = sorted((out / "src").glob("*.c"))
     sources += [out / "default/be_port.c", out / "default/be_modtab.c",
-                ROOT / "tests/native/test_exception_storage.c"]
+                ROOT / "tests/native/test_exception_storage.c",
+                ROOT / "tests/native/test_vm_special_storage.c",
+                ROOT / "port/p2/runtime/p2_exception_memory.c"]
     command = [compiler, "-std=c99", "-O1", "-g", "-Wall", "-Wextra",
                "-I" + str(out / "default"), "-I" + str(out / "src"),
-               "-DBE_EXCEPTSTACK_REALLOC=test_exception_realloc"]
+               "-I" + str(ROOT / "port/p2/include"), "-D__CATALINA_LARGE",
+               "-DBE_EXCEPTSTACK_REALLOC=be_p2_realloc_exceptstack"]
     command += shlex.split(args.cflags)
     if args.sanitize:
         command += ["-fsanitize=address,undefined", "-fno-sanitize-recover=all",
@@ -85,14 +95,13 @@ def main():
         code = run("hub-compile", hub_command, 60)
         if code == 0:
             code = run("hub-execute", [str(out / "test-hub-heap")], 20)
-    tracked = ["src/be_vector.c", "src/be_exec.c", "src/be_vm.c", "src/be_vm.h",
-               "tests/native/test_exception_storage.c", "tools/test_exception_storage.py",
-               "tests/native/test_p2_hub_heap.c", "port/p2/runtime/p2_hub_heap.c",
-               "port/p2/include/p2_hub_heap.h", "port/p2/runtime/p2_exception_memory.c"]
-    receipt = {"passed": code == 0, "scope": "host allocator-routing and real VM tests, not Hub hardware proof",
-               "commands": records,
-               "source_sha256": {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
-                                 for name in tracked}}
+    unchanged = all(hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == digest
+                    for name, digest in source_hashes.items())
+    if not unchanged:
+        code = 1
+    receipt = {"passed": code == 0, "source_unchanged": unchanged,
+               "scope": "host allocator-routing and real VM tests, not Hub hardware proof",
+               "commands": records, "source_sha256": source_hashes}
     (out / "results.json").write_text(json.dumps(receipt, indent=2) + "\n")
     print("Evidence:", out / "results.json")
     return 0 if code == 0 else 1

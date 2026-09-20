@@ -2159,6 +2159,7 @@ typedef void *(*bvm_allocator)(void *context, void *ptr, size_t size);
 BERRY_API bvm* be_vm_new_with_allocator(bvm_allocator allocator, void *context);
 
 #define BE_VM_OPTIONS_API 1
+#define BE_VM_SPECIAL_ALLOCATOR_API 1
 /* Embedding constructor options, not a P2 parallel-runtime capability.
  * Zero-initialize before setting fields. The value is copied before any
  * callback/allocation; the options object need only live until call entry.
@@ -2179,6 +2180,15 @@ typedef struct {
     int skip_loadlibs;
     bvm_construction_progress progress;
     void *progress_context;
+    /* Optional exception-vector domain. Same nonthrowing realloc contract as
+     * allocator; storage must satisfy native jmp_buf placement/alignment (Hub
+     * on Catalina LARGE). Copied independently; context outlives VM deletion.
+     * Failure never falls back to another allocator. A context without its
+     * callback is invalid. With neither, the port's legacy route is retained;
+     * Catalina LARGE requires this pair for custom ordinary allocators.
+     * Custom special-only construction also returns NULL on allocation OOM. */
+    bvm_allocator special_allocator;
+    void *special_allocator_context;
 } bvm_options;
 BERRY_API bvm* be_vm_new_with_options(const bvm_options *options);
 

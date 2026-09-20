@@ -855,12 +855,20 @@ typedef struct p2_child_vm_cog_once_job {
     /* Set only by the Hub admission bootstrap; NULL is the legacy gated path. */
     bvm_allocator allocator;
     void *allocator_context;
+    bvm_allocator special_allocator;
+    void *special_allocator_context;
     int execution_lock;
     p2_partition *admission;
+    p2_partition *special_admission;
     unsigned admission_generation;
+    unsigned special_generation;
     volatile size_t admission_free;
     volatile size_t admission_initial_free;
     volatile size_t admission_low;
+    volatile int special_retired;
+    volatile size_t special_initial_free;
+    volatile size_t special_free;
+    volatile size_t special_low;
     volatile int admission_retired;
     volatile int status;
     /* Managed source jobs use Hub mailboxes. Only worker publishes completion. */
@@ -2152,6 +2160,8 @@ static void p2_child_vm_cog_once_entry(void *arg)
              * The constructor clears its callback before returning/deletion. */
             options.allocator = job->allocator_context ? job->allocator : NULL;
             options.allocator_context = job->allocator_context;
+            options.special_allocator = job->special_allocator;
+            options.special_allocator_context = job->special_allocator_context;
             options.skip_loadlibs = 1;
             options.progress = p2_child_vm_construction_progress;
             options.progress_context = job;
@@ -9479,11 +9489,21 @@ void be_cache_p2module(bvm *vm)
 static void p2_child_vm_coherent_entry(void *argument)
 {
     p2_child_vm_cog_once_job *job = (p2_child_vm_cog_once_job *)argument;
-    int admitted;
+    int admitted, special = 0;
     if (!job) return;
-    admitted = job->admission && !job->cancel_requested
+    admitted = job->admission && job->special_admission
+        && job->admission != job->special_admission && !job->cancel_requested
+        && p2_partition_is_hub(job->special_admission, job->special_generation)
         && p2_partition_claim(job->admission, job->admission_generation) == 1;
+    if (admitted) {
+        special = p2_partition_claim(job->special_admission, job->special_generation) == 1;
+        if (!special) {
+            p2_partition_retire(job->admission, job->admission_generation);
+            admitted = 0;
+        }
+    }
     job->admission_retired = 0;
+    job->special_retired = 0;
     if (!admitted && !job->cancel_requested) {
         job->source_result = job->call_result = BE_EXCEPTION;
         job->status = 2;
@@ -9492,16 +9512,23 @@ static void p2_child_vm_coherent_entry(void *argument)
     }
     job->allocator = p2_partition_realloc;
     job->allocator_context = job->admission;
+    job->special_allocator = p2_partition_realloc;
+    job->special_allocator_context = job->special_admission;
     job->execution_lock = p2_partition_execution_lock(job->admission, job->admission_generation);
     if (admitted) {
         job->admission_initial_free = p2_partition_free_bytes(job->admission, job->admission_generation);
         job->admission_low = p2_partition_low_address(job->admission, job->admission_generation);
+        job->special_initial_free = p2_partition_free_bytes(job->special_admission, job->special_generation);
+        job->special_low = p2_partition_low_address(job->special_admission, job->special_generation);
     }
     p2_child_vm_cog_once_entry(job);
     if (admitted) {
         job->admission_free = p2_partition_free_bytes(job->admission, job->admission_generation);
         job->admission_retired = p2_partition_retire(job->admission, job->admission_generation);
+        job->special_free = p2_partition_free_bytes(job->special_admission, job->special_generation);
+        job->special_retired = p2_partition_retire(job->special_admission, job->special_generation);
     } else {
         job->admission_retired = p2_partition_is_retired(job->admission, job->admission_generation);
+        job->special_retired = p2_partition_is_retired(job->special_admission, job->special_generation);
     }
 }

@@ -11,6 +11,14 @@ enum { P2_PARTITION_NEW, P2_PARTITION_RESERVED, P2_PARTITION_OFFERED,
  * uses offset_width=5 too. Other cache configurations are not admitted. */
 #define P2_PARTITION_CACHE_LINE_BYTES 32u
 size_t p2_partition_storage_size(void);
+#define P2_PARTITION_HUB_API 1
+/* Cog 0 supplies separately allocated, exclusive Hub backing and Hub control.
+ * Both stay alive/quarantined until reset. No SDK allocation/free is performed
+ * here or by the consumer. Backing is 8-byte aligned, size a multiple of 8;
+ * claim/offer/cancel/retire and allocator ownership are identical to PSRAM. */
+int p2_partition_reserve_hub(p2_partition *p, unsigned generation, void *backing,
+    size_t bytes, int control_lock, int execution_lock);
+int p2_partition_is_hub(p2_partition *p, unsigned generation);
 int p2_partition_reserve(p2_partition *p, unsigned generation, size_t bytes,
     unsigned cache_line_bytes, int control_lock, int execution_lock);
 int p2_partition_offer(p2_partition *p, unsigned generation, int consumer_cog);

@@ -154,6 +154,9 @@ struct bvm {
     /* Only valid during construction; cleared before return or OOM teardown. */
     bvm_construction_progress construction_progress;
     void *construction_context;
+    /* Independent, VM-lifetime exception-vector domain; never ordinary pools. */
+    bvm_allocator special_allocator;
+    void *special_allocator_context;
 };
 
 #define NONE_FLAG           0
