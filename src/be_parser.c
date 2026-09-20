@@ -1860,25 +1860,40 @@ static void mainfunc(bparser *parser, bclosure *cl)
     match_token(parser, TokenEOS); /* skip EOS */
 }
 
+static void parser_source_protected(bvm *vm, void *data)
+{
+    bparser *parser = data;
+    bclosure *cl = be_newclosure(vm, 0);
+    parser->cl = cl;
+    var_setclosure(vm->top, cl);
+    be_stackpush(vm);
+    be_lexer_init(&parser->lexer, vm, parser->lexer.fname,
+                  parser->lexer.reader.readf, parser->lexer.reader.data);
+    scan_next_token(parser); /* scan first token */
+    mainfunc(parser, cl);
+    be_global_release_space(vm); /* clear global space */
+    be_stackpop(vm, 2); /* pop strtab */
+    scan_next_token(parser); /* clear lexer */
+}
+
 bclosure* be_parser_source(bvm *vm,
     const char *fname, breader reader, void *data, bbool islocal)
 {
-    bparser parser;
-    bclosure *cl = be_newclosure(vm, 0);
+    bparser parser = {0};
+    int status;
     parser.vm = vm;
-    parser.finfo = NULL;
-    parser.cl = cl;
     parser.islocal = (bbyte)islocal;
-    var_setclosure(vm->top, cl);
-    be_stackpush(vm);
-    be_lexer_init(&parser.lexer, vm, fname, reader, data);
-    scan_next_token(&parser); /* scan first token */
-    mainfunc(&parser, cl);
+    parser.lexer.vm = vm;
+    parser.lexer.fname = fname;
+    parser.lexer.reader.readf = reader;
+    parser.lexer.reader.data = data;
+    /* Own the non-GC lexer buffer across every throw, including init OOM and
+     * OOM while formatting a syntax error. This frame outlives the protected
+     * call's setjmp, so its fields remain defined after longjmp. */
+    status = be_execprotected(vm, parser_source_protected, &parser);
     be_lexer_deinit(&parser.lexer);
-    be_global_release_space(vm); /* clear global space */
-    be_stackpop(vm, 2); /* pop strtab */
-    scan_next_token(&parser); /* clear lexer */
-    return cl;
+    if (status != BE_OK) be_throw(vm, status);
+    return parser.cl;
 }
 
 #endif

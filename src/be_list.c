@@ -21,10 +21,12 @@ blist* be_list_new(bvm *vm)
     blist *list = cast_list(gco);
     if (list) {
         list->count = 0;
-        list->capacity = 2;
+        list->capacity = 0;
+        list->data = NULL; /* GC-safe if stack/data growth throws. */
         var_setlist(vm->top, list);
         be_incrtop(vm);
-        list->data = be_malloc(vm, datasize(list->capacity));
+        list->data = be_malloc(vm, datasize(2));
+        list->capacity = 2;
         be_stackpop(vm, 1);
     }
     return list;
@@ -42,13 +44,16 @@ blist* be_list_copy(bvm *vm, blist *original)
     blist *list = cast_list(gco);
     if (list) {
         size_t size = datasize(original->capacity);
-        list->count = original->count;
-        list->capacity = original->capacity;
+        list->count = 0;
+        list->capacity = 0;
+        list->data = NULL;
         var_setlist(vm->top, list);
         be_incrtop(vm);
         list->data = be_malloc(vm, size);
         be_stackpop(vm, 1);
         memcpy(list->data, original->data, size);
+        list->count = original->count;
+        list->capacity = original->capacity;
     }
     return list;
 }

@@ -1,6 +1,7 @@
 #include "be_libs.h"
 #include "be_module.h"
 #include "be_string.h"
+#include "be_vm.h"
 
 static void be_cache_builtin_value(bvm *vm, const char *module_name, const char *global_name)
 {
@@ -81,78 +82,72 @@ extern void be_cache_spin2module(bvm *vm);
 extern void be_cache_workermodule(bvm *vm);
 #endif
 extern void be_cache_taskmodule(bvm *vm);
-extern void p2_startup_status_tick(int stage);
-
-static void be_p2_startup_tick(int stage)
-{
-    p2_startup_status_tick(stage);
-}
 
 void be_loadlibs(bvm *vm)
 {
-    be_p2_startup_tick(20);
+    be_vm_construction_tick(vm, 20);
     be_load_baselib(vm);
-    be_p2_startup_tick(21);
+    be_vm_construction_tick(vm, 21);
     be_load_listlib(vm);
-    be_p2_startup_tick(22);
+    be_vm_construction_tick(vm, 22);
     be_load_maplib(vm);
-    be_p2_startup_tick(23);
+    be_vm_construction_tick(vm, 23);
     be_load_rangelib(vm);
-    be_p2_startup_tick(24);
+    be_vm_construction_tick(vm, 24);
 #if BE_USE_FILE_SYSTEM
     be_load_filelib(vm);
-    be_p2_startup_tick(25);
+    be_vm_construction_tick(vm, 25);
 #endif
     be_load_byteslib(vm);
-    be_p2_startup_tick(26);
+    be_vm_construction_tick(vm, 26);
     be_cache_builtin_value(vm, "bytes", "bytes");
-    be_p2_startup_tick(27);
+    be_vm_construction_tick(vm, 27);
 #if BE_USE_MATH_MODULE
     be_cache_mathmodule(vm);
-    be_p2_startup_tick(28);
+    be_vm_construction_tick(vm, 28);
 #endif
 #if BE_USE_STRING_MODULE
     be_cache_stringmodule(vm);
-    be_p2_startup_tick(29);
+    be_vm_construction_tick(vm, 29);
 #endif
 #if BE_USE_JSON_MODULE
     be_cache_jsonmodule(vm);
-    be_p2_startup_tick(30);
+    be_vm_construction_tick(vm, 30);
 #endif
 #if BE_USE_OS_MODULE
     be_cache_osmodule(vm);
-    be_p2_startup_tick(31);
+    be_vm_construction_tick(vm, 31);
 #endif
 #if BE_P2_USE_P2_MODULE
     be_cache_p2module(vm);
-    be_p2_startup_tick(32);
+    be_vm_construction_tick(vm, 32);
 #endif
 #if BE_P2_USE_I2C_MODULE
     be_cache_i2cmodule(vm);
-    be_p2_startup_tick(33);
+    be_vm_construction_tick(vm, 33);
 #endif
 #if BE_P2_USE_SPI_MODULE
     be_cache_spimodule(vm);
-    be_p2_startup_tick(34);
+    be_vm_construction_tick(vm, 34);
 #endif
 #if BE_P2_USE_RTOS_MODULE
     be_cache_rtosmodule(vm);
-    be_p2_startup_tick(35);
+    be_vm_construction_tick(vm, 35);
 #endif
 #if BE_P2_USE_THREADS_MODULE
     be_cache_threadsmodule(vm);
-    be_p2_startup_tick(36);
+    be_vm_construction_tick(vm, 36);
 #endif
 #if BE_P2_USE_SPIN2_MODULE
     be_cache_spin2module(vm);
-    be_p2_startup_tick(37);
+    be_vm_construction_tick(vm, 37);
 #endif
 #if BE_P2_USE_WORKER_MODULE
     be_cache_workermodule(vm);
-    be_p2_startup_tick(38);
+    be_vm_construction_tick(vm, 38);
 #endif
     be_cache_taskmodule(vm);
-    be_p2_startup_tick(39);
+    be_vm_construction_tick(vm, 39);
     be_p2_configure_module_paths(vm);
-    be_p2_startup_tick(40);
+    be_vm_construction_tick(vm, 40);
 }

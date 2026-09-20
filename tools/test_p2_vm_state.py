@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CASES = ["scheduler_reset", "rng_isolation", "rng_sequence", "scheduler_isolation",
          "scheduler_gc", "rng_boundaries", "lifecycle", "allocation_failures",
          "allocation_reentry", "interrupt_isolation", "cooperative_cancel", "module_name_root", "allocator_context",
-         "default_constructor"]
+         "default_constructor", "constructor_isolation"]
 INPUTS = ["tools/test_p2_vm_state.py", "tests/native/test_p2_vm_state.c",
           "tests/native/p2_module_root_seams.h", "port/p2/overrides/be_p2lib_p2.c",
           "port/p2/overrides/be_tasklib_p2.c",

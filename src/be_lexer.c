@@ -54,23 +54,29 @@ void be_lexerror(blexer *lexer, const char *msg)
     be_raise(vm, "syntax_error", error);
 }
 
-static void keyword_registe(bvm *vm)
+static void keyword_registe(blexer *lexer)
 {
     int i;
+    bvm *vm = lexer->vm;
     for (i = KeyIf; i < TOKEN_STRING_COUNT; ++i) {
         bstring *s = be_newstr(vm, token_strings[i]);
         be_gc_fix(vm, gc_object(s));
         be_str_setextra(s, i);
+        ++lexer->keyword_count;
     }
 }
 
-static void keyword_unregiste(bvm *vm)
+static void keyword_unregiste(blexer *lexer)
 {
     int i;
-    for (i = KeyIf; i < TOKEN_STRING_COUNT; ++i) {
+    bvm *vm = lexer->vm;
+    /* Only look up strings successfully fixed above. They already exist:
+     * cleanup must never allocate while unwinding constructor/parser OOM. */
+    for (i = KeyIf; i < KeyIf + lexer->keyword_count; ++i) {
         bstring *s = be_newstr(vm, token_strings[i]);
         be_gc_unfix(vm, gc_object(s));
     }
+    lexer->keyword_count = 0;
 }
 
 static bstring* cache_string(blexer *lexer, bstring *s)
@@ -875,8 +881,11 @@ void be_lexer_init(blexer *lexer, bvm *vm,
     lexer->reader.data = data;
     lexer->reader.len = 0;
     lexer->had_whitespace = 1; /* start with whitespace state */
+    lexer->buf.s = NULL;
+    lexer->buf.size = 0;
+    lexer->keyword_count = 0;
     lexerbuf_init(lexer);
-    keyword_registe(vm);
+    keyword_registe(lexer);
     lexer->strtab = be_map_new(vm);
     var_setmap(vm->top, lexer->strtab);
     be_stackpush(vm); /* save string to cache */
@@ -886,7 +895,10 @@ void be_lexer_init(blexer *lexer, bvm *vm,
 void be_lexer_deinit(blexer *lexer)
 {
     be_free(lexer->vm, lexer->buf.s, lexer->buf.size);
-    keyword_unregiste(lexer->vm);
+    lexer->buf.s = NULL;
+    lexer->buf.size = 0;
+    lexer->buf.len = 0;
+    keyword_unregiste(lexer);
 }
 
 int be_lexer_scan_next(blexer *lexer)

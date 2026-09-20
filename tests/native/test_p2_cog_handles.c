@@ -25,16 +25,16 @@ static int partition_releases;
 static long fail_after = -1;
 static size_t allocation_attempts;
 static int source_failures_only;
-extern volatile int *berry_vm_new_diag_stage_ptr;
+static int source_constructor_active(void);
 static void *hold_vm, *delete_address;
 static int reuse_vm;
 static int reject_alloc(void)
 {
     assert(!test_registry_locked);
     ++allocation_attempts;
-    /* Constructor OOM is a separate unresolved core gate: this sweep begins
-     * after the real constructor clears its diagnostic destination. */
-    if (source_failures_only && berry_vm_new_diag_stage_ptr) return 0;
+    /* Constructor OOM has a separate core budget sweep. This sweep begins
+     * when the real source worker advances past its constructor stage. */
+    if (source_failures_only && source_constructor_active()) return 0;
     if (fail_after < 0) return 0;
     if (fail_after == 0) return 1;
     --fail_after;
@@ -90,8 +90,7 @@ int p2_heap_vm_partition_select(int slot) { (void)slot; return 1; }
 void p2_heap_vm_partition_clear_current(void) {}
 size_t p2_heap_wrong_free_count(void) { return 0; }
 size_t p2_heap_wrong_realloc_count(void) { return 0; }
-extern volatile int berry_vm_new_skip_loadlibs;
-extern volatile int *berry_vm_new_diag_stage_ptr;
+
 static int p2_catalina_cogstart_C(void (*fn)(void *), void *arg, void *stack, int size)
 {
     (void)fn; (void)arg; (void)stack; (void)size;
@@ -107,6 +106,10 @@ static int p2_catalina_cogstart_C(void (*fn)(void *), void *arg, void *stack, in
 #include "source_worker.inc"
 
 static p2_child_vm_cog_once_job *executing_job;
+static int source_constructor_active(void)
+{
+    return executing_job && executing_job->vm_new_stage == 1;
+}
 static void _waitus(uint32_t us)
 {
     (void)us; assert(!test_registry_locked);
@@ -134,6 +137,7 @@ static void source_execution_cases(void)
     strcpy(job.source, "def f() return 13579 end"); strcpy(job.name, "f");
     executing_job = &job; p2_child_vm_cog_once_entry(&job); executing_job = NULL;
     assert(context_calls > 0 && job.child_created && job.child_deleted);
+    assert(job.vm_new_detail_stage == 9 && job.vm_new_stage == 2);
     assert(job.call_result == BE_OK && job.result_int == 13579);
     puts("PASS actual source entry with explicit allocator context");
     memset(&job, 0, sizeof(job)); context_calls = 0;

@@ -104,7 +104,7 @@ jobs:
               check python3 tools/test_p2_heap.py --cc "$TEST_CC" \
                 --cflags="$abi_flags -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -fno-pie -no-pie"
               check python3 tools/test_p2_clock.py --cc "$TEST_CC" --abi "$TEST_ABI" --sanitize
-              check python3 tools/test_p2_vm_state.py --cc "$TEST_CC" --abi "$TEST_ABI" --sanitize
+              check python3 tools/test_p2_vm_state.py --cc "$TEST_CC" --abi "$TEST_ABI" --sanitize --debug
               check python3 tools/test_p2_vm_state.py --cc "$TEST_CC" --abi "$TEST_ABI" --bint 32 --no-small-pools --sanitize
               check python3 tools/test_exception_storage.py --cc "$TEST_CC" --cflags="$abi_flags" --sanitize
               check python3 tools/test_p2_cog_handles.py --cc "$TEST_CC"

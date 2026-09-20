@@ -127,6 +127,7 @@ typedef struct blexer {
     bmap *strtab;
     bvm *vm;
     int had_whitespace; /* track if whitespace/newline preceded current token */
+    int keyword_count; /* successfully fixed keywords, for partial-init cleanup */
 } blexer;
 
 void be_lexer_init(blexer *lexer, bvm *vm,

@@ -2158,6 +2158,30 @@ BERRY_API bvm* be_vm_new(void);
 typedef void *(*bvm_allocator)(void *context, void *ptr, size_t size);
 BERRY_API bvm* be_vm_new_with_allocator(bvm_allocator allocator, void *context);
 
+#define BE_VM_OPTIONS_API 1
+/* Embedding constructor options, not a P2 parallel-runtime capability.
+ * Zero-initialize before setting fields. The value is copied before any
+ * callback/allocation; the options object need only live until call entry.
+ * allocator_context still must outlive the VM (see bvm_allocator above).
+ * skip_loadlibs leaves builtin/module setup to the embedder, before general
+ * source execution. progress is synchronous, construction-only (stages 1..9;
+ * ports may report library substages). It must not throw or access the VM under
+ * construction. It may construct another VM with independent storage.
+ * progress_context must remain valid until this constructor returns, including
+ * on failure, and is never retained by the returned VM. No implicit global
+ * progress output is used for explicit options or custom allocators.
+ * NULL options is the legacy default constructor. Non-NULL options retain
+ * the same allocator validation/OOM contracts as be_vm_new_with_allocator. */
+typedef void (*bvm_construction_progress)(void *context, int stage);
+typedef struct {
+    bvm_allocator allocator;
+    void *allocator_context;
+    int skip_loadlibs;
+    bvm_construction_progress progress;
+    void *progress_context;
+} bvm_options;
+BERRY_API bvm* be_vm_new_with_options(const bvm_options *options);
+
 /**
  * @fn void be_vm_delete(bvm*)
  * @note VM management API

@@ -212,8 +212,6 @@ extern int m_smartpin_read(bvm *vm);
 extern int m_smartpin_query(bvm *vm);
 extern int m_smartpin_start(bvm *vm);
 extern int m_smartpin_clear(bvm *vm);
-extern volatile int *berry_vm_new_diag_stage_ptr;
-extern volatile int berry_vm_new_skip_loadlibs;
 
 enum {
     P2_PINMODE_INPUT = 0,
@@ -1947,6 +1945,12 @@ static void p2_child_vm_prepare_source(bvm *child, void *data)
     }
 }
 
+static void p2_child_vm_construction_progress(void *context, int stage)
+{
+    p2_child_vm_cog_once_job *job = (p2_child_vm_cog_once_job *)context;
+    job->vm_new_detail_stage = stage;
+}
+
 static void p2_child_vm_execute_source(bvm *child, void *data)
 {
     p2_child_vm_cog_once_job *job = (p2_child_vm_cog_once_job *)data;
@@ -2143,13 +2147,17 @@ static void p2_child_vm_cog_once_entry(void *arg)
             if (job->partition_ready) job->selected = p2_heap_vm_partition_select(job->slot);
         }
         if (job->selected && runtime_locked) {
+            bvm_options options = {0};
+            /* Call-local inputs and a Hub job-owned diagnostic destination.
+             * The constructor clears its callback before returning/deletion. */
+            options.allocator = job->allocator_context ? job->allocator : NULL;
+            options.allocator_context = job->allocator_context;
+            options.skip_loadlibs = 1;
+            options.progress = p2_child_vm_construction_progress;
+            options.progress_context = job;
             job->vm_new_stage = 1;
-            berry_vm_new_diag_stage_ptr = &job->vm_new_detail_stage;
-            berry_vm_new_skip_loadlibs = 1;
-            child = job->allocator_context ? be_vm_new_with_allocator(job->allocator, job->allocator_context) : be_vm_new();
+            child = be_vm_new_with_options(&options);
             if (!child) job->source_result = job->call_result = BE_MALLOC_FAIL;
-            berry_vm_new_skip_loadlibs = 0;
-            berry_vm_new_diag_stage_ptr = NULL;
             job->vm_new_stage = child != NULL ? 2 : -1;
         }
         if (child != NULL) {

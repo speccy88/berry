@@ -10,6 +10,9 @@
 #include "be_gc.h"
 #include "be_exec.h"
 #include "be_mem.h"
+#include "be_var.h"
+#include "be_vector.h"
+#include "be_libs.h"
 #include <propeller2.h>
 #if BE_DEBUG
 #include <signal.h>
@@ -693,10 +696,33 @@ static void default_constructor(void)
     vm = be_vm_new_with_allocator(NULL, NULL);
     CHECK(vm != NULL);
     if (vm) be_vm_delete(vm);
+#ifdef BE_VM_OPTIONS_API
+    {
+        bvm_options options = {0};
+        vm = be_vm_new_with_options(NULL);
+        CHECK(vm != NULL);
+        if (vm) {
+            script(vm, "assert(size([1,2,3]) == 3)");
+            be_vm_delete(vm);
+        }
+        vm = be_vm_new_with_options(&options);
+        CHECK(vm != NULL);
+        if (vm) {
+            script(vm, "assert(size([1,2,3]) == 3)");
+            be_vm_delete(vm);
+        }
+        options.allocator_context = (void *)1;
+        CHECK(be_vm_new_with_options(&options) == NULL);
+    }
+#endif
 #if BE_DEBUG
-    /* Preserve the existing debug assertion contract for both default APIs.
+    /* Preserve the existing debug assertion contract for default APIs.
      * Each expected abort is isolated from the test runner; never dump cores. */
-    for (int use_wrapper = 0; use_wrapper < 2; ++use_wrapper) {
+    int default_apis = 2;
+#ifdef BE_VM_OPTIONS_API
+    ++default_apis;
+#endif
+    for (int use_wrapper = 0; use_wrapper < default_apis; ++use_wrapper) {
         int status = 0;
         pid_t child = fork();
         CHECK(child >= 0);
@@ -704,6 +730,10 @@ static void default_constructor(void)
             struct rlimit limit = {0, 0};
             if (setrlimit(RLIMIT_CORE, &limit) != 0) _exit(78);
             fail_after = 0;
+#ifdef BE_VM_OPTIONS_API
+            if (use_wrapper == 2) vm = be_vm_new_with_options(NULL);
+            else
+#endif
             vm = use_wrapper ? be_vm_new() : be_vm_new_with_allocator(NULL, NULL);
             (void)vm;
             _exit(77); /* returning NULL is the regression, not a pass */
@@ -750,6 +780,186 @@ static void allocator_context(void)
 #endif
 }
 
+/* Deterministic nested allocator calls interleave COMPLETE Berry constructors,
+ * without pthreads or a mocked VM. The fallback reproduces the old worker's
+ * global-option protocol so the same regression runs RED before the API exists. */
+typedef struct {
+    volatile int stage;
+    unsigned calls, mask;
+#ifdef BE_VM_OPTIONS_API
+    bvm_options *mutate;
+#endif
+} constructor_trace;
+#ifdef BE_VM_OPTIONS_API
+static void constructor_observe(void *context, int stage)
+{
+    constructor_trace *t = context;
+    t->stage = stage;
+    ++t->calls;
+    if (stage >= 1 && stage <= 9) t->mask |= 1u << stage;
+    if (stage == 1 && t->mutate) {
+        /* The constructor must already own a value-copy, not re-read this. */
+        t->mutate->skip_loadlibs = !t->mutate->skip_loadlibs;
+        t->mutate->progress = NULL;
+        t->mutate->progress_context = NULL;
+        t->mutate->allocator = NULL;
+        t->mutate->allocator_context = NULL;
+    }
+}
+#endif
+static bvm *configured_vm(bvm_allocator allocator, void *context, int skip,
+                         constructor_trace *trace)
+{
+#ifdef BE_VM_OPTIONS_API
+    bvm_options options = {0};
+    bvm *vm;
+    options.allocator = allocator;
+    options.allocator_context = context;
+    options.skip_loadlibs = skip;
+    options.progress = constructor_observe;
+    options.progress_context = trace;
+    trace->mutate = &options;
+    vm = be_vm_new_with_options(&options);
+    trace->mutate = NULL;
+    return vm;
+#else
+    extern volatile int berry_vm_new_skip_loadlibs;
+    extern volatile int *berry_vm_new_diag_stage_ptr;
+    bvm *vm;
+    berry_vm_new_skip_loadlibs = skip;
+    berry_vm_new_diag_stage_ptr = &trace->stage;
+    vm = be_vm_new_with_allocator(allocator, context);
+    berry_vm_new_skip_loadlibs = 0;
+    berry_vm_new_diag_stage_ptr = NULL;
+    return vm;
+#endif
+}
+typedef struct {
+    allocator_probe own, peer;
+    constructor_trace *peer_trace;
+    bvm *peer_vm;
+    int fired, peer_skip;
+} interleaved_allocator;
+static void *interleaved_alloc(void *context, void *ptr, size_t size)
+{
+    interleaved_allocator *p = context;
+    if (size && !p->fired && p->own.calls == 2) {
+        p->fired = 1;
+        p->peer_vm = configured_vm(probe_allocator, &p->peer, p->peer_skip,
+                                  p->peer_trace);
+    }
+    return probe_allocator(&p->own, ptr, size);
+}
+static void constructor_isolation(void)
+{
+    int skip, budget, scenario;
+    for (skip = 0; skip <= 1; ++skip) {
+        constructor_trace a = {0}, b = {0};
+        interleaved_allocator p = {{0, 0, -1}, {0, 0, -1}, &b, NULL, 0, !skip};
+        bvm *vm = configured_vm(interleaved_alloc, &p, skip, &a);
+        CHECK(vm != NULL && p.peer_vm != NULL && p.fired);
+        CHECK(a.stage == 9 && b.stage == 9);
+#ifdef BE_VM_OPTIONS_API
+        CHECK(a.mask == 0x3fe && b.mask == 0x3fe);
+        CHECK(vm == NULL || (vm->construction_progress == NULL && vm->construction_context == NULL));
+        CHECK(p.peer_vm == NULL || (p.peer_vm->construction_progress == NULL && p.peer_vm->construction_context == NULL));
+#endif
+        if (vm && p.peer_vm) {
+            unsigned a_calls = a.calls, b_calls = b.calls;
+            CHECK((be_builtin_count(vm) == 0) == skip);
+            CHECK((be_builtin_count(p.peer_vm) == 0) == !skip);
+            /* A library-free precompiled host VM must finish builtin setup
+             * before general parsing. This is real be_loadlibs, not a seam. */
+            if (!be_builtin_count(vm)) be_loadlibs(vm);
+            if (!be_builtin_count(p.peer_vm)) be_loadlibs(p.peer_vm);
+            /* Real compile/execute, independent globals and live peer after
+             * deletion. */
+            script(vm, "var private_value=71");
+            script(p.peer_vm, "var private_value=29");
+            be_gc_collect(vm); be_gc_collect(p.peer_vm);
+            CHECK(be_getglobal(vm, "private_value") && be_toint(vm, -1) == 71);
+            be_pop(vm, 1);
+            be_vm_delete(vm); vm = NULL;
+            CHECK(p.own.live == 0);
+            CHECK(be_getglobal(p.peer_vm, "private_value") && be_toint(p.peer_vm, -1) == 29);
+            be_pop(p.peer_vm, 1);
+            be_vm_delete(p.peer_vm); p.peer_vm = NULL;
+            CHECK(a.calls == a_calls && b.calls == b_calls);
+            CHECK(a.stage == 9 && b.stage == 9);
+        }
+        if (vm) be_vm_delete(vm);
+        if (p.peer_vm) be_vm_delete(p.peer_vm);
+        CHECK(p.own.live == 0 && p.peer.live == 0);
+    }
+    /* Failure at each constructor budget, both library policies. */
+    for (skip = 0; skip <= 1; ++skip) {
+        int refused = 0, succeeded = 0;
+        for (budget = 0; budget < 220; ++budget) {
+            constructor_trace t = {0};
+            allocator_probe p = {0, 0, budget};
+            bvm *vm = configured_vm(probe_allocator, &p, skip, &t);
+            if (vm) {
+                ++succeeded;
+                CHECK(t.stage == 9);
+                CHECK((be_builtin_count(vm) == 0) == skip);
+                be_vm_delete(vm);
+            } else {
+                ++refused;
+                CHECK(t.stage >= 2 && t.stage <= 8);
+            }
+            CHECK(p.live == 0);
+        }
+        CHECK(refused > 0 && succeeded > 0);
+    }
+    /* A freed diagnostic destination must never be retained by the VM.
+     * Post-constructor OOM must unwind with the ordinary allocator intact. */
+    for (skip = 0; skip <= 1; ++skip) {
+      for (scenario = 0; scenario < 4; ++scenario) {
+        int refused = 0, succeeded = 0;
+        for (budget = 0; budget < 180; ++budget) {
+            static const char *sources[] = {
+                "var text='owned' def f(x) return x+'-copy' end return f(text)",
+                "return '012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789'",
+                "def broken( return",
+                "return [1,2,3].copy()[1]"
+            };
+            allocator_probe p = {0, 0, -1};
+            constructor_trace *t = test_malloc(sizeof(*t));
+            bvm *vm;
+            int rc, expected = scenario == 2 ? BE_EXCEPTION : BE_OK;
+            memset(t, 0, sizeof(*t));
+            vm = configured_vm(probe_allocator, &p, skip, t);
+            CHECK(vm != NULL);
+            test_free(t);
+            if (!vm) continue;
+            if (!be_builtin_count(vm)) be_loadlibs(vm);
+            /* Last scenario injects during runtime list construction/copy;
+             * others inject across real parser/lexer and execution. */
+            if (scenario != 3) p.budget = budget;
+            rc = be_loadstring(vm, sources[scenario]);
+            if (scenario == 3) { CHECK(rc == BE_OK); p.budget = budget; }
+            if (rc == BE_OK) rc = be_pcall(vm, 0);
+            CHECK(rc == expected || rc == BE_MALLOC_FAIL);
+            if (rc == expected) {
+                ++succeeded;
+                if (scenario == 0) CHECK(be_isstring(vm, -1) && !strcmp(be_tostring(vm, -1), "owned-copy"));
+                if (scenario == 1) CHECK(be_isstring(vm, -1) && strlen(be_tostring(vm, -1)) == 90);
+                if (scenario == 3) CHECK(be_isint(vm, -1) && be_toint(vm, -1) == 2);
+            } else ++refused;
+            p.budget = -1;
+            be_pop(vm, be_top(vm));
+            be_gc_collect(vm);
+            CHECK(be_loadstring(vm, "return 117") == BE_OK);
+            CHECK(be_pcall(vm, 0) == BE_OK && be_toint(vm, -1) == 117);
+            be_pop(vm, be_top(vm));
+            be_vm_delete(vm);
+            CHECK(p.live == 0);
+        }
+        CHECK(refused > 0 && succeeded > 0);
+      }
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 2) return 2;
@@ -767,6 +977,7 @@ int main(int argc, char **argv)
     else if (!strcmp(argv[1], "module_name_root")) module_name_root();
     else if (!strcmp(argv[1], "allocator_context")) allocator_context();
     else if (!strcmp(argv[1], "default_constructor")) default_constructor();
+    else if (!strcmp(argv[1], "constructor_isolation")) constructor_isolation();
     else return 2;
     CHECK(live_blocks == 0);
     printf("{\"case\":\"%s\",\"checks\":%u,\"failures\":%u,\"pointer_bits\":%u,\"bint_bits\":%u}\n",

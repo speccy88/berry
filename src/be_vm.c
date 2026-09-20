@@ -609,56 +609,51 @@ static void connect_str(bvm *vm, bstring *a, bvalue *b)
     }
 }
 
-volatile int berry_vm_new_diag_stage;
-volatile int *berry_vm_new_diag_stage_ptr;
-volatile int berry_vm_new_skip_loadlibs;
 #if defined(BE_P2_PROFILE)
 extern void p2_startup_status_tick(int stage);
-#endif
-
-#define BERRY_VM_NEW_DIAG_STAGE(stage) do { \
-    berry_vm_new_diag_stage = (stage); \
-    if (berry_vm_new_diag_stage_ptr != NULL) { \
-        *berry_vm_new_diag_stage_ptr = (stage); \
-    } \
-    BE_P2_VM_NEW_STATUS_TICK(stage); \
-} while (0)
-
-#if defined(BE_P2_PROFILE)
-#define BE_P2_VM_NEW_STATUS_TICK(stage) p2_startup_status_tick(stage)
-#else
-#define BE_P2_VM_NEW_STATUS_TICK(stage) ((void)0)
-#endif
-
-static void vm_initialize(bvm *vm, void *unused)
+static void default_construction_progress(void *context, int stage)
 {
-    (void)unused;
+    (void)context;
+    p2_startup_status_tick(stage);
+}
+#endif
+
+void be_vm_construction_tick(bvm *vm, int stage)
+{
+    if (vm->construction_progress) {
+        vm->construction_progress(vm->construction_context, stage);
+    }
+}
+
+static void vm_initialize(bvm *vm, void *data)
+{
+    const bvm_options *options = data;
     VM_TRACE("[vm] gc\n");
-    BERRY_VM_NEW_DIAG_STAGE(4);
+    be_vm_construction_tick(vm, 4);
     be_string_init(vm);
     VM_TRACE("[vm] str\n");
-    BERRY_VM_NEW_DIAG_STAGE(5);
+    be_vm_construction_tick(vm, 5);
     be_stack_init(vm, &vm->callstack, sizeof(bcallframe));
     be_stack_init(vm, &vm->refstack, sizeof(binstance*));
     be_stack_init(vm, &vm->exceptstack, sizeof(struct bexecptframe));
     be_stack_init(vm, &vm->tracestack, sizeof(bcallsnapshot));
     VM_TRACE("[vm] stacks\n");
-    BERRY_VM_NEW_DIAG_STAGE(6);
+    be_vm_construction_tick(vm, 6);
     vm->stack = be_malloc(vm, sizeof(bvalue) * BE_STACK_START);
     vm->stacktop = vm->stack + BE_STACK_START;
     vm->reg = vm->stack;
     vm->top = vm->reg;
     VM_TRACE("[vm] stackmem\n");
-    BERRY_VM_NEW_DIAG_STAGE(7);
+    be_vm_construction_tick(vm, 7);
     be_globalvar_init(vm);
     VM_TRACE("[vm] globals\n");
-    BERRY_VM_NEW_DIAG_STAGE(8);
+    be_vm_construction_tick(vm, 8);
     be_gc_setpause(vm, 1);
-    if (!berry_vm_new_skip_loadlibs) {
+    if (!options->skip_loadlibs) {
         be_loadlibs(vm);
     }
     VM_TRACE("[vm] libs\n");
-    BERRY_VM_NEW_DIAG_STAGE(9);
+    be_vm_construction_tick(vm, 9);
     vm->compopt = 0;
     vm->bytesmaxsize = BE_BYTES_MAX_SIZE;
     vm->obshook = NULL;
@@ -680,16 +675,29 @@ static void vm_initialize(bvm *vm, void *unused)
 #endif
 }
 
-BERRY_API bvm* be_vm_new_with_allocator(bvm_allocator allocator, void *context)
+BERRY_API bvm* be_vm_new_with_options(const bvm_options *supplied)
 {
+    bvm_options options = {0};
+    bvm_allocator allocator;
+    void *context;
     bvm *vm;
+    if (supplied) {
+        options = *supplied;
+    }
+#if defined(BE_P2_PROFILE)
+    else {
+        options.progress = default_construction_progress;
+    }
+#endif
+    allocator = options.allocator;
+    context = options.allocator_context;
     if (!allocator && context) return NULL;
 #if BE_USE_MEM_ALIGNED || (defined(BE_P2_SIMPLE_REALLOC) && BE_P2_SIMPLE_REALLOC)
     if (allocator) return NULL;
 #endif
-    BERRY_VM_NEW_DIAG_STAGE(1);
+    if (options.progress) options.progress(options.progress_context, 1);
     vm = allocator ? allocator(context, NULL, sizeof(bvm)) : be_os_malloc(sizeof(bvm));
-    BERRY_VM_NEW_DIAG_STAGE(2);
+    if (options.progress) options.progress(options.progress_context, 2);
     if (allocator) {
         if (!vm) return NULL;
     } else {
@@ -699,20 +707,35 @@ BERRY_API bvm* be_vm_new_with_allocator(bvm_allocator allocator, void *context)
     memset(vm, 0, sizeof(*vm));
     vm->allocator = allocator;
     vm->allocator_context = context;
-    BERRY_VM_NEW_DIAG_STAGE(3);
+    vm->construction_progress = options.progress;
+    vm->construction_context = options.progress_context;
+    be_vm_construction_tick(vm, 3);
     be_gc_init(vm);
     if (allocator) {
         /* A failed initial allocation must not collect half-built roots. */
         be_gc_sethalt(vm, 1);
-        if (be_execprotected(vm, vm_initialize, NULL) != BE_OK) {
+        if (be_execprotected(vm, vm_initialize, &options) != BE_OK) {
+            vm->construction_progress = NULL;
+            vm->construction_context = NULL;
             be_vm_delete(vm);
             return NULL;
         }
         be_gc_sethalt(vm, 0);
     } else {
-        vm_initialize(vm, NULL);
+        vm_initialize(vm, &options);
     }
+    vm->construction_progress = NULL;
+    vm->construction_context = NULL;
     return vm;
+}
+
+BERRY_API bvm* be_vm_new_with_allocator(bvm_allocator allocator, void *context)
+{
+    bvm_options options = {0};
+    if (!allocator && !context) return be_vm_new_with_options(NULL);
+    options.allocator = allocator;
+    options.allocator_context = context;
+    return be_vm_new_with_options(&options);
 }
 
 BERRY_API bvm* be_vm_new(void)

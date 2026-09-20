@@ -151,6 +151,9 @@ struct bvm {
     void (*native_context_delete)(bvm *vm, void *context);
     /* Allocation-free native interrupt cadence, independent for each VM. */
     unsigned int native_poll_ticks;
+    /* Only valid during construction; cleared before return or OOM teardown. */
+    bvm_construction_progress construction_progress;
+    void *construction_context;
 };
 
 #define NONE_FLAG           0
@@ -158,6 +161,7 @@ struct bvm {
 #define PRIM_FUNC           (1 << 1)
 
 int be_default_init_native_function(bvm *vm);
+void be_vm_construction_tick(bvm *vm, int stage);
 void be_dofunc(bvm *vm, bvalue *v, int argc);
 bbool be_value2bool(bvm *vm, bvalue *v);
 bbool be_vm_iseq(bvm *vm, bvalue *a, bvalue *b);
