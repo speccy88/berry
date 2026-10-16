@@ -1,0 +1,10 @@
+--- a/port/p2/include/p2_partition.h
++++ b/port/p2/include/p2_partition.h
+@@ -18,7 +18,6 @@
+  * claim/offer/cancel/retire and allocator ownership are identical to PSRAM. */
+ int p2_partition_reserve_hub(p2_partition *p, unsigned generation, void *backing,
+     size_t bytes, int control_lock, int execution_lock);
+-int p2_partition_is_hub(p2_partition *p, unsigned generation);
+ int p2_partition_reserve(p2_partition *p, unsigned generation, size_t bytes,
+     unsigned cache_line_bytes, int control_lock, int execution_lock);
+ int p2_partition_offer(p2_partition *p, unsigned generation, int consumer_cog);

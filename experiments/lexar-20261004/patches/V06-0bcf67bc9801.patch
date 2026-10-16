@@ -1,0 +1,442 @@
+--- a/port/p2/overrides/be_p2lib_p2.c
++++ b/port/p2/overrides/be_p2lib_p2.c
+@@ -7,7 +7,6 @@
+ #include "be_gc.h"
+ #include "be_exec.h"
+ #include "be_mem.h"
+-#include "be_map.h"
+ #include "be_module.h"
+ #include "be_object.h"
+ #include "be_string.h"
+@@ -214,6 +213,7 @@
+ extern int m_smartpin_start(bvm *vm);
+ extern int m_smartpin_clear(bvm *vm);
+ 
++
+ enum {
+     P2_PINMODE_INPUT = 0,
+     P2_PINMODE_OUTPUT = 1,
+@@ -856,20 +856,12 @@
+     /* Set only by the Hub admission bootstrap; NULL is the legacy gated path. */
+     bvm_allocator allocator;
+     void *allocator_context;
+-    bvm_allocator special_allocator;
+-    void *special_allocator_context;
+     int execution_lock;
+     p2_partition *admission;
+-    p2_partition *special_admission;
+     unsigned admission_generation;
+-    unsigned special_generation;
+     volatile size_t admission_free;
+     volatile size_t admission_initial_free;
+     volatile size_t admission_low;
+-    volatile int special_retired;
+-    volatile size_t special_initial_free;
+-    volatile size_t special_free;
+-    volatile size_t special_low;
+     volatile int admission_retired;
+     volatile int status;
+     /* Managed source jobs use Hub mailboxes. Only worker publishes completion. */
+@@ -2161,8 +2153,6 @@
+              * The constructor clears its callback before returning/deletion. */
+             options.allocator = job->allocator_context ? job->allocator : NULL;
+             options.allocator_context = job->allocator_context;
+-            options.special_allocator = job->special_allocator;
+-            options.special_allocator_context = job->special_allocator_context;
+             options.skip_loadlibs = 1;
+             options.progress = p2_child_vm_construction_progress;
+             options.progress_context = job;
+@@ -9451,81 +9441,6 @@
+     be_return(vm);
+ }
+ 
+-/* Read the live registration table, never a second catalog or a user callback.
+- * The module remains rooted on the stack while the result list allocates. */
+-static void p2_help_names(bvm *vm, bmodule *module, int groups_only)
+-{
+-    bmapiter iter = be_map_iter();
+-    bmapnode *node;
+-    be_newobject(vm, "list");
+-    while ((node = be_map_next(module->table, &iter)) != NULL) {
+-        if (var_isstr(&node->key)
+-            && (!groups_only || var_ismodule(&node->value))) {
+-            const char *name = str(var_tostr(&node->key));
+-            if (name[0] != '.' && strcmp(name, "member")) {
+-                be_pushstring(vm, name);
+-                be_data_push(vm, -2);
+-                be_pop(vm, 1);
+-            }
+-        }
+-    }
+-    be_pop(vm, 1); /* internal list data; leave the list instance */
+-}
+-
+-static int m_p2_help(bvm *vm)
+-{
+-    int argc = be_top(vm);
+-    const char *topic = "p2";
+-    bmodule *module;
+-    bntvfunc capabilities = NULL;
+-    if (argc > 1 || (argc == 1 && !be_isstring(vm, 1))) {
+-        be_raise(vm, "type_error", "help expects no argument or one group name string");
+-    }
+-    if (argc) {
+-        topic = be_tostring(vm, 1);
+-        if (strlen(topic) != be_strlen(vm, 1)) {
+-            be_raise(vm, "value_error", "unknown or unavailable p2 help group");
+-        }
+-    }
+-    be_getmodule(vm, "p2");
+-    module = (bmodule *)var_toobj(be_indexof(vm, -1));
+-    if (strcmp(topic, "p2")) {
+-        bvalue *value = be_map_findstr(vm, module->table,
+-            var_tostr(be_indexof(vm, 1)));
+-        if (!value || !var_ismodule(value)) {
+-            be_raise(vm, "value_error", "unknown or unavailable p2 help group");
+-        }
+-        module = (bmodule *)var_toobj(value);
+-    }
+-    be_newobject(vm, "map");
+-    p2_map_set_string(vm, "topic", topic);
+-    be_pushstring(vm, !strcmp(topic, "p2") ? "groups" : "members");
+-    p2_help_names(vm, module, !strcmp(topic, "p2"));
+-    be_setindex(vm, -3);
+-    be_pop(vm, 2);
+-    p2_map_set_string(vm, "usage", "p2.help() lists groups; p2.help(\"pin\") lists live members. See docs/p2-api.md for signatures.");
+-    p2_map_set_string(vm, "safety", "Help only inspects metadata. Check board pin reservations before hardware calls; flat aliases remain compatible.");
+-    p2_map_set_string(vm, "support", "Single VM supported; production concurrency unavailable. Experimental features are not production support. Capability false means unavailable.");
+-    if (!strcmp(topic, "cog")) capabilities = m_p2_closure_cog_capabilities;
+-#if BE_P2_ENABLE_ROADMAP_NATIVE_FACADES
+-    else if (!strcmp(topic, "asm")) capabilities = m_p2_asm_capabilities;
+-    else if (!strcmp(topic, "debug")) capabilities = m_p2_debug_capabilities;
+-    p2_map_set_string(vm, "examples", "p2.clock.freq(); p2.cog.id(); p2.debug.snapshot(); import introspect; introspect.members(p2.pin)");
+-#else
+-    p2_map_set_string(vm, "examples", "p2.status_info(); p2.cog.id(); p2.help(\"pin\")");
+-#endif
+-    if (capabilities) {
+-        be_pushstring(vm, "capabilities");
+-        /* Known read-only native reporter, not an overridable module member. */
+-        be_pushntvfunction(vm, capabilities);
+-        be_call(vm, 0);
+-        be_setindex(vm, -3);
+-        be_pop(vm, 2);
+-    }
+-    be_pop(vm, 1); /* internal map data; return the map instance */
+-    be_return(vm);
+-}
+-
+ void be_cache_p2module(bvm *vm)
+ {
+     bstring *name;
+@@ -9536,7 +9451,6 @@
+     name = var_tostr(vm->top - 1);
+     be_newmodule(vm);
+     p2_module_set_func(vm, "member", m_p2_member);
+-    p2_module_set_func(vm, "help", m_p2_help);
+     p2_module_set_func(vm, "vm_cog_ping", m_p2_vm_cog_ping);
+     p2_module_add_runtime_cog(vm);
+     p2_module_add_runtime_pin(vm);
+@@ -9566,21 +9480,11 @@
+ static void p2_child_vm_coherent_entry(void *argument)
+ {
+     p2_child_vm_cog_once_job *job = (p2_child_vm_cog_once_job *)argument;
+-    int admitted, special = 0;
++    int admitted;
+     if (!job) return;
+-    admitted = job->admission && job->special_admission
+-        && job->admission != job->special_admission && !job->cancel_requested
+-        && p2_partition_is_hub(job->special_admission, job->special_generation)
++    admitted = job->admission && !job->cancel_requested
+         && p2_partition_claim(job->admission, job->admission_generation) == 1;
+-    if (admitted) {
+-        special = p2_partition_claim(job->special_admission, job->special_generation) == 1;
+-        if (!special) {
+-            p2_partition_retire(job->admission, job->admission_generation);
+-            admitted = 0;
+-        }
+-    }
+     job->admission_retired = 0;
+-    job->special_retired = 0;
+     if (!admitted && !job->cancel_requested) {
+         job->source_result = job->call_result = BE_EXCEPTION;
+         job->status = 2;
+@@ -9589,23 +9493,270 @@
+     }
+     job->allocator = p2_partition_realloc;
+     job->allocator_context = job->admission;
+-    job->special_allocator = p2_partition_realloc;
+-    job->special_allocator_context = job->special_admission;
+     job->execution_lock = p2_partition_execution_lock(job->admission, job->admission_generation);
+     if (admitted) {
+         job->admission_initial_free = p2_partition_free_bytes(job->admission, job->admission_generation);
+         job->admission_low = p2_partition_low_address(job->admission, job->admission_generation);
+-        job->special_initial_free = p2_partition_free_bytes(job->special_admission, job->special_generation);
+-        job->special_low = p2_partition_low_address(job->special_admission, job->special_generation);
+     }
+     p2_child_vm_cog_once_entry(job);
+     if (admitted) {
+         job->admission_free = p2_partition_free_bytes(job->admission, job->admission_generation);
+         job->admission_retired = p2_partition_retire(job->admission, job->admission_generation);
+-        job->special_free = p2_partition_free_bytes(job->special_admission, job->special_generation);
+-        job->special_retired = p2_partition_retire(job->special_admission, job->special_generation);
+     } else {
+         job->admission_retired = p2_partition_is_retired(job->admission, job->admission_generation);
+-        job->special_retired = p2_partition_is_retired(job->special_admission, job->special_generation);
+-    }
+-}
++    }
++}
++
++#include "be_var.h"
++#include "be_vector.h"
++#include "be_libs.h"
++typedef struct {
++    volatile int stage;
++    volatile unsigned core_mask, library_ticks, calls;
++    bvm_options *nested;
++    bvm *peer;
++} ctor_trace;
++/* DIAGNOSTIC DRIVER ONLY: invokes the production coherent Hub bootstrap.
++ * One worker/cache persists across jobs. This is not public spawn/reap proof. */
++typedef struct {
++    p2_child_vm_cog_once_job job;
++    p2_partition *tickets[14];
++    p2_partition *constructors[4];
++    ctor_trace traces[4];
++    volatile unsigned ctor_go, ctor_done;
++    volatile int ctor_failures, ctor_created, ctor_deleted;
++    volatile size_t ctor_low[4], ctor_initial[4], ctor_final[4];
++    volatile int ctor_policy[4], ctor_value[4];
++    int execution_lock;
++    volatile unsigned round, acknowledged;
++    volatile unsigned free_bytes, low_address;
++} coherent_hil_control;
++/* Diagnostic only: nested real Berry constructors on the private-cache worker. */
++static void ctor_observe(void *context, int stage)
++{
++    ctor_trace *t = context;
++    t->stage = stage;
++    ++t->calls;
++    if (stage >= 1 && stage <= 9) t->core_mask |= 1u << stage;
++    if (stage >= 20 && stage <= 40) ++t->library_ticks;
++    if (stage == 4 && t->nested) {
++        bvm_options *options = t->nested;
++        t->nested = NULL;
++        t->peer = be_vm_new_with_options(options);
++    }
++}
++static void ctor_run_value(bvm *vm, void *data)
++{
++    int *value = data;
++    int rc;
++    if (!be_builtin_count(vm)) be_loadlibs(vm);
++    rc = be_loadstring(vm, *value == 71 ? "var private_value=71 return private_value" :
++                                      "var private_value=29 return private_value");
++    if (rc == BE_OK) rc = be_pcall(vm, 0);
++    if (rc != BE_OK) be_throw(vm, rc);
++    *value = (int)be_toint(vm, -1);
++    be_pop(vm, be_top(vm));
++}
++static void ctor_worker_check(coherent_hil_control *s)
++{
++    int pair, i;
++    while (!s->ctor_go) _waitus(100);
++    while (LOCKSET(s->execution_lock)) _waitus(100);
++    for (i=0; i<4; ++i) {
++        if (p2_partition_claim(s->constructors[i], 101+i) != 1) {
++            ++s->ctor_failures;
++            LOCKCLR(s->execution_lock); s->ctor_done=1; return;
++        }
++        s->ctor_low[i]=p2_partition_low_address(s->constructors[i], 101+i);
++        s->ctor_initial[i]=p2_partition_free_bytes(s->constructors[i], 101+i);
++    }
++    for (pair=0; pair<2; ++pair) {
++        int a=pair*2, b=a+1, va=71, vb=29;
++        unsigned ac, bc;
++        bvm *outer, *inner;
++        bvm_options oa={0}, ob={0};
++        oa.allocator=ob.allocator=p2_partition_realloc;
++        oa.allocator_context=s->constructors[a]; ob.allocator_context=s->constructors[b];
++        oa.skip_loadlibs=pair; ob.skip_loadlibs=!pair;
++        oa.progress=ob.progress=ctor_observe;
++        oa.progress_context=&s->traces[a]; ob.progress_context=&s->traces[b];
++        s->traces[a].nested=&ob;
++        outer=be_vm_new_with_options(&oa); inner=s->traces[a].peer;
++        s->traces[a].peer=NULL; s->traces[a].nested=NULL;
++        s->ctor_created+=(outer!=NULL)+(inner!=NULL);
++        if (outer && inner) {
++            s->ctor_policy[a]=(be_builtin_count(outer)==0)==pair;
++            s->ctor_policy[b]=(be_builtin_count(inner)==0)==!pair;
++            ac=s->traces[a].calls; bc=s->traces[b].calls;
++            if (be_execprotected(outer, ctor_run_value, &va)!=BE_OK || va!=71) ++s->ctor_failures;
++            if (be_execprotected(inner, ctor_run_value, &vb)!=BE_OK || vb!=29) ++s->ctor_failures;
++            s->ctor_value[a]=va;
++            be_vm_delete(outer); outer=NULL; ++s->ctor_deleted;
++            if (!be_getglobal(inner, "private_value") || be_toint(inner,-1)!=29) ++s->ctor_failures;
++            else s->ctor_value[b]=(int)be_toint(inner,-1);
++            be_pop(inner,1);
++            be_vm_delete(inner); inner=NULL; ++s->ctor_deleted;
++            if (s->traces[a].calls!=ac || s->traces[b].calls!=bc) ++s->ctor_failures;
++        } else ++s->ctor_failures;
++        if (outer) {be_vm_delete(outer); ++s->ctor_deleted;}
++        if (inner) {be_vm_delete(inner); ++s->ctor_deleted;}
++    }
++    for (i=0; i<4; ++i) {
++        s->ctor_final[i]=p2_partition_free_bytes(s->constructors[i], 101+i);
++        if (s->ctor_final[i]!=s->ctor_initial[i] || !s->ctor_policy[i] ||
++            s->traces[i].stage!=9 || s->traces[i].core_mask!=0x3fe) ++s->ctor_failures;
++        if (!p2_partition_retire(s->constructors[i],101+i)) ++s->ctor_failures;
++    }
++    LOCKCLR(s->execution_lock);
++    s->ctor_done=1;
++}
++
++static void coherent_hil_worker(void *argument)
++{
++    coherent_hil_control *c = (coherent_hil_control *)argument;
++    unsigned i;
++    ctor_worker_check(c);
++    for (i = 1; i <= 14; ++i) {
++        while (c->round != i) _waitus(1000);
++        p2_child_vm_coherent_entry(&c->job);
++        c->free_bytes = c->job.admission_free;
++        c->low_address = c->job.admission_low;
++        c->acknowledged = i;
++    }
++    for (;;) _waitus(1000);
++}
++static unsigned source_hil_mask(void)
++{
++    unsigned i, mask = 0;
++    for (i = 0; i < 8; ++i) if (_cogchk(i)) mask |= 1u << i;
++    return mask;
++}
++static uint32_t source_hil_now(void)
++{
++    uint32_t t = 0; p2_clock_millis_now(&t); return t;
++}
++int p2_coherent_admission_hil(void)
++{
++    static const char *sources[] = {
++        "def f(x) def recurse(n) if n==0 return x end return recurse(n-1) end return recurse(30) end",
++        "def f(x) return x end",
++        "def f(x) raise 'value_error', 'source-error' end",
++        "def f(x) var s='0123456789abcdef' while true s=s+s end end",
++        "def f(x) return x+19 end",
++        "def f(x) return x end",
++        "def f(x) return x end",
++        "def f(x) return x end"
++    };
++    coherent_hil_control *c;
++    unsigned char *stack;
++    unsigned i, kind, before, during, after, owned_cogs, owned_count = 0, untouched = 0;
++    int cog, control_lock, failures = 0;
++    uint32_t start;
++    char line[320];
++    p2_serial_init();
++    if (!p2_cog_registry_startup() || !p2_hub_heap_init()) return 1;
++    p2_child_vm_runtime_lock_init();
++    before = source_hil_mask();
++    c = (coherent_hil_control *)p2_hub_calloc(1, sizeof(*c));
++    stack = (unsigned char *)p2_hub_malloc(32768);
++    if (!c || !stack) return 2;
++    control_lock = LOCKNEW;
++    if (control_lock < 0 || p2_child_vm_runtime_lock < 0) return 7;
++    for (i = 0; i < 14; ++i) {
++        c->tickets[i] = (p2_partition *)p2_hub_calloc(1, p2_partition_storage_size());
++        if (!c->tickets[i] || !p2_partition_reserve(c->tickets[i],i+1,i<12?262144:(i==12?64:1024),
++                P2_PARTITION_CACHE_LINE_BYTES,control_lock,p2_child_vm_runtime_lock)) {
++            p2_serial_puts("COHERENT_ADMISSION_9ab1_RESERVE_FAILED\n"); return 8;
++        }
++    }
++    c->execution_lock=p2_child_vm_runtime_lock;
++    for (i=0; i<4; ++i) {
++        c->constructors[i]=(p2_partition *)p2_hub_calloc(1,p2_partition_storage_size());
++        if (!c->constructors[i] || !p2_partition_reserve(c->constructors[i],101+i,
++                524288,P2_PARTITION_CACHE_LINE_BYTES,control_lock,c->execution_lock)) return 87;
++    }
++    memset(stack, 0xa5, 32768);
++    cog = p2_catalina_cogstart_C(coherent_hil_worker, c, stack, 32768);
++    during = source_hil_mask();
++    snprintf(line, sizeof(line), "\nCOHERENT_ADMISSION_9ab1_BEGIN main=%d worker=%d before=%x during=%x\n", _cogid(), cog, before, during);
++    p2_serial_puts(line);
++    if (cog < 0) return 3;
++    owned_cogs = during & ~before;
++    for (i=0; i<8; ++i) if (owned_cogs & (1u<<i)) ++owned_count;
++    if (owned_count != 2 || !(owned_cogs & (1u<<cog))
++            || (before & ~during) || (owned_cogs & (1u<<_cogid()))) return 11;
++    for (i=0; i<4; ++i) if (!p2_partition_offer(c->constructors[i],101+i,cog)) return 88;
++    c->ctor_go=1;
++    start=source_hil_now();
++    while (!c->ctor_done && (uint32_t)(source_hil_now()-start)<50000) _waitus(1000);
++    if (!c->ctor_done) {p2_serial_puts("CONSTRUCTOR_OPTIONS_f51c_TIMEOUT\n"); return 89;}
++    for (i=0; i<4; ++i) {
++        snprintf(line,sizeof(line),"CONSTRUCTOR_ROW id=%u stage=%d core=%x libs=%u policy=%d value=%d low=%lx initial=%lu free=%lu retired=%d\n",
++            i,c->traces[i].stage,c->traces[i].core_mask,c->traces[i].library_ticks,
++            c->ctor_policy[i],c->ctor_value[i],(unsigned long)c->ctor_low[i],
++            (unsigned long)c->ctor_initial[i],(unsigned long)c->ctor_final[i],
++            p2_partition_is_retired(c->constructors[i],101+i));
++        p2_serial_puts(line);
++    }
++    snprintf(line,sizeof(line),"CONSTRUCTOR_OPTIONS_f51c_DONE failures=%d created=%d deleted=%d\n",
++        c->ctor_failures,c->ctor_created,c->ctor_deleted); p2_serial_puts(line);
++    failures+=c->ctor_failures;
++    for (i = 1; i <= 14; ++i) {
++        kind = i<=12 ? (i-1)%6 : i-7;
++        memset(&c->job, 0, sizeof(c->job));
++        c->job.bytes = 262144; c->job.slot = 0;
++        c->job.admission = c->tickets[i-1]; c->job.admission_generation = i;
++        if (!p2_partition_offer(c->job.admission,i,cog)) return 9;
++        strcpy(c->job.source, sources[kind]); strcpy(c->job.name, "f");
++        c->job.argc = 1; c->job.arg_type[0] = 1; c->job.arg_int[0] = 76123 + i;
++        if (kind == 1) {
++            c->job.arg_type[0] = 4;
++            strcpy(c->job.arg_string[0], "copied-input-c17d");
++        }
++        if (kind == 5) {
++            c->job.cancel_requested = 1;
++            if (!p2_partition_cancel(c->job.admission,i)) return 10;
++        }
++        start = source_hil_now(); c->round = i;
++        while (c->job.status != 2 && (uint32_t)(source_hil_now() - start) < 45000) _waitus(1000);
++        if (c->job.status != 2) {
++            snprintf(line, sizeof(line), "COHERENT_ADMISSION_9ab1_TIMEOUT round=%u status=%d stage=%d load=%d call=%d\n", i, c->job.status, c->job.vm_new_detail_stage, c->job.load_stage, c->job.call_stage);
++            p2_serial_puts(line);
++            /* Do not kill a possibly lock-owning VM or free its resources. */
++            return 4;
++        }
++        c->job.status = 4;
++        while (c->acknowledged != i && (uint32_t)(source_hil_now() - start) < 47000) _waitus(1000);
++        if (c->acknowledged != i) return 5;
++        if (kind == 0 && !(c->job.call_result == BE_OK && c->job.result_int == 76123 + i)) ++failures;
++        if (kind == 1 && !(c->job.call_result == BE_OK && !strcmp(c->job.result_string, "copied-input-c17d"))) ++failures;
++        if (kind == 2 && c->job.call_result != BE_EXCEPTION) ++failures;
++        if (kind == 3 && c->job.call_result != BE_MALLOC_FAIL) ++failures;
++        if (kind == 4 && !(c->job.call_result == BE_OK && c->job.result_int == 76142 + i)) ++failures;
++        if (kind == 5 && !(c->job.call_result == BE_EXIT && !c->job.child_created && !c->job.partition_ready)) ++failures;
++        if (kind >= 6 && !(c->job.call_result==BE_MALLOC_FAIL && !c->job.child_created
++                && !c->job.child_deleted && c->job.partition_ready)) ++failures;
++        if (c->job.child_created != c->job.child_deleted) ++failures;
++        if (!c->job.admission_retired || c->job.admission_free != c->job.admission_initial_free) ++failures;
++        if (kind != 5 && (!c->job.partition_ready || !c->job.selected || !c->job.admission_low)) ++failures;
++        snprintf(line, sizeof(line), "ADMISSION_ROW round=%u kind=%u cog=%d status=%d source=%d result=%d type=%d integer=%ld created=%d deleted=%d free=%u low=%x initial=%u retired=%d elapsed=%lu text=%s\n", i, kind, c->job.cog_id, c->job.status, c->job.source_result, c->job.call_result, c->job.result_type, (long)c->job.result_int, c->job.child_created, c->job.child_deleted, c->free_bytes, c->low_address, (unsigned)c->job.admission_initial_free, c->job.admission_retired, (unsigned long)(source_hil_now()-start), c->job.result_string);
++        p2_serial_puts(line);
++    }
++    p2_serial_puts("ADMISSION_PHASE_COMPLETE\n");
++    _cogstop(cog);
++    p2_serial_puts("ADMISSION_WORKER_STOPPED\n");
++    /* Diagnostic-only stopping of the two cogs this isolated launcher created.
++     * Do NOT treat this as production cache-release/reaping evidence. The v1
++     * legacy post-workload cleanup did not emit its completion marker. Keep
++     * every Hub/cache allocation quarantined until reset; never reuse/free it. */
++    for (i=0; i<8; ++i) if (i!=(unsigned)cog && (owned_cogs & (1u<<i))) _cogstop(i);
++    p2_serial_puts("ADMISSION_OWNED_COGS_STOPPED\n");
++    after = source_hil_mask();
++    while (untouched < 32768 && stack[untouched] == 0xa5) ++untouched;
++    if (after != before || untouched < 64) ++failures;
++    snprintf(line, sizeof(line), "COHERENT_ADMISSION_9ab1_END failures=%d after=%x stack_bytes=32768 untouched_prefix=%u write_extent=%u\n", failures, after, untouched, 32768-untouched);
++    p2_serial_puts(line);
++    /* Heap partition/cache reuse is still unqualified: retain allocations
++     * until reset instead of pretending diagnostic teardown is production. */
++    return failures ? 6 : 0;
++}

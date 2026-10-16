@@ -1,0 +1,14 @@
+--- a/docs/P2_CLOCK_TESTING.md
++++ b/docs/P2_CLOCK_TESTING.md
+@@ -26,9 +26,8 @@
+ 
+ ### Exact tick conversion
+ 
+-Catalina's SDK defines `uint64_t` as `unsigned long`, a 32-bit target type.
+-Production clock math uses neither that typedef nor `long long`; this report
+-does not infer compiler support or width for other C integer types. `p2_clock_divmod(high, low, divisor, &q, &r)` divides an
++Catalina's SDK aliases `uint64_t`/`long long` to 32 bits; they are not used in
++production clock math. `p2_clock_divmod(high, low, divisor, &q, &r)` divides an
+ explicit pair of 32-bit words. It starts with `r = high % divisor`, shifts in
+ all 32 low-word bits, and subtracts on either the saved carry or `r >= divisor`.
+ The quotient is modulo 2^32 and the remainder is exact.

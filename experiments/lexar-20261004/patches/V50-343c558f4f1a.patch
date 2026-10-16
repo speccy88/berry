@@ -1,0 +1,55 @@
+--- a/tests/native/test_vm_special_storage.c
++++ b/tests/native/test_vm_special_storage.c
+@@ -17,10 +17,8 @@
+ } allocation;
+ typedef struct {
+     allocation *head;
+-    size_t live, bytes, calls, moves, releases;
++    size_t live, bytes, calls, moves;
+     int fail;
+-    int use_budget;
+-    unsigned budget;
+ } domain;
+ static void *domain_realloc(void *context, void *ptr, size_t size)
+ {
+@@ -35,13 +33,11 @@
+         if (ptr) {
+             a = *slot; *slot = a->next;
+             d->bytes -= a->size; --d->live;
+-            ++d->releases;
+             free(a->ptr); free(a);
+         }
+         return NULL;
+     }
+-    if (d->fail || (d->use_budget && !d->budget)) return NULL;
+-    if (d->use_budget) --d->budget;
++    if (d->fail) return NULL;
+     result = malloc(size); assert(result);
+     if (ptr) {
+         a = *slot;
+@@ -164,25 +160,6 @@
+     oa.special_allocator_context = NULL;
+     assert(be_vm_new_with_options(&oa) == NULL); /* P2 requires Hub domain */
+     assert(!ordinary_a.live);
+-    /* Ordinary OOM after special allocation releases both domains. */
+-    {
+-        unsigned budget, refused=0, late=0, succeeded=0;
+-        bvm_options sweep={0};
+-        sweep.allocator=domain_realloc; sweep.allocator_context=&ordinary_a;
+-        sweep.special_allocator=domain_realloc; sweep.special_allocator_context=&a;
+-        ordinary_a.use_budget=1;
+-        for (budget=0; budget<320; ++budget) {
+-            size_t releases=a.releases;
+-            ordinary_a.budget=budget;
+-            vm=be_vm_new_with_options(&sweep);
+-            if (vm) {++succeeded; be_vm_delete(vm);}
+-            else {++refused; if (a.releases>releases) ++late;}
+-            assert(!ordinary_a.live && !ordinary_a.bytes && !a.live && !a.bytes);
+-        }
+-        ordinary_a.use_budget=0;
+-        assert(refused && late && succeeded);
+-        printf("PASS explicit domains constructor sweep: refused=%u late=%u succeeded=%u\n",refused,late,succeeded);
+-    }
+     /* Special-only custom options also get protected constructor failure. */
+     oa.allocator = NULL; oa.allocator_context = NULL;
+     oa.special_allocator = domain_realloc; oa.special_allocator_context = &a;

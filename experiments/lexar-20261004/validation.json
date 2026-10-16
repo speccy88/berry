@@ -1,0 +1,31 @@
+{
+  "checks": [
+    {
+      "command": "python tools/verify_recovery_variants.py",
+      "exit_code": 0,
+      "tests_run": null
+    },
+    {
+      "command": "python -B -m unittest discover -s tools/tests -p test_uart_transcript.py -v",
+      "exit_code": 0,
+      "tests_run": 17
+    },
+    {
+      "command": "python -B -O -m unittest discover -s tools/tests -p test_uart_transcript.py -v",
+      "exit_code": 0,
+      "tests_run": 17
+    },
+    {
+      "command": "python -B -m unittest tools.tests.test_build_p2.CommandTests tools.tests.test_build_p2.BuildTests.test_required_arguments tools.tests.test_build_p2.BuildTests.test_unsupported_host_is_failure -v",
+      "exit_code": 0,
+      "tests_run": 3
+    }
+  ],
+  "variant_reconstruction": "55/55 exact SHA256 matches",
+  "secret_and_private_identifier_pattern_findings": 0,
+  "license": "Derived Berry sources under existing MIT LICENSE; no third-party dependency added",
+  "hardware_tests": "not run",
+  "native_c_tests": "not run",
+  "catalina_build": "not run; no configured SDK/compiler installed for this task",
+  "runtime_experiments": "archived, unvalidated for execution"
+}

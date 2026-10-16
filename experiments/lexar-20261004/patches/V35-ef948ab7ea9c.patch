@@ -1,0 +1,36 @@
+--- a/port/p2/runtime/p2_partition.c
++++ b/port/p2/runtime/p2_partition.c
+@@ -12,7 +12,6 @@
+     volatile int state;
+     int producer, consumer, control_lock, execution_lock;
+     volatile int cancelled;
+-    unsigned hub_storage;
+     unsigned char *base;
+     size_t bytes;
+     p2_heap_arena arena; /* only the admitted consumer accesses this member */
+@@ -62,7 +61,7 @@
+ #endif
+     p->producer = _cogid(); p->consumer = -1;
+     p->control_lock = control_lock; p->execution_lock = execution_lock;
+-    p->base = backing; p->bytes = bytes; p->cancelled = 0; p->hub_storage = 1;
++    p->base = backing; p->bytes = bytes; p->cancelled = 0;
+     p->live_blocks = 0; p->rejections = 0;
+     p->generation = generation;
+     p->state = P2_PARTITION_RESERVED;
+@@ -83,15 +82,11 @@
+     if (!raw) return 0;
+     p->producer = _cogid(); p->consumer = -1;
+     p->control_lock = control_lock; p->execution_lock = execution_lock;
+-    p->base = raw; p->bytes = bytes; p->cancelled = 0; p->hub_storage = 0;
++    p->base = raw; p->bytes = bytes; p->cancelled = 0;
+     p->live_blocks = 0; p->rejections = 0;
+     p->generation = generation;
+     p->state = P2_PARTITION_RESERVED;
+     return 1;
+-}
+-int p2_partition_is_hub(p2_partition *p, unsigned generation)
+-{
+-    return ticket(p, generation) && p->hub_storage;
+ }
+ int p2_partition_offer(p2_partition *p, unsigned generation, int cog)
+ {

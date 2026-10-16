@@ -1,0 +1,20 @@
+--- a/src/be_vm.h
++++ b/src/be_vm.h
+@@ -148,15 +148,14 @@
+      * Cleanup runs after native GC finalizers, before allocator teardown.
+      * It must not execute Berry, access Berry objects, allocate, or throw. */
+     void *native_context;
++    bvm_allocator special_allocator;
++    void *special_allocator_context;
+     void (*native_context_delete)(bvm *vm, void *context);
+     /* Allocation-free native interrupt cadence, independent for each VM. */
+     unsigned int native_poll_ticks;
+     /* Only valid during construction; cleared before return or OOM teardown. */
+     bvm_construction_progress construction_progress;
+     void *construction_context;
+-    /* Independent, VM-lifetime exception-vector domain; never ordinary pools. */
+-    bvm_allocator special_allocator;
+-    void *special_allocator_context;
+ };
+ 
+ #define NONE_FLAG           0

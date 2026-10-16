@@ -1,0 +1,23 @@
+--- a/tests/native/test_p2_vm_state.c
++++ b/tests/native/test_p2_vm_state.c
+@@ -716,13 +716,15 @@
+     }
+ #endif
+ #if BE_DEBUG
+-    /* Preserve the existing debug assertion contract for default APIs.
++    /* Preserve the existing debug assertion contract for both default APIs.
+      * Each expected abort is isolated from the test runner; never dump cores. */
+-    int default_apis = 2;
++    for (int use_wrapper = 0; use_wrapper < 2 +
+ #ifdef BE_VM_OPTIONS_API
+-    ++default_apis;
+-#endif
+-    for (int use_wrapper = 0; use_wrapper < default_apis; ++use_wrapper) {
++         1
++#else
++         0
++#endif
++         ; ++use_wrapper) {
+         int status = 0;
+         pid_t child = fork();
+         CHECK(child >= 0);

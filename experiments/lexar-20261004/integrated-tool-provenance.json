@@ -1,0 +1,8 @@
+{
+  "source_archive": "rebuild.tar.gz",
+  "source_member": "berry-stabilization/interactive-product/verify_uart.py",
+  "original_sha256": "9b14cc4a3aa3e47b9533e4703786c5e45a02109f9a7819dfc503b36b455e4617",
+  "license": "MIT, derived from the same Berry/P2 project",
+  "integration": "Adapted as an offline consistency verifier. No archived UART log, host identity, serial device or private conversation is included.",
+  "source_mtime": "2026-09-20T21:38:30.347775+00:00"
+}

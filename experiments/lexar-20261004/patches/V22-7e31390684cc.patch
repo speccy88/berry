@@ -1,0 +1,51 @@
+--- a/port/p2/runtime/berry_port.c
++++ b/port/p2/runtime/berry_port.c
+@@ -4,7 +4,6 @@
+ #include "berry_port.h"
+ #include "p2_serial.h"
+ #include "p2_smartserial.h"
+-#include "p2_vm_state.h"
+ 
+ #if defined(__CATALINA__)
+ #include <stdio.h>
+@@ -1277,7 +1276,11 @@
+ #endif
+ 
+ enum {
++#if defined(__CATALINA__)
++    BERRY_P2_BAUD = 230400,
++#else
+     BERRY_P2_BAUD = 115200,
++#endif
+     BERRY_P2_RX_PIN = 63,
+     BERRY_P2_TX_PIN = 62
+ };
+@@ -1324,7 +1327,9 @@
+ 
+ void p2_check_interrupt(bvm *vm)
+ {
+-    if (p2_vm_poll_due(vm)) {
++    static unsigned int poll_tick;
++
++    if ((++poll_tick & 0x3ffu) == 0) {
+         p2_check_interrupt_now(vm);
+     }
+ }
+@@ -1553,16 +1558,7 @@
+             continue;
+         }
+ 
+-        if (ch == 3) {
+-            /* End this REPL invocation, not the VM. The production outer
+-             * loop restarts it with the same globals; continuation source
+-             * is released by be_repl's normal reader-EOF path. */
+-            buffer[0] = '\0';
+-            p2_serial_puts("\nKeyboardInterrupt\n");
+-            return NULL;
+-        }
+-
+-        if (ch == 4) {
++        if (ch == 3 || ch == 4) {
+             if (pos == 0) {
+                 p2_exit_requested = 1;
+                 serial_write_char('\n');

@@ -1,0 +1,1440 @@
+{
+  "schema_version": 1,
+  "base_commit": "b702a03787620aa461718b426e484294d7f33d0b",
+  "base_ref_at_recovery": "fix/p2-stability",
+  "upstream": "https://github.com/speccy88/berry",
+  "license": "MIT; see repository LICENSE",
+  "meaning": "Each patch reconstructs one exact recovered file from the pinned public base. Alternative variants are mutually exclusive, not a patch series. No target-runtime change is selected from these experiments.",
+  "source_archives": [
+    {
+      "name": "rebuild.tar.gz",
+      "sha256": "bd72a762ad8e369a95bc3e1ea07dbb2b8241683817d76f648038d862ea429693"
+    },
+    {
+      "name": "small-text-source.tar.gz",
+      "sha256": "c00506e354a73bea938bd412197a8baffd15f3ff7ee60cbdf2e97cabf6edb22d"
+    },
+    {
+      "name": "additional-source.tar.gz",
+      "sha256": "6ee65089893b34f09890c9c018eeb372de13ed9a96a049915a7fe86c25c148b9"
+    },
+    {
+      "name": "recovery-gap-supplement.tar.gz",
+      "sha256": "e4604dd3669ea81b7b89f301e389efdd70921702d6f0f30964d72993c7fba282"
+    }
+  ],
+  "variants": [
+    {
+      "id": "V01",
+      "path": "docs/P2_CLOCK_TESTING.md",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V01-6e219fa73401.patch",
+      "patch_sha256": "09b9e3f8bfaf3d7b2894c433b72fb1e65287cf8ce7cd84a7da2adacfa4faffe3",
+      "base_sha256": "0eaf1ab4c1715ac3df074050e3b029885c316443196c83c496369379c1ca8f74",
+      "recovered_sha256": "6e219fa7340188f5f3a3e046544e5974fa083ec81cfb57cd89e10f3a7aa20cb3",
+      "recovered_git_blob": "e9d78cf89d6f62f393b55557d80ac717dbd8cf1a",
+      "added_lines": 2,
+      "removed_lines": 3,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry/docs/P2_CLOCK_TESTING.md",
+          "mtime": "2026-09-13T04:02:03.947567+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry/docs/P2_CLOCK_TESTING.md",
+          "mtime": "2026-09-13T02:59:33.440349+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry/docs/P2_CLOCK_TESTING.md",
+          "mtime": "2026-09-13T03:08:30.473032+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/uart-clock-20260913T000904Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/uart-clock-20260913T000904Z/berry/docs/P2_CLOCK_TESTING.md",
+          "mtime": "2026-09-13T00:09:04.144348+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V02",
+      "path": "port/p2/include/berry_conf_p2.h",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V02-1db3bbac8a07.patch",
+      "patch_sha256": "5035cbc932498824a84f432928a40854a62e27fd92c897cebd37db3357cdaca6",
+      "base_sha256": "99082547a81fd95c287eb3a673a5e3d04a2eb266dfd1b943c060446cfd3420d3",
+      "recovered_sha256": "1db3bbac8a07ffbbe2a6154f2861e79262fcf4efdb753060aa7d9bd27199c0c3",
+      "recovered_git_blob": "f87da54c78960fa0454dc4b73c1aec399e490583",
+      "added_lines": 1,
+      "removed_lines": 2,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry/port/p2/include/berry_conf_p2.h",
+          "mtime": "2026-09-13T04:02:04.060195+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V03",
+      "path": "port/p2/include/berry_conf_p2.h",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V03-43de047af73a.patch",
+      "patch_sha256": "7f0eb6bb08892b334fbb3adc7a9e2af36ad8dfa654df847aa84ab68f1544013b",
+      "base_sha256": "99082547a81fd95c287eb3a673a5e3d04a2eb266dfd1b943c060446cfd3420d3",
+      "recovered_sha256": "43de047af73a67fb7b5b3d9f0db48bef8516f254116755cdbf63cb42bbcf21fb",
+      "recovered_git_blob": "a880338aad4627f9bbe2f9aba36b477fd3bbf7bd",
+      "added_lines": 1,
+      "removed_lines": 6,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry/port/p2/include/berry_conf_p2.h",
+          "mtime": "2026-09-13T02:59:34.348448+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry/port/p2/include/berry_conf_p2.h",
+          "mtime": "2026-09-13T03:08:30.571435+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V04",
+      "path": "port/p2/include/p2_partition.h",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V04-3671203c66fa.patch",
+      "patch_sha256": "a836f4c45ff4925461c1895f9efc1d0692e93c65f189510ab97f168b774591d2",
+      "base_sha256": "c54d3dc08374d48235048d3f00f609978a3c4bcfea82dad7bc08a6b64625bb7a",
+      "recovered_sha256": "3671203c66fa267644db7d1e2565adfa777829991b82f86abb52c2967ae584e6",
+      "recovered_git_blob": "2be4a6a36c9a483120b951fda445e06f798a5294",
+      "added_lines": 0,
+      "removed_lines": 1,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/special-target-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v1/berry/port/p2/include/p2_partition.h",
+          "mtime": "2026-09-20T19:47:19.156610+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/special-target-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v2/berry/port/p2/include/p2_partition.h",
+          "mtime": "2026-09-20T19:47:19.156610+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V05",
+      "path": "port/p2/overrides/be_libs_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V05-624837b8e6c8.patch",
+      "patch_sha256": "62948e789eca4efc3e38b2c3bbbd0fbc70e765f44031649f4886f15006eeb17c",
+      "base_sha256": "b7ac5b2a6c9cf116545803655d50bf30a6f275af9f57af649adb7548fdeeb618",
+      "recovered_sha256": "624837b8e6c890957b56cf7b0fa23077cbe348a4050d26e4a69d7e04f7c9c888",
+      "recovered_git_blob": "aee858c056991c2e6c82297ddade309ce55f7a54",
+      "added_lines": 1,
+      "removed_lines": 0,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/constructor-target-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/constructor-target-v1/berry/port/p2/overrides/be_libs_p2.c",
+          "mtime": "2026-09-20T18:37:11.076903+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/constructor-target-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/constructor-target-v2/berry/port/p2/overrides/be_libs_p2.c",
+          "mtime": "2026-09-20T18:37:11.076903+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V06",
+      "path": "port/p2/overrides/be_p2lib_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V06-0bcf67bc9801.patch",
+      "patch_sha256": "47e0e13f7dd5681ab710c34a36f4c2235ff25826796b556e140d215828f2aec5",
+      "base_sha256": "51ab9217c3b8fafe48863896a680f7dfb027d47a9c63aaaf26c2a438c8588afb",
+      "recovered_sha256": "0bcf67bc980101a9f81817cff3cc200fc278a648a4c1e8b6b5c1ae65bd63a0da",
+      "recovered_git_blob": "ff137c0707eaaede43cfb13ab12ef036d9a1d5e1",
+      "added_lines": 259,
+      "removed_lines": 108,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/constructor-target-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/constructor-target-v1/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-20T18:53:30.925100+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V07",
+      "path": "port/p2/overrides/be_p2lib_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V07-1fbff256eb4e.patch",
+      "patch_sha256": "10985205b7f32f94c38159374bf4d16aaf05744ef68ddb5209b264609ddab7a8",
+      "base_sha256": "51ab9217c3b8fafe48863896a680f7dfb027d47a9c63aaaf26c2a438c8588afb",
+      "recovered_sha256": "1fbff256eb4ee2e4bac5402c4ede2128b0d9f69df75f0c804d40391f378b2ff6",
+      "recovered_git_blob": "f36601e5ce4266edf611e4636a48f6a8a3e84cfd",
+      "added_lines": 265,
+      "removed_lines": 108,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/constructor-target-v3/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/constructor-target-v3/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-20T19:05:38.090648+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V08",
+      "path": "port/p2/overrides/be_p2lib_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V08-27052823a34a.patch",
+      "patch_sha256": "dad7432dfff658ef94775506e5e16e620d7fdd5351853a585cc67efb3473a65c",
+      "base_sha256": "51ab9217c3b8fafe48863896a680f7dfb027d47a9c63aaaf26c2a438c8588afb",
+      "recovered_sha256": "27052823a34a9f1cefd5cd7111d3b7221f506a9884ebea73c6308e584545fd20",
+      "recovered_git_blob": "76877cd80bf750d921e79e2b8d78a70e14c8be3a",
+      "added_lines": 267,
+      "removed_lines": 673,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-13T04:02:04.039309+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-13T02:59:34.345670+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-13T03:08:30.574222+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V09",
+      "path": "port/p2/overrides/be_p2lib_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V09-3e0f61190881.patch",
+      "patch_sha256": "855f5c03f6461350a4450470c2366b5e89d851dd2bb460686c771ee021250a2e",
+      "base_sha256": "51ab9217c3b8fafe48863896a680f7dfb027d47a9c63aaaf26c2a438c8588afb",
+      "recovered_sha256": "3e0f611908819395721e458263709c0d378f8464e4c0908b8fcb3063cd3d0b62",
+      "recovered_git_blob": "48d9c54cad216f706fd47c74f89a2fe13285d439",
+      "added_lines": 131,
+      "removed_lines": 123,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v1/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-13T11:07:55.332060+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V10",
+      "path": "port/p2/overrides/be_p2lib_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V10-54cc21e2f0f1.patch",
+      "patch_sha256": "5a8b61ee65c50e51de50b3383fa5ee5da674917c7ac711eccba6cc853ca797c1",
+      "base_sha256": "51ab9217c3b8fafe48863896a680f7dfb027d47a9c63aaaf26c2a438c8588afb",
+      "recovered_sha256": "54cc21e2f0f186264d9f1092613beb198f6876e4c14ed154cf832b4230ea0038",
+      "recovered_git_blob": "d9a22c9f7977f01ef424d336f4c1837d471f9cb5",
+      "added_lines": 378,
+      "removed_lines": 77,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/special-target-v3/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v3/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-20T20:10:01.289725+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V11",
+      "path": "port/p2/overrides/be_p2lib_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V11-63b766793dac.patch",
+      "patch_sha256": "ad0ef2b6070cac30e9bd1602c313e79e7587145b1c733aa194ae107f89492200",
+      "base_sha256": "51ab9217c3b8fafe48863896a680f7dfb027d47a9c63aaaf26c2a438c8588afb",
+      "recovered_sha256": "63b766793dac3cfa23b1d4bfe4dc0a88956665cb65d970cb577aa89410f69fc5",
+      "recovered_git_blob": "7d542de62f5d900edfc81428b47a1157af6ef969",
+      "added_lines": 146,
+      "removed_lines": 123,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v2/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-13T11:31:54.336968+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v3/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v3/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-20T18:02:39.797635+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v4/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v4/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-20T18:14:34.297693+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V12",
+      "path": "port/p2/overrides/be_p2lib_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V12-669e34816cbe.patch",
+      "patch_sha256": "8c6184993a20c4dfc24b5edf3403bd298a3d1e7a8cfde82d5decad1f93238777",
+      "base_sha256": "51ab9217c3b8fafe48863896a680f7dfb027d47a9c63aaaf26c2a438c8588afb",
+      "recovered_sha256": "669e34816cbe3630beaf78f16866a374922cd2c92024c6a8daf0a540aa631698",
+      "recovered_git_blob": "6be8993b07bdf81a4fb2abb9107356816b0a6523",
+      "added_lines": 385,
+      "removed_lines": 87,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/special-target-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v1/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-20T19:58:18.482773+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V13",
+      "path": "port/p2/overrides/be_p2lib_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V13-8573c7db29eb.patch",
+      "patch_sha256": "f9ca53690249966bf6b8447bee6a394422201cc6c499845ebebabb2cc1a2d075",
+      "base_sha256": "51ab9217c3b8fafe48863896a680f7dfb027d47a9c63aaaf26c2a438c8588afb",
+      "recovered_sha256": "8573c7db29eb539e5f9bab41386b9ed109c25d1a596b3725fba8d76e966842d5",
+      "recovered_git_blob": "fd40362671cbbe52448b21d944f24dd7703f7b69",
+      "added_lines": 385,
+      "removed_lines": 87,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/special-target-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v2/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-20T20:02:13.608287+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V14",
+      "path": "port/p2/overrides/be_p2lib_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V14-993cff02067d.patch",
+      "patch_sha256": "3d22ef94a6c499f6dd3b710b07970def8925a3fdef7db613e809bac0768c67f2",
+      "base_sha256": "51ab9217c3b8fafe48863896a680f7dfb027d47a9c63aaaf26c2a438c8588afb",
+      "recovered_sha256": "993cff02067d6ce8ccfb053c27c032b13c7772914463c83fd8d6202bcd7af2bd",
+      "recovered_git_blob": "ca9f49e7c337ffeb49af6d923439c95cda4b68dd",
+      "added_lines": 141,
+      "removed_lines": 336,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/source-oom-baseline/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/source-oom-baseline/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-13T09:56:15.927336+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V15",
+      "path": "port/p2/overrides/be_p2lib_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V15-9b2d47c92c2d.patch",
+      "patch_sha256": "c09ddf191cae4c3a8bd891c379dc2733aaef1c7053ce19d78042f82f6f996489",
+      "base_sha256": "51ab9217c3b8fafe48863896a680f7dfb027d47a9c63aaaf26c2a438c8588afb",
+      "recovered_sha256": "9b2d47c92c2df1a9d23a94a25254b3ed334422e8374723902b7c0ec0460e2a27",
+      "recovered_git_blob": "180c3145fb562759bc972652dae741ea43c5ee10",
+      "added_lines": 266,
+      "removed_lines": 108,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/constructor-target-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/constructor-target-v2/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-20T19:00:13.178747+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V16",
+      "path": "port/p2/overrides/be_p2lib_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V16-c6066decfad7.patch",
+      "patch_sha256": "d2e3b79dc2b0a87937ac7fb9bf6e1b76753f49cb3132d8e564d068318d9aa3bb",
+      "base_sha256": "51ab9217c3b8fafe48863896a680f7dfb027d47a9c63aaaf26c2a438c8588afb",
+      "recovered_sha256": "c6066decfad72e1b55bb44dd25779b4746aa1e692b057c0ac1e413d25bd285f0",
+      "recovered_git_blob": "7528f080c361dff88fce110773adee25cea56a92",
+      "added_lines": 266,
+      "removed_lines": 108,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/constructor-target-v4/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/constructor-target-v4/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-20T19:12:15.125181+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V17",
+      "path": "port/p2/overrides/be_p2lib_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V17-d492b6766b68.patch",
+      "patch_sha256": "0e2b7a6a8687dd4320af068b26f3a0322671746969702d8e72f7225c156a0a35",
+      "base_sha256": "51ab9217c3b8fafe48863896a680f7dfb027d47a9c63aaaf26c2a438c8588afb",
+      "recovered_sha256": "d492b6766b68b0ee6a505325132b9c769801df6dcbd8199e1f56d049a72e14f7",
+      "recovered_git_blob": "7d93eeff2d46ae9840772d83d4c5c2025640222a",
+      "added_lines": 150,
+      "removed_lines": 390,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/admission-trace/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/admission-trace/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-13T09:48:03.332973+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/parallel-probe/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/parallel-probe/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-13T06:02:54.227235+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/parallel-probe-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/parallel-probe-v2/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-13T06:56:27.058930+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/parallel-probe-v3/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/parallel-probe-v3/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-13T07:07:48.833058+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V18",
+      "path": "port/p2/overrides/be_p2lib_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V18-dd284c5a992b.patch",
+      "patch_sha256": "4130a1069122b765f4bee9edb5fa3c10a76a099a8f086c9801b4caeaafc6d1d5",
+      "base_sha256": "51ab9217c3b8fafe48863896a680f7dfb027d47a9c63aaaf26c2a438c8588afb",
+      "recovered_sha256": "dd284c5a992ba36579806588553e6d55512c13879700a02e794342ba2b801f4b",
+      "recovered_git_blob": "27c3fc73bd5b3a77fbc3130d970e10477dcab314",
+      "added_lines": 123,
+      "removed_lines": 194,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/source-lifecycle-candidate/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/source-lifecycle-candidate/berry/port/p2/overrides/be_p2lib_p2.c",
+          "mtime": "2026-09-13T10:07:12.338294+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V19",
+      "path": "port/p2/overrides/be_tasklib_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V19-ca4709c6db4e.patch",
+      "patch_sha256": "e6b27e4b97fd918150da2211ac1848b7587d0171d1cf88ef9f2b976a0d1c41b0",
+      "base_sha256": "3d5c7ffcd7fe020110f731a68b23007a0e656447f3f81d8c0d0084bbc8883295",
+      "recovered_sha256": "ca4709c6db4e51630f7cdd489d8c6e7e9347870984eefa85b4f6f0ea1c1a9364",
+      "recovered_git_blob": "3f7b3a755df3113c59ad675df3a69c7cd6cf2293",
+      "added_lines": 216,
+      "removed_lines": 296,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/host-snapshot-01",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/host-snapshot-01/port/p2/overrides/be_tasklib_p2.c",
+          "mtime": "2026-09-12T22:14:06.585802+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V20",
+      "path": "port/p2/overrides/be_tasklib_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V20-d2f62e40f214.patch",
+      "patch_sha256": "512e49f9b1906cd5b698c65fb47080874f6668d29fdb82274d0280045067a4ef",
+      "base_sha256": "3d5c7ffcd7fe020110f731a68b23007a0e656447f3f81d8c0d0084bbc8883295",
+      "recovered_sha256": "d2f62e40f2148d2bd3deaaf69bdf1089d7943bb80593c19812db8a79bf2d2850",
+      "recovered_git_blob": "03d3b076cf630e88be844f38ceb48035246a3f99",
+      "added_lines": 151,
+      "removed_lines": 172,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry/port/p2/overrides/be_tasklib_p2.c",
+          "mtime": "2026-09-13T04:02:04.039921+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry/port/p2/overrides/be_tasklib_p2.c",
+          "mtime": "2026-09-13T02:59:33.836714+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry/port/p2/overrides/be_tasklib_p2.c",
+          "mtime": "2026-09-13T03:08:30.574798+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/uart-clock-20260913T000904Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/uart-clock-20260913T000904Z/berry/port/p2/overrides/be_tasklib_p2.c",
+          "mtime": "2026-09-13T00:09:04.270202+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V21",
+      "path": "port/p2/runtime/berry_port.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V21-4fb2cfe69067.patch",
+      "patch_sha256": "13c0ee5f3c32e0c7e23c96d407f9e288734e9390895037200c35cd6508230a46",
+      "base_sha256": "f0b87e2bfe6b62919a619dd5f704e5dd020eb5d750469b8125bc7363f7e4de31",
+      "recovered_sha256": "4fb2cfe69067ca48fd171c70de7f39477410112fe4dc86f707506f7978712a66",
+      "recovered_git_blob": "a4e0c5a5f5614bdc5a82d617ae344e0138cf1426",
+      "added_lines": 12,
+      "removed_lines": 16,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/snapshots/uart-clock-20260913T000904Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/uart-clock-20260913T000904Z/berry/port/p2/runtime/berry_port.c",
+          "mtime": "2026-09-13T00:09:04.334174+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V22",
+      "path": "port/p2/runtime/berry_port.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V22-7e31390684cc.patch",
+      "patch_sha256": "451dbb4694c42778527522ed9a831d00c08ef5fbd8f716622f8eba1e04060dde",
+      "base_sha256": "f0b87e2bfe6b62919a619dd5f704e5dd020eb5d750469b8125bc7363f7e4de31",
+      "recovered_sha256": "7e31390684cc2e67d1395db52f5e60567cb11b512d420aafb705c3f12afa052f",
+      "recovered_git_blob": "6eb4711e085a190eb075122bdf0d0b4e97702fb9",
+      "added_lines": 8,
+      "removed_lines": 12,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry/port/p2/runtime/berry_port.c",
+          "mtime": "2026-09-13T04:02:04.042559+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry/port/p2/runtime/berry_port.c",
+          "mtime": "2026-09-13T02:59:34.347916+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry/port/p2/runtime/berry_port.c",
+          "mtime": "2026-09-13T03:08:30.628141+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V23",
+      "path": "port/p2/runtime/main_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V23-70940de5b0be.patch",
+      "patch_sha256": "08ac0440e1d8dc30b0a82f03b217bd80027248568ccd7c6495a43330c27a5faf",
+      "base_sha256": "8344bfd87d7830127b13662bfc9b932e76e19919875804356a434d9cc29ae6fa",
+      "recovered_sha256": "70940de5b0be40121c884e4724bb26783a40c61d55e1048d0c6230cac4ecdbdc",
+      "recovered_git_blob": "650bde754db9c3550195ef0ab6fc284a5868b834",
+      "added_lines": 5,
+      "removed_lines": 15,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-13T04:02:04.042156+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-13T02:59:34.344662+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-13T03:08:30.576775+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V24",
+      "path": "port/p2/runtime/main_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V24-7e73248d440a.patch",
+      "patch_sha256": "a1f6c5062094d01f8634f7a24e68be2c4b2d7837c00a335f152d1cc5dc049115",
+      "base_sha256": "8344bfd87d7830127b13662bfc9b932e76e19919875804356a434d9cc29ae6fa",
+      "recovered_sha256": "7e73248d440a9f0d7cde7378d37ba1b1846f2cc303f9ee273076e36a5a9ef5d2",
+      "recovered_git_blob": "884136092e9c654cdd66ec5c0c84e11491360b1b",
+      "added_lines": 94,
+      "removed_lines": 202,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/admission-trace/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/admission-trace/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-13T09:48:03.760368+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V25",
+      "path": "port/p2/runtime/main_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V25-b02e2b4ae2a1.patch",
+      "patch_sha256": "a65c8cf3c837e7abb77fb9a30213fd7ddd713dbf2a0a1bfcb0c6d3924fbe941a",
+      "base_sha256": "8344bfd87d7830127b13662bfc9b932e76e19919875804356a434d9cc29ae6fa",
+      "recovered_sha256": "b02e2b4ae2a1bcd5a3d7f3985c5878e6181036f705ba0736e4741770749709a0",
+      "recovered_git_blob": "a385a5d63d28af8b0bdb19d8941d760c8f08f644",
+      "added_lines": 90,
+      "removed_lines": 202,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/parallel-probe-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/parallel-probe-v2/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-13T06:57:25.034025+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V26",
+      "path": "port/p2/runtime/main_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V26-be260b43c177.patch",
+      "patch_sha256": "68148a08bc8cbb827b4f1eed96eb435322020b874f4f08ecc59abc194128bd97",
+      "base_sha256": "8344bfd87d7830127b13662bfc9b932e76e19919875804356a434d9cc29ae6fa",
+      "recovered_sha256": "be260b43c177d1405f5471811b78c487b2de4ede6edeff3101ec423c299bdc8d",
+      "recovered_git_blob": "ae3e14621629291d2cdc25f0dc7fd849644d6bb8",
+      "added_lines": 3,
+      "removed_lines": 211,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/source-lifecycle-candidate/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/source-lifecycle-candidate/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-13T10:07:13.227294+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V27",
+      "path": "port/p2/runtime/main_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V27-c812633046ff.patch",
+      "patch_sha256": "90c9e6ac4cb8db3d05289c8cc7119af37fb26ee480c0dbba663554caf868a76a",
+      "base_sha256": "8344bfd87d7830127b13662bfc9b932e76e19919875804356a434d9cc29ae6fa",
+      "recovered_sha256": "c812633046ffdbf2d1ef21df856494354068885644b55e8ad7a9c808f5cee5fc",
+      "recovered_git_blob": "4f81c78912383f6ac488ad607f50bf8c292107cb",
+      "added_lines": 105,
+      "removed_lines": 201,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/parallel-probe/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/parallel-probe/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-13T06:08:31.363213+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V28",
+      "path": "port/p2/runtime/main_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V28-e75236d1a49e.patch",
+      "patch_sha256": "5cacb0ab12df133c2adda1884f6f187d90f0da43ec0ae7630b6500845869f34c",
+      "base_sha256": "8344bfd87d7830127b13662bfc9b932e76e19919875804356a434d9cc29ae6fa",
+      "recovered_sha256": "e75236d1a49eee50fdd7abc2516d7b479d76a9582f50760a748623fa8ef44651",
+      "recovered_git_blob": "5140b29a908ae030f3c5d3ea50c5a4c8aec4917d",
+      "added_lines": 93,
+      "removed_lines": 202,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/parallel-probe-v3/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/parallel-probe-v3/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-13T07:13:03.643450+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V29",
+      "path": "port/p2/runtime/main_p2.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V29-ff28cc1020e9.patch",
+      "patch_sha256": "b916d56f51531a39e81229c73b82a9ead0134e47f59b8e04e1bf7a10521027a3",
+      "base_sha256": "8344bfd87d7830127b13662bfc9b932e76e19919875804356a434d9cc29ae6fa",
+      "recovered_sha256": "ff28cc1020e923026ad16dfb709981ad50089474a2fd7e723592233b764f0c57",
+      "recovered_git_blob": "a1472e35a4228b6ae50fd1cfdcf59f410dfc4e03",
+      "added_lines": 3,
+      "removed_lines": 211,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v1/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-13T11:07:57.228060+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v3/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v3/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-20T18:02:39.797794+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v4/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v4/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-20T18:14:34.297931+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/constructor-target-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/constructor-target-v1/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-20T18:53:30.925268+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/constructor-target-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/constructor-target-v2/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-20T19:00:13.178995+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/constructor-target-v3/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/constructor-target-v3/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-20T19:05:38.090803+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/constructor-target-v4/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/constructor-target-v4/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-20T19:12:15.125329+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/special-target-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v1/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-20T19:58:18.483431+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/special-target-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v2/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-20T20:02:13.608541+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/special-target-v3/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v3/berry/port/p2/runtime/main_p2.c",
+          "mtime": "2026-09-20T20:10:01.290400+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V30",
+      "path": "port/p2/runtime/p2_heap.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V30-8d3eff6260b1.patch",
+      "patch_sha256": "caf6b03578f654b777daf35f04029b087f12317cc21b54924aec941c30ae881b",
+      "base_sha256": "f32d6adece76e384b9f26e890a2abfb265755f534903ec90cca8780fdaf0e429",
+      "recovered_sha256": "8d3eff6260b1e448fa544b508a52428b9f1221cff551f0dc0d46ac833eb22bda",
+      "recovered_git_blob": "b87242ae787a76c6d423dad2764c22bb26311566",
+      "added_lines": 36,
+      "removed_lines": 83,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/admission-trace/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/admission-trace/berry/port/p2/runtime/p2_heap.c",
+          "mtime": "2026-09-13T09:48:04.056368+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V31",
+      "path": "port/p2/runtime/p2_heap.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V31-9c45ca5fb226.patch",
+      "patch_sha256": "b2b312687f363335f3ff07d66b47cbe1383c6222debcc7d41c638f95999afcbe",
+      "base_sha256": "f32d6adece76e384b9f26e890a2abfb265755f534903ec90cca8780fdaf0e429",
+      "recovered_sha256": "9c45ca5fb22682615993a3c98ae1198a72ea69fd4406866f41016b11bd0ebad5",
+      "recovered_git_blob": "29c4ec4e03280b614bdce7cf5fa902972b768d00",
+      "added_lines": 37,
+      "removed_lines": 83,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/parallel-probe-v3/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/parallel-probe-v3/berry/port/p2/runtime/p2_heap.c",
+          "mtime": "2026-09-13T07:07:49.446985+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V32",
+      "path": "port/p2/runtime/p2_heap.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V32-cd4d84b1dc3c.patch",
+      "patch_sha256": "d959db1dd668078dd29efbe4cfc5c12cc738b4de1380442a76ae828428cf6d0b",
+      "base_sha256": "f32d6adece76e384b9f26e890a2abfb265755f534903ec90cca8780fdaf0e429",
+      "recovered_sha256": "cd4d84b1dc3c923b2e3bca5fb70fbe1cbbbd12a53287b0be7e28a51f515e2a7c",
+      "recovered_git_blob": "2fc0cfc92c70aba25a3668732a9653f4bfac070b",
+      "added_lines": 16,
+      "removed_lines": 33,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v1/berry/port/p2/runtime/p2_heap.c",
+          "mtime": "2026-09-13T10:59:14.631689+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V33",
+      "path": "port/p2/runtime/p2_hub_heap.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V33-1f95c875e49d.patch",
+      "patch_sha256": "f14517952a01be42171b1f43a7f0fd0dbc4911d319607d118acd9ba21c42daed",
+      "base_sha256": "0f37be3489095d7145054b32a1c9c0b77d555c2cb66b8fca52ad2ec4f58789e0",
+      "recovered_sha256": "1f95c875e49d5a598b320d83a2467711870da6a46eb9df44b5a0fd74f953cd1b",
+      "recovered_git_blob": "4f7a70aa3512896464959e6b5c8084a55cf3ec82",
+      "added_lines": 3,
+      "removed_lines": 3,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry/port/p2/runtime/p2_hub_heap.c",
+          "mtime": "2026-09-13T02:59:34.346759+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V34",
+      "path": "port/p2/runtime/p2_hub_heap.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V34-70f41f3e37de.patch",
+      "patch_sha256": "425737de9b28eb676ad07bc1cb55e73e2bbecad8c92a143ae63a9d7c157f960b",
+      "base_sha256": "0f37be3489095d7145054b32a1c9c0b77d555c2cb66b8fca52ad2ec4f58789e0",
+      "recovered_sha256": "70f41f3e37de5ab68b3cc50a8d9ee0c419037ed55be0b8ae92fad93615be5b66",
+      "recovered_git_blob": "4db723d3c933b136bdc9efe84fe02a8693dd131c",
+      "added_lines": 7,
+      "removed_lines": 1,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/special-target-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v1/berry/port/p2/runtime/p2_hub_heap.c",
+          "mtime": "2026-09-20T19:58:19.782243+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/special-target-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v2/berry/port/p2/runtime/p2_hub_heap.c",
+          "mtime": "2026-09-20T20:02:13.723814+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/special-target-v3/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v3/berry/port/p2/runtime/p2_hub_heap.c",
+          "mtime": "2026-09-20T20:10:02.292756+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V35",
+      "path": "port/p2/runtime/p2_partition.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V35-ef948ab7ea9c.patch",
+      "patch_sha256": "4520e70c20de00e25d68bdcf75968ccf01f3c065d048d355066aff7269917f07",
+      "base_sha256": "4a9a17c47a83eb32a101f199c0524a64612e33a32cd8382dcefc5298ed15ef7c",
+      "recovered_sha256": "ef948ab7ea9c5062bf3e76502339959d0d67589f2b891e80d6caf5a81d6699b8",
+      "recovered_git_blob": "eef38050586db41f4ece46046a9ec138dc88f6c1",
+      "added_lines": 2,
+      "removed_lines": 7,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/special-target-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v1/berry/port/p2/runtime/p2_partition.c",
+          "mtime": "2026-09-20T19:47:19.284633+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/special-target-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v2/berry/port/p2/runtime/p2_partition.c",
+          "mtime": "2026-09-20T19:47:19.284633+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V36",
+      "path": "src/be_vm.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V36-5f4faeee4b4e.patch",
+      "patch_sha256": "c1432c2bddcfa3f4c93b69f287d977ca86c84650cc709db43cefe39ceece5e61",
+      "base_sha256": "f0f8e2eef6b41d5ce04a88886b755d84f1268b1fbc1a0878ed7207019ce4851b",
+      "recovered_sha256": "5f4faeee4b4e8ef27c674b2d0d556a0c208fb1376fa920bd85a3e1c19aada569",
+      "recovered_git_blob": "a64a3e1209fe1cc54918173e435fa71d5f9d79a6",
+      "added_lines": 39,
+      "removed_lines": 103,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/host-snapshot-01",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/host-snapshot-01/src/be_vm.c",
+          "mtime": "2026-09-12T22:22:37.328007+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry/src/be_vm.c",
+          "mtime": "2026-09-13T04:02:03.940937+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry/src/be_vm.c",
+          "mtime": "2026-09-13T02:59:34.033069+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry/src/be_vm.c",
+          "mtime": "2026-09-13T03:08:30.464868+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/uart-clock-20260913T000904Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/uart-clock-20260913T000904Z/berry/src/be_vm.c",
+          "mtime": "2026-09-13T00:09:04.446281+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V37",
+      "path": "src/be_vm.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V37-983eb56e7d32.patch",
+      "patch_sha256": "de4b81c4de19b0aa5ed74d7a4798aa28d027a67eca423f173d3a5e4eab0c0a23",
+      "base_sha256": "f0f8e2eef6b41d5ce04a88886b755d84f1268b1fbc1a0878ed7207019ce4851b",
+      "recovered_sha256": "983eb56e7d32e0f190286718aad10e7c49153da503d34acdcfeccf1bfed6a453",
+      "recovered_git_blob": "eb7ed32cd78223182d7b22a6a4c8ee8a3eea7c28",
+      "added_lines": 40,
+      "removed_lines": 71,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v1/berry/src/be_vm.c",
+          "mtime": "2026-09-13T10:49:00.730133+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v2/berry/src/be_vm.c",
+          "mtime": "2026-09-13T10:49:00.730133+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v3/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v3/berry/src/be_vm.c",
+          "mtime": "2026-09-13T10:49:00.730133+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V38",
+      "path": "src/be_vm.h",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V38-685ebfd0fe31.patch",
+      "patch_sha256": "aa9f46a1c34300b2ef5466c66fd73eda71bf6a58e6dd95e066ddfad0eafa6cd6",
+      "base_sha256": "3842b55d209c00d21de7b46c9bb1051d7fa303ca155be69821b749489450e5a3",
+      "recovered_sha256": "685ebfd0fe317e2898b77f04f0ce9ecd6c4391b4b2d6c16bc969f7b98f8c2af5",
+      "recovered_git_blob": "d9056c437d858bb775264b6edb753d8c0f25390f",
+      "added_lines": 2,
+      "removed_lines": 3,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/special-target-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v1/berry/src/be_vm.h",
+          "mtime": "2026-09-20T19:47:18.306633+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/special-target-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v2/berry/src/be_vm.h",
+          "mtime": "2026-09-20T19:47:18.306633+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V39",
+      "path": "src/berry.h",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V39-47cb28e97f09.patch",
+      "patch_sha256": "8b3648c67e26bcfc524b76d60ab224b901c84bb32f1cf83ed068a4426ab99df2",
+      "base_sha256": "50d34c477525cce8036ca36c5cbcfce44f8eb877a036c8fd25517e8504732108",
+      "recovered_sha256": "47cb28e97f093d90806621c6229f926f83d368ffeefce47bbb4cf4c1a3ff96ea",
+      "recovered_git_blob": "02f96d8e1c4ff80249f17eebfffae4c489fbd9d2",
+      "added_lines": 1,
+      "removed_lines": 36,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v1/berry/src/berry.h",
+          "mtime": "2026-09-13T10:38:45.148172+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V40",
+      "path": "tests/native/test_p2_clock.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V40-2d2ecc57da13.patch",
+      "patch_sha256": "1d1a064f0f2782e517a592d8c9bfcccca9de014d951e4b2b2b5f3dfec8e980ee",
+      "base_sha256": "59a6eed3fe03e9e26c79282eedc7d5fe8c9fbce0bc307ecd7a06ba1a5e14047d",
+      "recovered_sha256": "2d2ecc57da13d0f571eac7a9d1b87e2ad7fec29e62617d5b2340c62b71cb23e1",
+      "recovered_git_blob": "3424577afd22158a6201f5733d72609a222d9f4c",
+      "added_lines": 0,
+      "removed_lines": 4,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry/tests/native/test_p2_clock.c",
+          "mtime": "2026-09-13T04:02:03.963340+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry/tests/native/test_p2_clock.c",
+          "mtime": "2026-09-13T02:59:34.039185+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry/tests/native/test_p2_clock.c",
+          "mtime": "2026-09-13T03:08:30.546140+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/uart-clock-20260913T000904Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/uart-clock-20260913T000904Z/berry/tests/native/test_p2_clock.c",
+          "mtime": "2026-09-13T00:09:04.460648+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V41",
+      "path": "tests/native/test_p2_cog_handles.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V41-2598fea0dc60.patch",
+      "patch_sha256": "866b11bacbb066c086509551fb625bdc8f6054aca1e2f555dd21781052ab8943",
+      "base_sha256": "4a2074d3fba3db094966857baa8220f0f55076e2754087fc3df626f882961566",
+      "recovered_sha256": "2598fea0dc60b93c2d851878c5513cc4dff26655a6b01088b3c9bbbe8e60e461",
+      "recovered_git_blob": "b675221fd2a6377c5a4f9af050884f7011a15543",
+      "added_lines": 8,
+      "removed_lines": 23,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v1/berry/tests/native/test_p2_cog_handles.c",
+          "mtime": "2026-09-13T11:05:02.426071+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V42",
+      "path": "tests/native/test_p2_cog_handles.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V42-3a56b98347a9.patch",
+      "patch_sha256": "ea083295a3c7ab4bd284b30d2a7e3a8f3ec150176142a2528d0defe96ae010f3",
+      "base_sha256": "4a2074d3fba3db094966857baa8220f0f55076e2754087fc3df626f882961566",
+      "recovered_sha256": "3a56b98347a92662cbad8abdb802b7369e811a5a83a87bf2d011a9787eac3a00",
+      "recovered_git_blob": "ee502fbf3945eb6ad3e76f7e8a701a31d1b9beb0",
+      "added_lines": 6,
+      "removed_lines": 74,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/source-oom-baseline/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/source-oom-baseline/berry/tests/native/test_p2_cog_handles.c",
+          "mtime": "2026-09-13T10:04:01.749306+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V43",
+      "path": "tests/native/test_p2_partition.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V43-315b113f067d.patch",
+      "patch_sha256": "a49d11ca46efe89644657605fbcb1e00587b8081485e1b631dfe7875ab53ead6",
+      "base_sha256": "63e636dc368c6d9c57b64823a3ecd5fb250eeda72ca887277248b51ba1e04712",
+      "recovered_sha256": "315b113f067da1b225e3a190044f3de849d540b2d4617c0c4b6922953a0509f5",
+      "recovered_git_blob": "e5b1dbdb4292278fe59440db8d2e79e1aa81e1cb",
+      "added_lines": 0,
+      "removed_lines": 3,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/special-target-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v1/berry/tests/native/test_p2_partition.c",
+          "mtime": "2026-09-20T19:46:12.387637+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/special-target-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v2/berry/tests/native/test_p2_partition.c",
+          "mtime": "2026-09-20T19:46:12.387637+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V44",
+      "path": "tests/native/test_p2_partition.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V44-884621c9894e.patch",
+      "patch_sha256": "51577c6068603d1996048202620c589eb2fdbfcbad2db967124e912f1f9033c6",
+      "base_sha256": "63e636dc368c6d9c57b64823a3ecd5fb250eeda72ca887277248b51ba1e04712",
+      "recovered_sha256": "884621c9894e118d9c8376eac63e5fdc617a520d368d413ae5a73a0d2708c46a",
+      "recovered_git_blob": "7cf347cdf013799c861bcc70c9f2ffb1e40999a7",
+      "added_lines": 1,
+      "removed_lines": 48,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v1/berry/tests/native/test_p2_partition.c",
+          "mtime": "2026-09-13T11:05:00.897071+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V45",
+      "path": "tests/native/test_p2_vm_state.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V45-2bde169c6b5f.patch",
+      "patch_sha256": "eef2b4c1aa895cf0e68e67a94d6e06945ba7bdc556d914134799ea3b75600267",
+      "base_sha256": "7401d7901eeac77a0a66c61e5b1fb00ed6d3d59d9bff202b90faa014d051d404",
+      "recovered_sha256": "2bde169c6b5f3a6d99e2abd33bdec13eade346551f101295517f47ede4518593",
+      "recovered_git_blob": "4fc7601e9da3d54ae75bc2a3caa196d2b8ce34ff",
+      "added_lines": 7,
+      "removed_lines": 5,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/constructor-target-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/constructor-target-v1/berry/tests/native/test_p2_vm_state.c",
+          "mtime": "2026-09-20T18:52:05.719846+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/constructor-target-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/constructor-target-v2/berry/tests/native/test_p2_vm_state.c",
+          "mtime": "2026-09-20T18:52:05.719846+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V46",
+      "path": "tests/native/test_p2_vm_state.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V46-3a7428f8d9d4.patch",
+      "patch_sha256": "54322854aa77737c13911d1960327055a34f4462b747c3df0eda62c62fd922ff",
+      "base_sha256": "7401d7901eeac77a0a66c61e5b1fb00ed6d3d59d9bff202b90faa014d051d404",
+      "recovered_sha256": "3a7428f8d9d4560cecc0456335b4c0719b009bed1342edcdc6614a8b5489c7b5",
+      "recovered_git_blob": "e2d06c21cebc38d492a0a85a11c0943993302356",
+      "added_lines": 0,
+      "removed_lines": 250,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v2/berry/tests/native/test_p2_vm_state.c",
+          "mtime": "2026-09-13T11:10:59.158048+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v3/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v3/berry/tests/native/test_p2_vm_state.c",
+          "mtime": "2026-09-13T11:10:59.158048+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V47",
+      "path": "tests/native/test_p2_vm_state.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V47-46eb63ffbe49.patch",
+      "patch_sha256": "a440de14c4342d9618cdf3f302cf9f4bd8a17187383c1e135d3489c88205cc09",
+      "base_sha256": "7401d7901eeac77a0a66c61e5b1fb00ed6d3d59d9bff202b90faa014d051d404",
+      "recovered_sha256": "46eb63ffbe494f3be4fd4e081447ded1d2f97265a7cbad8f42e8f9d5aebb6763",
+      "recovered_git_blob": "d5b2e63409096c4c05c724f2ecdc67da3ba18805",
+      "added_lines": 5,
+      "removed_lines": 249,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v1/berry/tests/native/test_p2_vm_state.c",
+          "mtime": "2026-09-13T11:01:01.941087+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V48",
+      "path": "tests/native/test_p2_vm_state.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V48-51302253876f.patch",
+      "patch_sha256": "3d8168c73743f59fd6ce095992cef038e6c9113048e15bc0000e64760ecea4d7",
+      "base_sha256": "7401d7901eeac77a0a66c61e5b1fb00ed6d3d59d9bff202b90faa014d051d404",
+      "recovered_sha256": "51302253876f7a55f76e47c8259cedf0d9ddd0361677a16903065d6a431bf6cf",
+      "recovered_git_blob": "4bf5934fbba7f30ced3e50429f6f94242d35a6f6",
+      "added_lines": 3,
+      "removed_lines": 345,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/cancellation-candidate/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/cancellation-candidate/berry/tests/native/test_p2_vm_state.c",
+          "mtime": "2026-09-13T07:14:30.067175+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/resumed-candidate-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/resumed-candidate-v2/berry/tests/native/test_p2_vm_state.c",
+          "mtime": "2026-09-13T07:30:33.537018+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V49",
+      "path": "tests/native/test_p2_vm_state.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V49-d105aec6c68f.patch",
+      "patch_sha256": "d40216b38dd850bbdb22e0eccdf1397c6564a86f07477e9678e6c28159fcbe5d",
+      "base_sha256": "7401d7901eeac77a0a66c61e5b1fb00ed6d3d59d9bff202b90faa014d051d404",
+      "recovered_sha256": "d105aec6c68fb09507cdad24b205056bf132dc8299f8fa77ab0ec8e8980a4c85",
+      "recovered_git_blob": "f8474a76a4c5ac59488f7976e6492c7e7f710f7a",
+      "added_lines": 0,
+      "removed_lines": 314,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/module-root-candidate/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/module-root-candidate/berry/tests/native/test_p2_vm_state.c",
+          "mtime": "2026-09-13T08:10:28.768269+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V50",
+      "path": "tests/native/test_vm_special_storage.c",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V50-343c558f4f1a.patch",
+      "patch_sha256": "6dbeaa258c2cae70782c6db6af1d1c2966c54201d56dad1b622ca81269306b35",
+      "base_sha256": "17fa59d5d942c4389863dba5e864598e0b6b12ce8322a26422f33fdb32b8d0f4",
+      "recovered_sha256": "343c558f4f1ab9e0de7fd824031762a81438d25b5a49e9654a557f81bcc38a71",
+      "recovered_git_blob": "5a6faaede0163d1127cef9f8660b9278673d9385",
+      "added_lines": 2,
+      "removed_lines": 25,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/special-target-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v1/berry/tests/native/test_vm_special_storage.c",
+          "mtime": "2026-09-20T19:52:26.195613+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/special-target-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v2/berry/tests/native/test_vm_special_storage.c",
+          "mtime": "2026-09-20T19:52:26.195613+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V51",
+      "path": "tools/p2/loader/catalina_flash_program.py",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V51-e0eb76b17c9b.patch",
+      "patch_sha256": "8b29051c3c84165832f60757914a232b7cca8ba31341332c555cdceb5df1dc55",
+      "base_sha256": "686c3f547a48339bc6ff9c6f1b9f7127b6ebbab5be2362f3ca5181cf03624a85",
+      "recovered_sha256": "e0eb76b17c9bc2471bcc6ffa290b2c6d08317d5d4b7288a23e96b65dd86214f2",
+      "recovered_git_blob": "7a2897d339127f1c53223e7c5cc7dfd716e8d45e",
+      "added_lines": 1,
+      "removed_lines": 1,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/cancellation-candidate/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/cancellation-candidate/berry/tools/p2/loader/catalina_flash_program.py",
+          "mtime": "2026-09-13T07:14:30.172992+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V52",
+      "path": "tools/test_exception_storage.py",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V52-3343ef58e06e.patch",
+      "patch_sha256": "aa28eab7d71f83e389ed450ac5155a459fddeeaa01f7ab913dcd3b41e286cfc3",
+      "base_sha256": "768af28c6a2b28294a80927c06d73c4191eefa7b179b7f2fd69287069be0f2c6",
+      "recovered_sha256": "3343ef58e06e9a0956e9b09fda059f30d5e6a1cc23dca863a697fa27d7f31930",
+      "recovered_git_blob": "d188ad54f0cc8366ece07c9ee3a0fd41f3434edf",
+      "added_lines": 10,
+      "removed_lines": 16,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/special-target-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/special-target-v1/berry/tools/test_exception_storage.py",
+          "mtime": "2026-09-20T19:44:47.391644+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V53",
+      "path": "tools/test_p2_clock.py",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V53-bc50ac6fe8ae.patch",
+      "patch_sha256": "fceb564d245cc8564e2de36f022da7ac4e89ab7606047e8daecc2f2e563ff362",
+      "base_sha256": "09cca4ba906e8a0020e1c1ffc14a4c5177e32d75d0de9fb92a7343a645f9b8b9",
+      "recovered_sha256": "bc50ac6fe8aeda3a64c8ef6327f135de339b4d2f156cf58d590508154edc7390",
+      "recovered_git_blob": "4b85301d7d35956831893543d9f39dd9e0179823",
+      "added_lines": 0,
+      "removed_lines": 2,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/extended-libraries-20260913T040203Z/berry/tools/test_p2_clock.py",
+          "mtime": "2026-09-13T04:02:03.932991+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T025933Z/berry/tools/test_p2_clock.py",
+          "mtime": "2026-09-13T02:59:34.342188+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/hub-exceptions-20260913T030830Z/berry/tools/test_p2_clock.py",
+          "mtime": "2026-09-13T03:08:30.451697+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/snapshots/uart-clock-20260913T000904Z/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/snapshots/uart-clock-20260913T000904Z/berry/tools/test_p2_clock.py",
+          "mtime": "2026-09-13T00:09:04.640795+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V54",
+      "path": "tools/test_p2_vm_state.py",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V54-e77ee7365abd.patch",
+      "patch_sha256": "f3175c44ead75ab92a9c71a2aed34453b326a8e8fe9414f19413aff6ac463438",
+      "base_sha256": "9a6b7ffa64866e3eab8ab05098f7a11d67e7b5a7d8707e5adc16a2d08929d272",
+      "recovered_sha256": "e77ee7365abda6b1b9f388b1cff60264830335e8dd6d7bb7daabff1eac83f650",
+      "recovered_git_blob": "c97a16b831a24ba0d7775cf2d5da9ee85fdd7beb",
+      "added_lines": 1,
+      "removed_lines": 7,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v1/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v1/berry/tools/test_p2_vm_state.py",
+          "mtime": "2026-09-13T10:35:32.834782+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v2/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v2/berry/tools/test_p2_vm_state.py",
+          "mtime": "2026-09-13T10:35:32.834782+00:00"
+        },
+        {
+          "snapshot": "berry-stabilization/coherent-admission-v3/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/coherent-admission-v3/berry/tools/test_p2_vm_state.py",
+          "mtime": "2026-09-13T10:35:32.834782+00:00"
+        }
+      ]
+    },
+    {
+      "id": "V55",
+      "path": "tools/tests/test_catalina_flash_program.py",
+      "status": "archived-experimental-not-integrated",
+      "patch": "patches/V55-7434fe215308.patch",
+      "patch_sha256": "5fd702634f151a2753208a8d76c8c595075435db421c5c4d16bb5d3828fa0e27",
+      "base_sha256": "9ec04833cb0889a17420982afb0c4ced3d18b8bdd62d02cab1584de7d13337c8",
+      "recovered_sha256": "7434fe21530836435e3cc6cb298435fec79c89b232449965b5a532c922f1b279",
+      "recovered_git_blob": "77fb075a89b2a6090ce678cc82d4870d4cf2d602",
+      "added_lines": 0,
+      "removed_lines": 15,
+      "sources": [
+        {
+          "snapshot": "berry-stabilization/cancellation-candidate/berry",
+          "archive": "rebuild.tar.gz",
+          "archive_member": "berry-stabilization/cancellation-candidate/berry/tools/tests/test_catalina_flash_program.py",
+          "mtime": "2026-09-13T07:14:30.176295+00:00"
+        }
+      ]
+    }
+  ]
+}

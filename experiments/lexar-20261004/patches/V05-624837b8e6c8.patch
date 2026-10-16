@@ -1,0 +1,10 @@
+--- a/port/p2/overrides/be_libs_p2.c
++++ b/port/p2/overrides/be_libs_p2.c
+@@ -83,6 +83,7 @@
+ #endif
+ extern void be_cache_taskmodule(bvm *vm);
+ 
++
+ void be_loadlibs(bvm *vm)
+ {
+     be_vm_construction_tick(vm, 20);

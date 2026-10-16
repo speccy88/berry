@@ -1,0 +1,321 @@
+--- a/port/p2/runtime/main_p2.c
++++ b/port/p2/runtime/main_p2.c
+@@ -1,213 +1,117 @@
++/* DIAGNOSTIC ONLY. Hub mailboxes, independent P2 partitions and real Berry.
++ * No GPIO/peripheral workload. No flash or filesystem write. Not a public API.
++ */
+ #include <propeller2.h>
++#include <stdint.h>
+ #include <stdio.h>
+-#include <stdint.h>
+-
++#include <string.h>
+ #include "berry.h"
+-#include "be_repl.h"
++#include "be_gc.h"
+ #include "berry_port.h"
+-#include "p2_build_info.h"
++#include "p2_heap.h"
+ #include "p2_hub_heap.h"
+ #include "p2_cog_registry.h"
+-
+-#ifndef BE_P2_RUN_SD_MAIN
+-#define BE_P2_RUN_SD_MAIN 0
+-#endif
+-
+-#define BE_P2_SD_MAIN_PATH "/berry/main.be"
++#include "p2_clock.h"
+ 
+ int stackspace[4096];
+-
+-static volatile uint32_t p2_startup_status_run;
+-static unsigned int p2_startup_status_frame;
+-
+-void p2_startup_status_tick(int stage)
+-{
+-    static const char frames[] = "|/-\\";
+-    char line[] = "\rStarting Berry VM |";
+-
+-    (void)stage;
+-    if (p2_startup_status_run) {
+-        line[sizeof(line) - 2] = frames[p2_startup_status_frame++ & 3u];
++void p2_startup_status_tick(int stage) { (void)stage; }
++extern int p2_catalina_cogstart_C(void (*entry)(void *), void *argument, void *stack, int bytes);
++typedef struct job {
++    volatile unsigned stage, ready, done;
++    volatile int cog, status, oom, recovery;
++    volatile long value;
++    unsigned index;
++} job;
++static job *jobs;
++static int init_lock;
++static uint32_t now(void) { uint32_t ms=0; p2_clock_millis_now(&ms); return ms; }
++static int barrier(bvm *vm) {
++    int id = _cogid();
++    unsigned i;
++    uint32_t start = now();
++    for(i=0;i<2;i++) if(jobs[i].cog==id) break;
++    if(i==2) be_raise(vm,"runtime_error","unknown worker");
++    jobs[i].ready=1;
++    while(!jobs[1-i].ready) {
++        if((uint32_t)(now()-start)>15000) be_raise(vm,"runtime_error","parallel barrier timeout");
++        _waitms(1);
++    }
++    be_pushnil(vm); be_return(vm);
++}
++static void worker(void *arg) {
++    job *j = arg;
++    bvm *vm;
++    const char *source = "barrier() var kept=[] for i:0..511 kept.push({'i':i,'owner':identity}) end import gc gc.collect() var sum=0 for m:kept assert(m['owner']==identity) sum+=m['i'] end return sum+identity";
++    j->cog=_cogid(); j->stage=1;
++    if(!p2_heap_vm_partition_select(j->index)) { j->status=-100; j->done=1; for(;;)_waitms(1000); }
++    /* Short initialization-only lock protects legacy creation diagnostics;
++     * it is released before any parser, workload or barrier executes. */
++    while(!_locktry(init_lock)) {}
++    j->stage=2;
++    vm=be_vm_new();
++    _lockrel(init_lock);
++    if(!vm) { j->status=-101; j->done=1; for(;;)_waitms(1000); }
++    j->stage=3;
++    be_regfunc(vm,"barrier",barrier);
++    be_pushint(vm, 401+(int)j->index); be_setglobal(vm,"identity"); be_pop(vm,1);
++    j->stage=4;
++    j->status=be_loadstring(vm,source);
++    j->stage=5;
++    if(j->status==BE_OK) j->status=be_pcall(vm,0);
++    j->stage=6;
++    if(j->status==BE_OK && be_isint(vm,-1)) j->value=be_toint(vm,-1);
++    be_pop(vm,be_top(vm));
++    j->oom=be_loadstring(vm,"var retained=[] while true retained.push(bytes(1024)) end");
++    if(j->oom==BE_OK) j->oom=be_pcall(vm,0);
++    be_pop(vm,be_top(vm));
++    j->stage=7;
++    be_gc_collect(vm);
++    j->recovery=be_loadstring(vm,"import gc gc.collect() return identity");
++    if(j->recovery==BE_OK) j->recovery=be_pcall(vm,0);
++    if(j->recovery==BE_OK && (!be_isint(vm,-1)||be_toint(vm,-1)!=401+(int)j->index)) j->recovery=-102;
++    be_pop(vm,be_top(vm));
++    j->stage=8;
++    be_vm_delete(vm);
++    p2_heap_vm_partition_clear_current();
++    j->stage=9; j->done=1;
++    for(;;) _waitms(1000);
++}
++int main(void) {
++    void *stacks[2];
++    int cogs[2],i;
++    uint32_t start,last;
++    char line[240];
++    p2_serial_init();
++    if(!p2_hub_heap_init() || !p2_cog_registry_startup()) return 1;
++    init_lock=_locknew();
++    jobs=p2_hub_calloc(2,sizeof(job));
++    if(init_lock<0 || !jobs) return 2;
++    p2_serial_puts("\nPARALLEL_REALVM_0d249d_BEGIN\n");
++    /* Force main arena initialization before partition creation. */
++    { void *p=p2_heap_malloc(4); if(!p)return 3; p2_heap_free(p); }
++    for(i=0;i<2;i++) {
++        if(!p2_heap_vm_partition_create(i,1048576)) return 4;
++        stacks[i]=p2_hub_malloc(32768); if(!stacks[i])return 5;
++        jobs[i].index=i; jobs[i].cog=-1;
++    }
++    for(i=0;i<2;i++) {
++        cogs[i]=p2_catalina_cogstart_C(worker,&jobs[i],stacks[i],32768);
++        snprintf(line,sizeof(line),"LAUNCH %d cog=%d\n",i,cogs[i]); p2_serial_puts(line);
++    }
++    start=last=now();
++    while(!(jobs[0].done&&jobs[1].done) && (uint32_t)(now()-start)<180000) {
++        if((uint32_t)(now()-last)>=1000) {
++            last=now();
++            snprintf(line,sizeof(line),"STAGES %u %u READY %u %u\n",jobs[0].stage,jobs[1].stage,jobs[0].ready,jobs[1].ready);
++            p2_serial_puts(line);
++        }
++        _waitms(10);
++    }
++    for(i=0;i<2;i++) {
++        snprintf(line,sizeof(line),"RESULT %d cog=%d stage=%u ready=%u done=%u status=%d value=%ld oom=%d recovery=%d\n",i,jobs[i].cog,jobs[i].stage,jobs[i].ready,jobs[i].done,jobs[i].status,jobs[i].value,jobs[i].oom,jobs[i].recovery);
+         p2_serial_puts(line);
+     }
+-}
+-
+-static int p2_startup_status_start(void)
+-{
+-    p2_startup_status_run = 1;
+-    p2_startup_status_frame = 0;
+-    p2_startup_status_tick(0);
++    p2_serial_puts("PARALLEL_REALVM_0d249d_END\n");
++    for(;;)_waitms(1000);
+     return 0;
+ }
+-
+-static void p2_startup_status_stop(int cog)
+-{
+-    (void)cog;
+-    p2_startup_status_run = 0;
+-    p2_serial_puts("\rStarting Berry VM done\n");
+-}
+-
+-#if BE_DEBUG
+-#define P2_FULL_VERSION "Berry " BERRY_VERSION " (debug)"
+-#else
+-#define P2_FULL_VERSION "Berry " BERRY_VERSION
+-#endif
+-
+-#if defined(__CATALINA__)
+-#define P2_COMPILER "Catalina"
+-#if defined(__CATALINA_libpsram) || defined(__CATALINA_PSRAM)
+-#define P2_RUNTIME "Propeller 2 Edge (P2_EDGE, PSRAM)"
+-#else
+-#define P2_RUNTIME "Propeller 2 Edge (P2_EDGE, no PSRAM)"
+-#endif
+-#elif defined(__clang__)
+-#define P2_COMPILER "clang"
+-#define P2_RUNTIME "Propeller 2"
+-#elif defined(__GNUC__)
+-#define P2_COMPILER "GCC"
+-#define P2_RUNTIME "Propeller 2"
+-#else
+-#define P2_COMPILER "Unknown Compiler"
+-#define P2_RUNTIME "Propeller 2"
+-#endif
+-
+-static void p2_print_banner(void)
+-{
+-    char buffer[192];
+-
+-    snprintf(buffer, sizeof(buffer),
+-        "%s (build %s %s)\n",
+-        P2_FULL_VERSION,
+-        P2_BUILD_DATE_STR,
+-        P2_BUILD_TIME_STR);
+-    p2_serial_puts(buffer);
+-
+-    snprintf(buffer, sizeof(buffer),
+-        "[%s] on %s [%s profile]\n",
+-        P2_COMPILER,
+-        P2_RUNTIME,
+-        BE_P2_PROFILE_NAME);
+-    p2_serial_puts(buffer);
+-
+-    snprintf(buffer, sizeof(buffer),
+-        "[image %lu B | code %lu B | const %lu B | init %lu B | data %lu B]\n",
+-        (unsigned long)P2_BUILD_BINARY_BYTES,
+-        (unsigned long)P2_BUILD_CODE_BYTES,
+-        (unsigned long)P2_BUILD_CONST_BYTES,
+-        (unsigned long)P2_BUILD_INIT_BYTES,
+-        (unsigned long)P2_BUILD_DATA_BYTES);
+-    p2_serial_puts(buffer);
+-
+-    snprintf(buffer, sizeof(buffer),
+-        "[heap %lu B | stack %d slots | bytes max %d B]\n",
+-        (unsigned long)BE_P2_HEAP_BYTES,
+-        BE_STACK_TOTAL_MAX,
+-        BE_BYTES_MAX_SIZE);
+-    p2_serial_puts(buffer);
+-
+-    if (BE_P2_EXTERNAL_RAM_BYTES > 0) {
+-        if (BE_P2_XMM_BYTES > 0) {
+-            snprintf(buffer, sizeof(buffer),
+-                "[external %lu B PSRAM | XMM %lu B | block %lu B @ %lu | Berry heap %s]\n",
+-                (unsigned long)BE_P2_EXTERNAL_RAM_BYTES,
+-                (unsigned long)BE_P2_XMM_BYTES,
+-                (unsigned long)(BE_P2_EXTERNAL_RAM_BYTES - BE_P2_PSRAM_BLOCK_BASE),
+-                (unsigned long)BE_P2_PSRAM_BLOCK_BASE,
+-                BE_P2_HEAP_USES_EXTERNAL_RAM ? "external" : "Hub RAM");
+-        } else {
+-            snprintf(buffer, sizeof(buffer),
+-                "[external %lu B PSRAM block API | Berry heap %s]\n",
+-                (unsigned long)BE_P2_EXTERNAL_RAM_BYTES,
+-                BE_P2_HEAP_USES_EXTERNAL_RAM ? "external" : "Hub RAM");
+-        }
+-        p2_serial_puts(buffer);
+-    }
+-}
+-
+-static int p2_try_run_sd_main(bvm *vm)
+-{
+-#if BE_P2_RUN_SD_MAIN && BE_USE_SCRIPT_COMPILER && BE_USE_FILE_SYSTEM
+-    int res;
+-
+-    p2_startup_status_tick(100);
+-    res = be_loadfile(vm, BE_P2_SD_MAIN_PATH);
+-    p2_startup_status_tick(101);
+-    if (res == BE_IO_ERROR) {
+-        be_pop(vm, be_top(vm));
+-        return BE_OK;
+-    }
+-    if (res == BE_OK) {
+-        res = be_pcall(vm, 0);
+-    }
+-    be_pop(vm, be_top(vm));
+-    if (res != BE_OK && res != BE_EXIT) {
+-        p2_serial_puts("warning: /berry/main.be failed; continuing to REPL\n");
+-    }
+-    p2_startup_status_tick(102);
+-    return res;
+-#else
+-    (void)vm;
+-    p2_startup_status_tick(102);
+-    return BE_OK;
+-#endif
+-}
+-
+-static void p2_interpreter_exited(void)
+-{
+-    p2_serial_puts("[Berry interpreter exited]\n");
+-    for (;;) {
+-    }
+-}
+-
+-static void berry_p2_main(void)
+-{
+-    bvm *vm;
+-    int startup_status_cog;
+-    int main_res;
+-
+-    p2_serial_init();
+-    if (!p2_cog_registry_startup()) {
+-        p2_serial_puts("error: cannot initialize managed cog registry lock\n");
+-        return;
+-    }
+-#if defined(__CATALINA_LARGE)
+-    if (!p2_hub_heap_init()) {
+-        p2_serial_puts("error: cannot initialize shared Hub allocator lock\n");
+-        return;
+-    }
+-#endif
+-    p2_print_banner();
+-    p2_serial_puts("[p2.help() for groups | Ctrl-C cancels | Ctrl-D on an empty line exits]\n");
+-    startup_status_cog = p2_startup_status_start();
+-    vm = be_vm_new();
+-    if (!vm) {
+-        p2_startup_status_stop(startup_status_cog);
+-        p2_serial_puts("error: failed to create VM\n");
+-        for (;;) {
+-        }
+-    }
+-
+-    main_res = p2_try_run_sd_main(vm);
+-    p2_startup_status_stop(startup_status_cog);
+-    if (main_res == BE_EXIT || p2_take_exit_request()) {
+-        p2_interpreter_exited();
+-    }
+-
+-    for (;;) {
+-        int res = be_repl(vm, p2_readline, p2_freeline);
+-        if (p2_take_exit_request() || res == BE_EXIT) {
+-            p2_interpreter_exited();
+-        }
+-        if (res == BE_MALLOC_FAIL) {
+-            p2_serial_puts("error: REPL ran out of memory\n");
+-            p2_serial_puts("bye\n");
+-            break;
+-        }
+-    }
+-}
+-
+-int main()
+-{
+-    berry_p2_main();
+-    return 0;
+-}

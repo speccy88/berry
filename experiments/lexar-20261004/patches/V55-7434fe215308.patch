@@ -1,0 +1,24 @@
+--- a/tools/tests/test_catalina_flash_program.py
++++ b/tools/tests/test_catalina_flash_program.py
+@@ -21,21 +21,6 @@
+ 
+ 
+ class PortOwnershipTests(unittest.TestCase):
+-    def test_empty_result_with_detection_errors_is_not_a_free_port(self):
+-        for stdout, stderr in (("", "permission denied"), ("415\n", "")):
+-            with self.subTest(stdout=stdout, stderr=stderr):
+-                def run(argv, **kwargs):
+-                    return types.SimpleNamespace(returncode=1, stdout=stdout, stderr=stderr)
+-                with self.assertRaises(flash_program.PortOwnershipError):
+-                    flash_program.stop_stale_port_users(
+-                        "/dev/ttyUSB0", run=run, which=lambda _: "/usr/bin/lsof")
+-
+-    def test_verified_empty_result_allows_loading(self):
+-        def run(argv, **kwargs):
+-            return types.SimpleNamespace(returncode=1, stdout="", stderr="")
+-        flash_program.stop_stale_port_users(
+-            "/dev/ttyUSB0", run=run, which=lambda _: "/usr/bin/lsof")
+-
+     def test_refuses_holder_without_signalling_process(self):
+         calls = []
+         kills = []

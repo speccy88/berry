@@ -1,0 +1,13 @@
+--- a/port/p2/include/berry_conf_p2.h
++++ b/port/p2/include/berry_conf_p2.h
+@@ -323,9 +323,8 @@
+ #define BE_EXPLICIT_FREE                p2_heap_free
+ #define BE_EXPLICIT_REALLOC             p2_heap_realloc
+ 
+-/* Native jump buffers must be in Hub RAM, even with a PSRAM VM heap. */
+ #if defined(__CATALINA_LARGE)
+-#define BE_EXCEPTSTACK_REALLOC          be_p2_realloc_exceptstack
++#define BE_EXCEPTSTACK_REALLOC be_p2_realloc_exceptstack
+ #endif
+ 
+ #define be_assert(expr)                 assert(expr)

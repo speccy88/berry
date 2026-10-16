@@ -1,0 +1,17 @@
+--- a/port/p2/runtime/p2_hub_heap.c
++++ b/port/p2/runtime/p2_hub_heap.c
+@@ -19,7 +19,13 @@
+ void *p2_hub_realloc(void *ptr, size_t size)
+ {
+     void *result;
+-    int lock = hub_heap_lock;
++    int lock;
++    if (_cogid()!=0) {
++        extern void p2_serial_puts(const char *);
++        p2_serial_puts("SPECIAL_SDK_WORKER_FORBIDDEN\n");
++        for (;;) _waitus(1000);
++    }
++    lock = hub_heap_lock;
+     if (lock < 0 || (ptr == NULL && size == 0)) {
+         return NULL;
+     }

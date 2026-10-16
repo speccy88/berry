@@ -1,0 +1,387 @@
+--- a/port/p2/overrides/be_p2lib_p2.c
++++ b/port/p2/overrides/be_p2lib_p2.c
+@@ -7,7 +7,6 @@
+ #include "be_gc.h"
+ #include "be_exec.h"
+ #include "be_mem.h"
+-#include "be_map.h"
+ #include "be_module.h"
+ #include "be_object.h"
+ #include "be_string.h"
+@@ -19,7 +18,6 @@
+ #include "berry_port.h"
+ #include "p2_build_info.h"
+ #include "p2_heap.h"
+-#include "p2_partition.h"
+ #include "p2_cog_registry.h"
+ #include "p2_vm_state.h"
+ 
+@@ -213,6 +211,8 @@
+ extern int m_smartpin_query(bvm *vm);
+ extern int m_smartpin_start(bvm *vm);
+ extern int m_smartpin_clear(bvm *vm);
++extern volatile int *berry_vm_new_diag_stage_ptr;
++extern volatile int berry_vm_new_skip_loadlibs;
+ 
+ enum {
+     P2_PINMODE_INPUT = 0,
+@@ -853,24 +853,6 @@
+ } p2_child_vm_cog_ping_job;
+ 
+ typedef struct p2_child_vm_cog_once_job {
+-    /* Set only by the Hub admission bootstrap; NULL is the legacy gated path. */
+-    bvm_allocator allocator;
+-    void *allocator_context;
+-    bvm_allocator special_allocator;
+-    void *special_allocator_context;
+-    int execution_lock;
+-    p2_partition *admission;
+-    p2_partition *special_admission;
+-    unsigned admission_generation;
+-    unsigned special_generation;
+-    volatile size_t admission_free;
+-    volatile size_t admission_initial_free;
+-    volatile size_t admission_low;
+-    volatile int special_retired;
+-    volatile size_t special_initial_free;
+-    volatile size_t special_free;
+-    volatile size_t special_low;
+-    volatile int admission_retired;
+     volatile int status;
+     /* Managed source jobs use Hub mailboxes. Only worker publishes completion. */
+     volatile int cancel_requested;
+@@ -1952,12 +1934,6 @@
+     if (job->name[0] != '\0') {
+         (void)be_global_new(child, be_newstr(child, job->name));
+     }
+-}
+-
+-static void p2_child_vm_construction_progress(void *context, int stage)
+-{
+-    p2_child_vm_cog_once_job *job = (p2_child_vm_cog_once_job *)context;
+-    job->vm_new_detail_stage = stage;
+ }
+ 
+ static void p2_child_vm_execute_source(bvm *child, void *data)
+@@ -2132,43 +2108,21 @@
+         job->source_result = BE_EXIT;
+         job->call_result = BE_EXIT;
+     } else {
+-        int runtime_locked = 0;
+-        if (job->allocator_context) {
+-            /* Lock identity arrived explicitly in Hub, not a cached global. */
+-            if (job->allocator && job->execution_lock >= 0 && job->execution_lock < 16) {
+-                while (!job->cancel_requested) {
+-                    if (!LOCKSET(job->execution_lock)) { runtime_locked = 1; break; }
+-                    _waitus(10);
+-                }
+-                if (!runtime_locked && job->cancel_requested)
+-                    job->source_result = job->call_result = BE_EXIT;
+-            }
+-        } else {
+-            runtime_locked = p2_child_vm_runtime_lock_enter();
+-        }
+-
+-        wrong_free_before = job->allocator_context ? 0 : p2_heap_wrong_free_count();
+-        wrong_realloc_before = job->allocator_context ? 0 : p2_heap_wrong_realloc_count();
+-        if (job->allocator_context) {
+-            job->partition_ready = job->selected = runtime_locked;
+-        } else if (runtime_locked) {
+-            job->partition_ready = p2_heap_vm_partition_create(job->slot, job->bytes);
+-            if (job->partition_ready) job->selected = p2_heap_vm_partition_select(job->slot);
+-        }
+-        if (job->selected && runtime_locked) {
+-            bvm_options options = {0};
+-            /* Call-local inputs and a Hub job-owned diagnostic destination.
+-             * The constructor clears its callback before returning/deletion. */
+-            options.allocator = job->allocator_context ? job->allocator : NULL;
+-            options.allocator_context = job->allocator_context;
+-            options.special_allocator = job->special_allocator;
+-            options.special_allocator_context = job->special_allocator_context;
+-            options.skip_loadlibs = 1;
+-            options.progress = p2_child_vm_construction_progress;
+-            options.progress_context = job;
++        int runtime_locked = p2_child_vm_runtime_lock_enter();
++
++        wrong_free_before = p2_heap_wrong_free_count();
++        wrong_realloc_before = p2_heap_wrong_realloc_count();
++        job->partition_ready = p2_heap_vm_partition_create(job->slot, job->bytes);
++        if (job->partition_ready) {
++            job->selected = p2_heap_vm_partition_select(job->slot);
++        }
++        if (job->selected) {
+             job->vm_new_stage = 1;
+-            child = be_vm_new_with_options(&options);
+-            if (!child) job->source_result = job->call_result = BE_MALLOC_FAIL;
++            berry_vm_new_diag_stage_ptr = &job->vm_new_detail_stage;
++            berry_vm_new_skip_loadlibs = 1;
++            child = be_vm_new();
++            berry_vm_new_skip_loadlibs = 0;
++            berry_vm_new_diag_stage_ptr = NULL;
+             job->vm_new_stage = child != NULL ? 2 : -1;
+         }
+         if (child != NULL) {
+@@ -2184,12 +2138,10 @@
+             be_vm_delete(child);
+             job->child_deleted = 1;
+         }
+-        if (!job->allocator_context) p2_heap_vm_partition_clear_current();
+-        job->wrong_free_delta = job->allocator_context ? 0 : p2_heap_wrong_free_count() - wrong_free_before;
+-        job->wrong_realloc_delta = job->allocator_context ? 0 : p2_heap_wrong_realloc_count() - wrong_realloc_before;
+-        if (job->allocator_context) {
+-            if (runtime_locked) LOCKCLR(job->execution_lock);
+-        } else p2_child_vm_runtime_lock_leave(runtime_locked);
++        p2_heap_vm_partition_clear_current();
++        job->wrong_free_delta = p2_heap_wrong_free_count() - wrong_free_before;
++        job->wrong_realloc_delta = p2_heap_wrong_realloc_count() - wrong_realloc_before;
++        p2_child_vm_runtime_lock_leave(runtime_locked);
+     }
+ 
+     job->status = 2;
+@@ -9451,81 +9403,6 @@
+     be_return(vm);
+ }
+ 
+-/* Read the live registration table, never a second catalog or a user callback.
+- * The module remains rooted on the stack while the result list allocates. */
+-static void p2_help_names(bvm *vm, bmodule *module, int groups_only)
+-{
+-    bmapiter iter = be_map_iter();
+-    bmapnode *node;
+-    be_newobject(vm, "list");
+-    while ((node = be_map_next(module->table, &iter)) != NULL) {
+-        if (var_isstr(&node->key)
+-            && (!groups_only || var_ismodule(&node->value))) {
+-            const char *name = str(var_tostr(&node->key));
+-            if (name[0] != '.' && strcmp(name, "member")) {
+-                be_pushstring(vm, name);
+-                be_data_push(vm, -2);
+-                be_pop(vm, 1);
+-            }
+-        }
+-    }
+-    be_pop(vm, 1); /* internal list data; leave the list instance */
+-}
+-
+-static int m_p2_help(bvm *vm)
+-{
+-    int argc = be_top(vm);
+-    const char *topic = "p2";
+-    bmodule *module;
+-    bntvfunc capabilities = NULL;
+-    if (argc > 1 || (argc == 1 && !be_isstring(vm, 1))) {
+-        be_raise(vm, "type_error", "help expects no argument or one group name string");
+-    }
+-    if (argc) {
+-        topic = be_tostring(vm, 1);
+-        if (strlen(topic) != be_strlen(vm, 1)) {
+-            be_raise(vm, "value_error", "unknown or unavailable p2 help group");
+-        }
+-    }
+-    be_getmodule(vm, "p2");
+-    module = (bmodule *)var_toobj(be_indexof(vm, -1));
+-    if (strcmp(topic, "p2")) {
+-        bvalue *value = be_map_findstr(vm, module->table,
+-            var_tostr(be_indexof(vm, 1)));
+-        if (!value || !var_ismodule(value)) {
+-            be_raise(vm, "value_error", "unknown or unavailable p2 help group");
+-        }
+-        module = (bmodule *)var_toobj(value);
+-    }
+-    be_newobject(vm, "map");
+-    p2_map_set_string(vm, "topic", topic);
+-    be_pushstring(vm, !strcmp(topic, "p2") ? "groups" : "members");
+-    p2_help_names(vm, module, !strcmp(topic, "p2"));
+-    be_setindex(vm, -3);
+-    be_pop(vm, 2);
+-    p2_map_set_string(vm, "usage", "p2.help() lists groups; p2.help(\"pin\") lists live members. See docs/p2-api.md for signatures.");
+-    p2_map_set_string(vm, "safety", "Help only inspects metadata. Check board pin reservations before hardware calls; flat aliases remain compatible.");
+-    p2_map_set_string(vm, "support", "Single VM supported; production concurrency unavailable. Experimental features are not production support. Capability false means unavailable.");
+-    if (!strcmp(topic, "cog")) capabilities = m_p2_closure_cog_capabilities;
+-#if BE_P2_ENABLE_ROADMAP_NATIVE_FACADES
+-    else if (!strcmp(topic, "asm")) capabilities = m_p2_asm_capabilities;
+-    else if (!strcmp(topic, "debug")) capabilities = m_p2_debug_capabilities;
+-    p2_map_set_string(vm, "examples", "p2.clock.freq(); p2.cog.id(); p2.debug.snapshot(); import introspect; introspect.members(p2.pin)");
+-#else
+-    p2_map_set_string(vm, "examples", "p2.status_info(); p2.cog.id(); p2.help(\"pin\")");
+-#endif
+-    if (capabilities) {
+-        be_pushstring(vm, "capabilities");
+-        /* Known read-only native reporter, not an overridable module member. */
+-        be_pushntvfunction(vm, capabilities);
+-        be_call(vm, 0);
+-        be_setindex(vm, -3);
+-        be_pop(vm, 2);
+-    }
+-    be_pop(vm, 1); /* internal map data; return the map instance */
+-    be_return(vm);
+-}
+-
+ void be_cache_p2module(bvm *vm)
+ {
+     bstring *name;
+@@ -9536,7 +9413,6 @@
+     name = var_tostr(vm->top - 1);
+     be_newmodule(vm);
+     p2_module_set_func(vm, "member", m_p2_member);
+-    p2_module_set_func(vm, "help", m_p2_help);
+     p2_module_set_func(vm, "vm_cog_ping", m_p2_vm_cog_ping);
+     p2_module_add_runtime_cog(vm);
+     p2_module_add_runtime_pin(vm);
+@@ -9559,53 +9435,106 @@
+     be_pop(vm, 2); /* module and temporary cache-key root */
+ }
+ 
+-/* Explicit Hub-bootstrap admission. The caller reserves/offers before launch
+- * or publishes its Hub mailbox only after offer. No descriptor pre-read,
+- * cached selector, registry slot or cache-flush side effect is involved.
+- * This internal increment does NOT enable the gated public cog-source API. */
+-static void p2_child_vm_coherent_entry(void *argument)
+-{
+-    p2_child_vm_cog_once_job *job = (p2_child_vm_cog_once_job *)argument;
+-    int admitted, special = 0;
+-    if (!job) return;
+-    admitted = job->admission && job->special_admission
+-        && job->admission != job->special_admission && !job->cancel_requested
+-        && p2_partition_is_hub(job->special_admission, job->special_generation)
+-        && p2_partition_claim(job->admission, job->admission_generation) == 1;
+-    if (admitted) {
+-        special = p2_partition_claim(job->special_admission, job->special_generation) == 1;
+-        if (!special) {
+-            p2_partition_retire(job->admission, job->admission_generation);
+-            admitted = 0;
+-        }
+-    }
+-    job->admission_retired = 0;
+-    job->special_retired = 0;
+-    if (!admitted && !job->cancel_requested) {
+-        job->source_result = job->call_result = BE_EXCEPTION;
+-        job->status = 2;
+-        while (job->status != 4) _waitus(1000);
+-        return;
+-    }
+-    job->allocator = p2_partition_realloc;
+-    job->allocator_context = job->admission;
+-    job->special_allocator = p2_partition_realloc;
+-    job->special_allocator_context = job->special_admission;
+-    job->execution_lock = p2_partition_execution_lock(job->admission, job->admission_generation);
+-    if (admitted) {
+-        job->admission_initial_free = p2_partition_free_bytes(job->admission, job->admission_generation);
+-        job->admission_low = p2_partition_low_address(job->admission, job->admission_generation);
+-        job->special_initial_free = p2_partition_free_bytes(job->special_admission, job->special_generation);
+-        job->special_low = p2_partition_low_address(job->special_admission, job->special_generation);
+-    }
+-    p2_child_vm_cog_once_entry(job);
+-    if (admitted) {
+-        job->admission_free = p2_partition_free_bytes(job->admission, job->admission_generation);
+-        job->admission_retired = p2_partition_retire(job->admission, job->admission_generation);
+-        job->special_free = p2_partition_free_bytes(job->special_admission, job->special_generation);
+-        job->special_retired = p2_partition_retire(job->special_admission, job->special_generation);
+-    } else {
+-        job->admission_retired = p2_partition_is_retired(job->admission, job->admission_generation);
+-        job->special_retired = p2_partition_is_retired(job->special_admission, job->special_generation);
+-    }
+-}
++#include "p2_clock.h"
++/* DIAGNOSTIC DRIVER ONLY: calls the unchanged production source entry.
++ * One worker/cache persists across jobs. This is not public spawn/reap proof. */
++typedef struct {
++    p2_child_vm_cog_once_job job;
++    volatile unsigned round, acknowledged;
++    volatile unsigned free_bytes, low_address;
++} source_hil_control;
++static void source_hil_worker(void *argument)
++{
++    source_hil_control *c = (source_hil_control *)argument;
++    unsigned i;
++    for (i = 1; i <= 12; ++i) {
++        while (c->round != i) _waitus(1000);
++        p2_child_vm_cog_once_entry(&c->job);
++        c->free_bytes = p2_heap_vm_partition_free_bytes(0);
++        c->low_address = p2_heap_vm_partition_low_address(0);
++        c->acknowledged = i;
++    }
++    for (;;) _waitus(1000);
++}
++static unsigned source_hil_mask(void)
++{
++    unsigned i, mask = 0;
++    for (i = 0; i < 8; ++i) if (_cogchk(i)) mask |= 1u << i;
++    return mask;
++}
++static uint32_t source_hil_now(void)
++{
++    uint32_t t = 0; p2_clock_millis_now(&t); return t;
++}
++int p2_source_lifecycle_hil(void)
++{
++    static const char *sources[] = {
++        "def f(x) def recurse(n) if n==0 return x end return recurse(n-1) end return recurse(30) end",
++        "def f(x) return x end",
++        "def f(x) raise 'value_error', 'source-error' end",
++        "def f(x) var s='0123456789abcdef' while true s=s+s end end",
++        "def f(x) return x+19 end",
++        "def f(x) return x end"
++    };
++    source_hil_control *c;
++    unsigned char *stack;
++    unsigned i, kind, before, during, after, untouched = 0;
++    int cog, failures = 0;
++    uint32_t start;
++    char line[320];
++    p2_serial_init();
++    if (!p2_cog_registry_startup() || !p2_hub_heap_init()) return 1;
++    p2_child_vm_runtime_lock_init();
++    before = source_hil_mask();
++    c = (source_hil_control *)p2_hub_calloc(1, sizeof(*c));
++    stack = (unsigned char *)p2_hub_malloc(32768);
++    if (!c || !stack) return 2;
++    memset(stack, 0xa5, 32768);
++    cog = p2_catalina_cogstart_C(source_hil_worker, c, stack, 32768);
++    during = source_hil_mask();
++    snprintf(line, sizeof(line), "\nSOURCE_LIFECYCLE_c17d_BEGIN main=%d worker=%d before=%x during=%x\n", _cogid(), cog, before, during);
++    p2_serial_puts(line);
++    if (cog < 0) return 3;
++    for (i = 1; i <= 12; ++i) {
++        kind = (i - 1) % 6;
++        memset(&c->job, 0, sizeof(c->job));
++        c->job.bytes = 262144; c->job.slot = 0;
++        strcpy(c->job.source, sources[kind]); strcpy(c->job.name, "f");
++        c->job.argc = 1; c->job.arg_type[0] = 1; c->job.arg_int[0] = 76123 + i;
++        if (kind == 1) {
++            c->job.arg_type[0] = 4;
++            strcpy(c->job.arg_string[0], "copied-input-c17d");
++        }
++        if (kind == 5) c->job.cancel_requested = 1;
++        start = source_hil_now(); c->round = i;
++        while (c->job.status != 2 && (uint32_t)(source_hil_now() - start) < 45000) _waitus(1000);
++        if (c->job.status != 2) {
++            snprintf(line, sizeof(line), "SOURCE_LIFECYCLE_c17d_TIMEOUT round=%u status=%d stage=%d load=%d call=%d\n", i, c->job.status, c->job.vm_new_detail_stage, c->job.load_stage, c->job.call_stage);
++            p2_serial_puts(line);
++            /* Do not kill a possibly lock-owning VM or free its resources. */
++            return 4;
++        }
++        c->job.status = 4;
++        while (c->acknowledged != i && (uint32_t)(source_hil_now() - start) < 47000) _waitus(1000);
++        if (c->acknowledged != i) return 5;
++        if (kind == 0 && !(c->job.call_result == BE_OK && c->job.result_int == 76123 + i)) ++failures;
++        if (kind == 1 && !(c->job.call_result == BE_OK && !strcmp(c->job.result_string, "copied-input-c17d"))) ++failures;
++        if (kind == 2 && c->job.call_result != BE_EXCEPTION) ++failures;
++        if (kind == 3 && c->job.call_result != BE_MALLOC_FAIL) ++failures;
++        if (kind == 4 && !(c->job.call_result == BE_OK && c->job.result_int == 76142 + i)) ++failures;
++        if (kind == 5 && !(c->job.call_result == BE_EXIT && !c->job.child_created && !c->job.partition_ready)) ++failures;
++        if (c->job.child_created != c->job.child_deleted) ++failures;
++        snprintf(line, sizeof(line), "SOURCE_ROW round=%u kind=%u cog=%d status=%d source=%d result=%d type=%d integer=%ld created=%d deleted=%d free=%u low=%x elapsed=%lu text=%s\n", i, kind, c->job.cog_id, c->job.status, c->job.source_result, c->job.call_result, c->job.result_type, (long)c->job.result_int, c->job.child_created, c->job.child_deleted, c->free_bytes, c->low_address, (unsigned long)(source_hil_now()-start), c->job.result_string);
++        p2_serial_puts(line);
++    }
++    _cogstop(cog);
++    p2_xmm_private_cache_release(cog);
++    after = source_hil_mask();
++    while (untouched < 32768 && stack[untouched] == 0xa5) ++untouched;
++    if (after != before || untouched < 64) ++failures;
++    snprintf(line, sizeof(line), "SOURCE_LIFECYCLE_c17d_END failures=%d after=%x stack_bytes=32768 untouched_prefix=%u write_extent=%u\n", failures, after, untouched, 32768-untouched);
++    p2_serial_puts(line);
++    /* Heap partition/cache reuse is still unqualified: retain allocations
++     * until reset instead of pretending diagnostic teardown is production. */
++    return failures ? 6 : 0;
++}

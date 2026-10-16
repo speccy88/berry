@@ -1,0 +1,62 @@
+--- a/port/p2/runtime/main_p2.c
++++ b/port/p2/runtime/main_p2.c
+@@ -7,7 +7,6 @@
+ #include "berry_port.h"
+ #include "p2_build_info.h"
+ #include "p2_hub_heap.h"
+-#include "p2_cog_registry.h"
+ 
+ #ifndef BE_P2_RUN_SD_MAIN
+ #define BE_P2_RUN_SD_MAIN 0
+@@ -152,13 +151,6 @@
+ #endif
+ }
+ 
+-static void p2_interpreter_exited(void)
+-{
+-    p2_serial_puts("[Berry interpreter exited]\n");
+-    for (;;) {
+-    }
+-}
+-
+ static void berry_p2_main(void)
+ {
+     bvm *vm;
+@@ -166,10 +158,6 @@
+     int main_res;
+ 
+     p2_serial_init();
+-    if (!p2_cog_registry_startup()) {
+-        p2_serial_puts("error: cannot initialize managed cog registry lock\n");
+-        return;
+-    }
+ #if defined(__CATALINA_LARGE)
+     if (!p2_hub_heap_init()) {
+         p2_serial_puts("error: cannot initialize shared Hub allocator lock\n");
+@@ -177,7 +165,7 @@
+     }
+ #endif
+     p2_print_banner();
+-    p2_serial_puts("[p2.help() for groups | Ctrl-C cancels | Ctrl-D on an empty line exits]\n");
++    p2_serial_puts("[Ctrl-D or Ctrl-C at an empty prompt quits]\n");
+     startup_status_cog = p2_startup_status_start();
+     vm = be_vm_new();
+     if (!vm) {
+@@ -190,13 +178,15 @@
+     main_res = p2_try_run_sd_main(vm);
+     p2_startup_status_stop(startup_status_cog);
+     if (main_res == BE_EXIT || p2_take_exit_request()) {
+-        p2_interpreter_exited();
++        p2_serial_puts("bye\n");
++        return;
+     }
+ 
+     for (;;) {
+         int res = be_repl(vm, p2_readline, p2_freeline);
+         if (p2_take_exit_request() || res == BE_EXIT) {
+-            p2_interpreter_exited();
++            p2_serial_puts("bye\n");
++            break;
+         }
+         if (res == BE_MALLOC_FAIL) {
+             p2_serial_puts("error: REPL ran out of memory\n");

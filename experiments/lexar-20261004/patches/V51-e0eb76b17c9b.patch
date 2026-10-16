@@ -1,0 +1,11 @@
+--- a/tools/p2/loader/catalina_flash_program.py
++++ b/tools/p2/loader/catalina_flash_program.py
+@@ -89,7 +89,7 @@
+             f"cannot verify whether {port} is in use; refusing to load"
+         ) from exc
+ 
+-    if proc.returncode == 1 and not proc.stdout.strip() and not proc.stderr.strip():
++    if proc.returncode == 1:
+         return
+     if proc.returncode != 0:
+         raise PortOwnershipError(

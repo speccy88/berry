@@ -1,0 +1,34 @@
+--- a/tests/native/test_p2_clock.c
++++ b/tests/native/test_p2_clock.c
+@@ -167,7 +167,6 @@
+ 
+ static void test_task_waits(bvm *vm)
+ {
+-    p2_task_slot *p2_task_slots = p2_vm_scheduler(vm)->slots;
+     static const char *descriptors[] = {
+         "task.sleep(timeout)", "task.wait('event', timeout)",
+         "task.wait(task.Queue(1), timeout)", "task.wait(task.Semaphore(0), timeout)",
+@@ -290,7 +289,6 @@
+ 
+ static void test_task_counter_wrap(bvm *vm)
+ {
+-    p2_task_slot *p2_task_slots = p2_vm_scheduler(vm)->slots;
+     static const uint32_t frequencies[] = { 200000000U, 240000000U, 300000000U };
+     unsigned int i, second, repeat;
+     for (i = 0; i < sizeof(frequencies) / sizeof(frequencies[0]); ++i) {
+@@ -327,7 +325,6 @@
+ 
+ static void test_task_readiness(bvm *vm)
+ {
+-    p2_task_slot *p2_task_slots = p2_vm_scheduler(vm)->slots;
+     /* Ready events/objects still beat simultaneous timeouts; each wake must
+      * disarm the timeout before the callback (not just when freeing a slot). */
+     mock_hz = 1000;
+@@ -357,7 +354,6 @@
+ 
+ static void test_task_lifecycle(bvm *vm)
+ {
+-    p2_task_slot *p2_task_slots = p2_vm_scheduler(vm)->slots;
+     mock_hz = 1000;
+     mock_high = mock_low = 0;
+     script(vm, "import task\n task.reset()\n def sleeper() return task.sleep(60000) end\n"

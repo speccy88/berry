@@ -1,0 +1,19 @@
+--- a/tests/native/test_p2_partition.c
++++ b/tests/native/test_p2_partition.c
+@@ -37,8 +37,6 @@
+     assert(!p2_partition_reserve_hub(&bad, 1, &bad, sizeof(bad), 3, 4));
+     assert(p2_partition_reserve_hub(&a,51,ra.raw,sizeof(ra.raw),3,4));
+     assert(p2_partition_reserve_hub(&b,52,rb.raw,sizeof(rb.raw),3,4));
+-    assert(p2_partition_is_hub(&a,51) && p2_partition_is_hub(&b,52));
+-    assert(!p2_partition_is_hub(&a,52) && !p2_partition_is_hub(&bad,1));
+     assert(!p2_partition_reserve_hub(&a,53,rb.raw,sizeof(rb.raw),3,4));
+     assert(p2_partition_offer(&a,51,6)); assert(p2_partition_offer(&b,52,5));
+     test_p2_cog=6; assert(p2_partition_claim(&a,51)==1);
+@@ -75,7 +73,6 @@
+     assert(!p2_partition_reserve(&invalid, 1, 512, 16, 3, 4));
+     assert(p2_partition_reserve(&a, 17, 512, 32, 3, 4));
+     assert(p2_partition_reserve(&b, 18, 512, 32, 3, 4));
+-    assert(!p2_partition_is_hub(&a,17) && !p2_partition_is_hub(&b,18));
+     assert(!p2_partition_reserve(&a, 19, 512, 32, 3, 4));
+ #ifdef TEST_FRESH_BREAK
+     assert(break_calls == 2);

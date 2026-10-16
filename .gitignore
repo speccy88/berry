@@ -82,3 +82,6 @@ cmake-build-*
 # Documentation build outputs
 docs/build/html/
 docs/_doxygen/xml/
+
+# Private raw recovery; publish only reviewed source variants under experiments/
+/recovery/

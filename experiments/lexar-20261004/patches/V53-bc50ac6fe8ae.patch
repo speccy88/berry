@@ -1,0 +1,18 @@
+--- a/tools/test_p2_clock.py
++++ b/tools/test_p2_clock.py
+@@ -21,7 +21,6 @@
+ MASK = (1 << 32) - 1
+ HALF = 1 << 31
+ SOURCES = ["port/p2/runtime/p2_clock.c", "port/p2/include/p2_clock.h",
+-           "port/p2/runtime/p2_vm_state.c", "port/p2/include/p2_vm_state.h",
+            "port/p2/overrides/be_tasklib_p2.c", "tests/native/test_p2_clock.c",
+            "tools/test_p2_clock.py", "default/berry_conf.h",
+            "default/be_port.c", "default/be_modtab.c"]
+@@ -163,7 +162,6 @@
+         command += [target_root / "tests/native/test_p2_clock.c",
+                     target_root / "port/p2/runtime/p2_clock.c"]
+         if mode == "scheduler":
+-            command += [target_root / "port/p2/runtime/p2_vm_state.c"]
+             command += [target_output / "src" / p.name for p in sorted(core.glob("*.c"))]
+             command += [target_root / "default/be_port.c", target_root / "default/be_modtab.c", "-lm", "-ldl"]
+         command += ["-o", binary]

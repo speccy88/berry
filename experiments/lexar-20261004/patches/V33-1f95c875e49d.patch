@@ -1,0 +1,29 @@
+--- a/port/p2/runtime/p2_hub_heap.c
++++ b/port/p2/runtime/p2_hub_heap.c
+@@ -11,7 +11,7 @@
+ {
+     /* Startup is single-cog; do not lazily initialize from concurrent workers. */
+     if (hub_heap_lock < 0) {
+-        hub_heap_lock = _locknew();
++        hub_heap_lock = (int)_locknew();
+     }
+     return hub_heap_lock >= 0;
+ }
+@@ -23,7 +23,7 @@
+     if (lock < 0 || (ptr == NULL && size == 0)) {
+         return NULL;
+     }
+-    while (!_locktry(lock)) {
++    while (_lockset((unsigned long)lock)) {
+     }
+     if (size == 0) {
+         hub_free(ptr);
+@@ -31,7 +31,7 @@
+     } else {
+         result = hub_realloc(ptr, size);
+     }
+-    _lockrel(lock);
++    _lockclr((unsigned long)lock);
+     return result;
+ }
+ 
