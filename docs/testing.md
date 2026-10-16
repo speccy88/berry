@@ -580,3 +580,35 @@ Still open for soak coverage:
   smoke, plus broader SPI framing stress beyond the current bounded
   sync-serial receive checks.
 - Leak reporting and long-run memory accounting.
+
+## Offline UART transcript and recovery checks
+
+`tools/p2/hil/verify_uart_transcript.py` verifies an existing case fixture and
+UART transport log without opening a device:
+
+```sh
+python tools/p2/hil/verify_uart_transcript.py cases.json capture.log --selftest
+python -m unittest discover -s tools/tests -p test_uart_transcript.py
+```
+
+The fixture supplies `mode`, `token`, and ordered `cases`. Each case binds
+`name`, `tx_hex`, `prompt`, `line` (an exact result line or null), and `contains`
+(an expected response prefix or null). `boot_contains` may explicitly select
+expected boot strings for the chosen profile. Without that field the recovered
+verifier retains its original Berry 1.1.0/XMM boot requirements. `full` mode also
+requires the interactive example/help completion lines. The log uses
+`UART_CASE`, `UART_TX_HEX` and `UART_RX_HEX` records, ending with exactly one
+`UART_TRANSPORT_COMPLETE` line.
+
+On success the CLI writes decoded `.rx.bin`, `.rx.txt`, and `.verified.json`
+files beside the input log. `--selftest` runs negative transcript mutations;
+it does not execute Berry. A passing receipt proves consistency with the supplied
+fixture, not that the bytes came from physical hardware or a particular image.
+
+The [Lexar recovery archive](../experiments/lexar-20261004/README.md) preserves
+55 mutually exclusive source variants and their provenance without activating
+older diagnostic runtime code. Verify their exact reconstruction separately:
+
+```sh
+python tools/verify_recovery_variants.py
+```
